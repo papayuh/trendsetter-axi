@@ -36,7 +36,7 @@ def _copy(fig):
 
 
 def render_figure(fig, cols=80):
-    """Render a matplotlib Figure as text at most `cols` characters wide. The figure itself is left unchanged."""
+    """Render a matplotlib Figure at most `cols` terminal cells wide per line. The figure itself is left unchanged."""
     work = _copy(fig)
     try:
         return _mpl.render(work, cols)[0]

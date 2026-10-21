@@ -7,13 +7,13 @@ import pytest
 
 from trendsetter_axi import render_figure, render_svg
 from trendsetter_axi.gallery import CHARTS
+from trendsetter_axi.cells import width
 
 BY_ID = {c["id"]: c for c in CHARTS}
 MPL_IDS = ["01_mpl_line", "03_mpl_scatter", "04_mpl_bar", "07_mpl_hist", "08_mpl_box", "13_mpl_step"]
 
 
-# the heatmap's colour key is wider than 40 columns, so it only runs at 80
-CASES = [(c, w) for c in MPL_IDS for w in (80, 40)] + [("10_mpl_imshow", 80)]
+CASES = [(c, w) for c in MPL_IDS + ["10_mpl_imshow"] for w in (40, 80, 120)]
 
 
 @pytest.mark.parametrize("cid,cols", CASES)
@@ -24,7 +24,7 @@ def test_render_matplotlib_charts(cid, cols):
     finally:
         plt.close(fig)
     assert text.strip()
-    assert all(len(line) <= cols for line in text.split("\n"))
+    assert all(width(line) <= cols for line in text.split("\n"))
     assert any(ch.strip() for ch in text)
 
 
