@@ -140,7 +140,7 @@ def role_of(classes):
     return "other"
 
 
-FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis")   # matplotlib frame/axis ids, plotly grid/zero/axis layers, vega axes
+FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis", "background")   # matplotlib frame/axis ids, plotly grid/zero/axis layers, vega axes and view border
 
 
 def render(svg, cols=80, ansi=False, shift=0):

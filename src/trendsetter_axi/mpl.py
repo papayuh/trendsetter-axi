@@ -194,13 +194,14 @@ def _hook(fig, on):
 
 
 def _fixed(ax, axis):
-    """(first, second) limit of `axis` the caller (or a library such as plotnine) set: a side that differs from what autoscaling gives.
-    ponytail: a side set to exactly the autoscaled value counts as free; record set_xlim/set_ylim calls if that ever matters."""
+    """(first, second) limit of `axis` the caller (or a library such as plotnine) set: a side that differs from what autoscaling gives,
+    or both when autoscaling is off and neither differs (set_ylim(ax.get_ylim()), limits equal to the margins)."""
     get, setlim = (ax.get_xlim, ax.set_xlim) if axis == "x" else (ax.get_ylim, ax.set_ylim)
     if getattr(ax, f"get_autoscale{axis}_on")(): return False, False
     lim = get()
     ax.autoscale(True, axis); auto = get(); setlim(lim)
-    return tuple(not np.isclose(a, b) for a, b in zip(lim, auto))
+    fixed = tuple(not np.isclose(a, b) for a, b in zip(lim, auto))
+    return fixed if any(fixed) else (True, True)
 
 
 def _pad(fig, cv):

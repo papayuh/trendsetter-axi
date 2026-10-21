@@ -109,6 +109,12 @@ def test_one_explicit_side_leaves_the_other_padded():
     assert not BRAILLE.search(next(r for r in spike.split("\n") if "┌" in r)), spike   # the free top is padded: the peak is not in the border row
 
 
+@pytest.mark.parametrize("fix", [lambda ax: ax.set_ylim(ax.get_ylim()), lambda ax: ax.set_ylim(0, 100)], ids=["freeze", "equal-to-autoscale"])
+def test_limits_equal_to_autoscale_stay_explicit(fix):
+    spike = render(lambda ax: (ax.plot([0, 100, 0]), ax.margins(y=0), fix(ax)))
+    assert BRAILLE.search(next(r for r in spike.split("\n") if "┌" in r)), spike   # the peak sits on the caller's top limit, not padded away from it
+
+
 def test_explicit_xlim_stays_explicit():
     zoom = render(lambda ax: (ax.plot([0, 1, 2], [0, 1, 0]), ax.set_xlim(0.5, 1.5)))
     ticks = x_ticks(zoom)
@@ -187,6 +193,14 @@ def test_svg_dense_dark_line_outside_matplotlib_is_drawn():
     assert len(ink_columns(tsa.render_svg(svg, 80))) > 70   # plotly/vega/unknown strokes are data: every short segment is kept
     grid_only = tsa.render_svg(svg.replace("#222", "none"), 80)
     assert not re.search("[─━]", grid_only), grid_only     # a known gridline is still a gridline
+
+
+def test_svg_vega_view_border_is_not_data():
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100">
+<g class="mark-group role-frame root"><g><path class="background" d="M 0.5 0.5 h 399 v 99 h -399 Z" style="fill:none;stroke:#ddd"/>
+<g class="mark-line role-mark"><path d="M 20 80 L 380 20" style="fill:none;stroke:#4c78a8;stroke-width:2"/></g></g></g></svg>"""
+    text = tsa.render_svg(svg, 80)
+    assert ink_columns(text) and not re.search("[┌┐└┘│]", text), text   # the line is drawn, the view border is not
 
 
 def test_svg_unsupported_clip_is_reported_not_ignored():
