@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trendsetter-axi"
+version = "0.1.0"
+description = "Terminal charts: render matplotlib figures and SVG as unicode text"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "papayuh" }]
+dependencies = ["numpy", "matplotlib"]
+
+[project.optional-dependencies]
+gallery = ["pandas", "seaborn", "plotly", "altair", "plotnine"]
+dev = ["pytest", "pandas"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trendsetter_axi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
