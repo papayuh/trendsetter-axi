@@ -139,7 +139,7 @@ uv pip install -e '.[dev]' --python .venv/bin/python
 .venv/bin/python -m pytest
 ```
 
-`python -m trendsetter_axi.mpl --test` runs the extra self-checks bundled with the matplotlib renderer.
+`python -m trendsetter_axi.mpl --test` runs the extra self-checks bundled with the matplotlib renderer; pytest runs them too.
 
 Raster sampling clips each segment to the viewport first, caps samples at terminal resolution, and reduces redundant ink to occupied dots without bridging NaN gaps. See [render budgets and before/after profiling](benchmarks/README.md) for reproducible timings and work limits.
 

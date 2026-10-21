@@ -95,7 +95,7 @@ class Canvas:
 
     def bg(self, c): return neutral(c) and (lum(c) < 0.4 if self.dark else lum(c) > 0.8)
 
-    def stroke(self, polylines, rgb, dashes=None, clip=None, legend=False, rule=False):
+    def stroke(self, polylines, rgb, dashes=None, clip=None, legend=False, rule=False, data=False):   # data: the stroke is a data artist (a curve), never axis/grid geometry whatever its colour
         if self.bg(rgb) or not polylines: return
         pts = np.concatenate([np.asarray(p, float) for p in polylines if len(p)])
         if legend:  # one short key per handle; frames and long strokes are not keys
@@ -116,7 +116,7 @@ class Canvas:
                         if not grid: self.strokes.append(("h", a, b, clip, lum(rgb) < 0.35))
                     elif abs(a[0] - b[0]) < 0.5 and abs(a[1] - b[1]) >= self.ch:
                         if not grid: self.strokes.append(("v", a, b, clip, lum(rgb) < 0.35))
-                    elif max(abs(a - b)) >= self.cw: self.strokes.append(("dots", -1, [np.array([a, b])], dashes, clip))
+                    elif data or max(abs(a - b)) >= self.cw: self.strokes.append(("dots", -1, [np.array([a, b])], dashes, clip))   # short segments are decoration unless the artist is data: a dense curve is all short segments
             return
         p0 = np.asarray(polylines[0], float)
         if (rule or x1 - x0 < 0.6 * self.w) and len(polylines) == 1 and len(p0) == 2 and abs(p0[0, 1] - p0[1, 1]) < 0.5 and abs(p0[0, 0] - p0[1, 0]) >= 2 * self.cw:   # a short flat ax.plot (violin median drawn as a line) is the same rule
@@ -150,9 +150,9 @@ class Canvas:
         if legend: return self.legend_marks.append((np.mean(points, 0), sid, "mark"))
         self.marks.append((np.asarray(points, float).reshape(-1, 2), sid, clip))
 
-    def image(self, x0, y0, x1, y1, rgb, alpha=None):  # rgb: (h, w, 3) floats 0..1, row 0 at top
+    def image(self, x0, y0, x1, y1, rgb, alpha=None, clip=None):  # rgb: (h, w, 3) floats 0..1, row 0 at top
         if alpha is not None and (alpha < 0.5).mean() > 0.5:
-            return self._overlay(x0, y0, x1, y1, rgb, alpha)
+            return self._overlay(x0, y0, x1, y1, rgb, alpha, clip)
         ys = np.linspace(y0, y1, rgb.shape[0] + 1); xs = np.linspace(x0, x1, rgb.shape[1] + 1)
         r0, r1 = self._row(y0), self._row(y1 - 1e-6); c0, c1 = self._col(x0), self._col(x1 - 1e-6)
         for r in range(max(r0, 0), min(r1, self.rows - 1) + 1):
@@ -161,7 +161,7 @@ class Canvas:
                 xi = np.clip(np.searchsorted(xs, (c + .5) * self.cw) - 1, 0, rgb.shape[1] - 1)
                 self.cont.append(([np.array([[c * self.cw, r * self.ch], [(c + 1) * self.cw, r * self.ch],
                                              [(c + 1) * self.cw, (r + 1) * self.ch], [c * self.cw, (r + 1) * self.ch]])],
-                                  rgb[yi, xi], None))
+                                  rgb[yi, xi], clip))
 
     def heat_grid(self, xs, ys, t, clip=None):
         """t: (h, w) levels in 0..1, NaN = missing (stays blank); xs (w+1) / ys (h+1) ascending px edges, row 0 at top.
@@ -223,7 +223,7 @@ class Canvas:
             f[0] = [np.array([[c0 * self.cw, r[1]], [(c0 + w) * self.cw, r[1]], [(c0 + w) * self.cw, r[3]], [c0 * self.cw, r[3]]])]
             self.fills[i] = tuple(f)
 
-    def _overlay(self, x0, y0, x1, y1, rgb, alpha):
+    def _overlay(self, x0, y0, x1, y1, rgb, alpha, clip=None):
         """Mostly-transparent raster = drawn marks: sample at dot resolution, key by color."""
         sx, sy = 2 / self.cw, 4 / self.ch
         r0, r1, c0, c1 = int(y0 * sy), int(np.ceil(y1 * sy)), int(x0 * sx), int(np.ceil(x1 * sx))
@@ -247,7 +247,7 @@ class Canvas:
             if len(v) < 0.02 * total: continue  # antialias fringe
             col = np.mean([x[2] for x in v], 0)
             sid = -1 if neutral(col) else self._sid(col, "line")
-            self.strokes.append(("pts", sid, np.array([(r, c) for r, c, _ in v]), None, None))
+            self.strokes.append(("pts", sid, np.array([(r, c) for r, c, _ in v]), None, clip))
 
     def text(self, x, y, s, ha="left", va="baseline", angle=0, role="other"):
         s = clean_text(str(s)).strip("\n")
@@ -525,7 +525,7 @@ class Canvas:
             self.marks = [m for m in self.marks if not inside([m[0]])]
         for s in self.strokes:
             if s[0] == "pts":
-                put_dots(s[2], s[1], None)
+                put_dots(s[2], s[1], s[4])
                 if s[1] >= 0: stamps.setdefault(s[1], []).append(s[2][np.lexsort((s[2][:, 0], s[2][:, 1]))])
             elif s[0] == "dots":
                 _, sid, polys, dashes, clip = s
