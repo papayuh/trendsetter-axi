@@ -69,7 +69,7 @@ def cjk():
     return fig
 
 
-def show(caption, text, cols, out):
+def show(caption, text, out):
     out.append(f"## {caption}")
     out.append(text)
     out.append("")
@@ -85,13 +85,13 @@ def render(make, cols):
 
 def section_basic(cols, out):
     for caption, make in [("line chart", line), ("bar chart", bar), ("scatter plot", scatter), ("heatmap", heatmap)]:
-        show(f"basic: {caption} at {cols} cols", render(make, cols), cols, out)
+        show(f"basic: {caption} at {cols} cols", render(make, cols), out)
 
 
 def section_widths(cols, out):
     for w in (100, 60, 40, 24):
         text = render(line, w)
-        show(f"width budget: same chart at {w} cols", text, w, out)
+        show(f"width budget: same chart at {w} cols", text, out)
         out.append(f"max line width: {max(width(l) for l in text.split(chr(10)))} / {w} cells")
         out.append("")
 
@@ -100,14 +100,14 @@ def section_big(cols, out):
     t = time.perf_counter()
     text = render(big, cols)
     dt = time.perf_counter() - t
-    show(f"100k points at {cols} cols", text, cols, out)
+    show(f"100k points at {cols} cols", text, out)
     out.append(f"[timing] 100,000 points rendered in {dt:.2f}s")
     out.append("")
 
 
 def section_cjk(cols, out):
     text = render(cjk, cols)
-    show(f"CJK title fits the {cols}-cell budget", text, cols, out)
+    show(f"CJK title fits the {cols}-cell budget", text, out)
     out.append(f"max line width: {max(width(l) for l in text.split(chr(10)))} / {cols} cells")
     out.append("")
 
@@ -120,14 +120,14 @@ def section_svg(cols, out):
             fig.savefig(buf, format="svg", dpi=72)
     finally:
         plt.close(fig)
-    show(f"render_svg on a matplotlib SVG at {cols} cols", render_svg(buf.getvalue(), cols), cols, out)
+    show(f"render_svg on a matplotlib SVG at {cols} cols", render_svg(buf.getvalue(), cols), out)
 
 
 def section_gallery(cols, out):
     for cid in GALLERY:
         fig = BY_ID[cid]["make"]()
         try:
-            show(f"gallery: {cid} at {cols} cols", render_figure(fig, cols), cols, out)
+            show(f"gallery: {cid} at {cols} cols", render_figure(fig, cols), out)
         finally:
             plt.close(fig)
 

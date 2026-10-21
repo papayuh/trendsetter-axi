@@ -1,4 +1,5 @@
 import importlib.util
+import re
 from pathlib import Path
 
 from trendsetter_axi.cells import width
@@ -15,7 +16,7 @@ def chart_text(lines):
 
 
 def test_demo_fits_budget_and_is_deterministic():
-    # widths section prints charts at 100/60/40/24 cols, so check it against its own widest budget
+    # widths section renders at its own fixed budgets; test_demo_widths_section_fits_each_budget covers it
     first = demo.build(COLS, [s for s in demo.SECTIONS if s != "widths"])
     second = demo.build(COLS, [s for s in demo.SECTIONS if s != "widths"])
     assert all(width(l) <= COLS for l in first)
@@ -23,5 +24,9 @@ def test_demo_fits_budget_and_is_deterministic():
     assert any(l.startswith("[timing]") for l in first)
 
 
-def test_demo_widths_section_deterministic():
-    assert demo.build(COLS, ["widths"]) == demo.build(COLS, ["widths"])
+def test_demo_widths_section_fits_each_budget():
+    lines = demo.build(COLS, ["widths"])
+    budgets = [tuple(map(int, m.groups())) for l in lines if (m := re.fullmatch(r"max line width: (\d+) / (\d+) cells", l))]
+    assert [w for _, w in budgets] == [100, 60, 40, 24]
+    assert all(n <= w for n, w in budgets)
+    assert lines == demo.build(COLS, ["widths"])
