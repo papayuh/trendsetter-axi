@@ -14,7 +14,7 @@ authors = [{ name = "papayuh" }]
 dependencies = ["numpy", "matplotlib"]
 
 [project.optional-dependencies]
-gallery = ["pandas", "seaborn", "plotly", "altair", "plotnine", "kaleido", "vl-convert-python"]
+gallery = ["pandas", "seaborn", "plotly", "altair", "plotnine"]
 dev = ["pytest", "pandas"]
 
 [tool.hatch.build.targets.wheel]

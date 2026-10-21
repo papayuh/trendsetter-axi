@@ -1,6 +1,6 @@
 # trendsetter-axi
 
-Terminal charts. trendsetter-axi renders matplotlib figures, and SVG from plotly or altair, as unicode text (braille lines, block bars, shaded heatmaps) that fits a fixed number of columns. Formerly prototyped as "termchart".
+Terminal charts. trendsetter-axi renders matplotlib figures and SVG as unicode text (braille lines, block bars, shaded heatmaps) that fits a fixed number of columns. Formerly prototyped as "termchart".
 
 ## Install
 
@@ -27,6 +27,8 @@ ax.set(title="Example", xlabel="x", ylabel="y")
 print(render_figure(fig, cols=80))
 ```
 
+`render_figure` rewrites the figure in place to fit the terminal (size, dpi, wrapped titles, tick labels, bar labels, legend), so call `savefig` before it and build a fresh figure for each render.
+
 `render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text.
 
 ## Extras
@@ -37,7 +39,7 @@ The core package depends only on numpy and matplotlib. The example gallery (`tre
 uv pip install -e '.[gallery]'
 ```
 
-That installs pandas, seaborn, plotly, altair, plotnine, kaleido and vl-convert-python. Exporting plotly figures to SVG goes through kaleido, which needs a Chrome or Chromium; if it is not on PATH, point `BROWSER_PATH` at the executable. Altair export uses vl-convert and needs no browser.
+That installs pandas, seaborn, plotly, altair and plotnine.
 
 ## Examples
 

@@ -1,11 +1,13 @@
-"""Render matplotlib figures and SVG (plotly, altair, ...) as unicode text for the terminal."""
+"""Render matplotlib figures and SVG as unicode text for the terminal."""
 from . import mpl as _mpl, svg as _svg
 
 __version__ = "0.1.0"
 
 
 def render_figure(fig, cols=80):
-    """Render a matplotlib Figure as text at most `cols` characters wide."""
+    """Render a matplotlib Figure as text at most `cols` characters wide.
+
+    The figure is modified in place to fit the cell grid; render a fresh figure each time."""
     return _mpl.render(fig, cols)[0]
 
 
