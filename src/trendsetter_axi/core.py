@@ -1,6 +1,6 @@
 """Renderer core: drawing primitives (pixel coords, y down) -> plain text grid.
 
-Shims (mpl.py = path B, svg.py = path C) only translate their source into calls on
+Shims (mpl.py for matplotlib figures, svg.py for SVG source) only translate their source into calls on
 Canvas. Everything about how a chart looks in text lives here, so this file is the
 part that would move to Rust.
 """

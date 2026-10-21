@@ -1,4 +1,4 @@
-"""Path B: a matplotlib RendererBase that forwards draw calls to core.Canvas.
+"""A matplotlib RendererBase that forwards draw calls to core.Canvas.
 
 Trick over mpl_ascii: the renderer's text metrics *are* character cells, and the
 layout engine is pointed at this renderer, so matplotlib itself lays out ticks,

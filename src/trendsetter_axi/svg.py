@@ -1,5 +1,5 @@
-"""Path C: SVG -> core.Canvas. Covers plotly (kaleido), Vega/Altair (vl-convert),
-matplotlib (svg.fonttype=none) and anything else that writes plain SVG."""
+"""SVG -> core.Canvas. Handles plain SVG such as plotly, Vega/Altair or
+matplotlib (svg.fonttype=none) output."""
 import base64, io, re
 import xml.etree.ElementTree as ET
 import numpy as np

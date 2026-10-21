@@ -27,8 +27,6 @@ ax.set(title="Example", xlabel="x", ylabel="y")
 print(render_figure(fig, cols=80))
 ```
 
-`render_figure` rewrites the figure in place to fit the terminal (size, dpi, wrapped titles, tick labels, bar labels, legend), so call `savefig` before it and build a fresh figure for each render.
-
 `render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text.
 
 ## Extras

@@ -28,6 +28,21 @@ def test_render_matplotlib_charts(cid, cols):
     assert any(ch.strip() for ch in text)
 
 
+@pytest.mark.parametrize("cid", ["04_mpl_bar", "44_mpl_longtitle"])
+def test_render_figure_leaves_figure_unchanged(cid):
+    fresh = BY_ID[cid]["make"]()
+    fig = BY_ID[cid]["make"]()
+    try:
+        expected = render_figure(fresh, 80)
+        size, dpi, title = fig.get_size_inches().copy(), fig.dpi, fig.axes[0].get_title()
+        render_figure(fig, 40)
+        assert render_figure(fig, 80) == expected
+        assert (fig.get_size_inches() == size).all() and fig.dpi == dpi and fig.axes[0].get_title() == title
+    finally:
+        plt.close(fresh)
+        plt.close(fig)
+
+
 def test_render_svg():
     fig = BY_ID["01_mpl_line"]["make"]()
     try:
