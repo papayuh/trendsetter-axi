@@ -6,6 +6,8 @@ part that would move to Rust.
 """
 import re
 import numpy as np
+from .cells import clusters, pack_entries, slice_cells, truncate, width, wrap
+
 HEIGHT = ' ▁▂▃▄▅▆▇█'   # eighth-height block glyphs
 
 # viridis ramps for heatmap cells
@@ -57,6 +59,8 @@ def clean_text(s):
 
 class Canvas:
     def __init__(self, w_px, h_px, cols, max_rows=60):
+        if not isinstance(cols, int) or cols < 1:
+            raise ValueError("cols must be a positive integer")
         self.w, self.h, self.cols = w_px, h_px, cols
         self.cw = w_px / cols; self.ch = 2 * self.cw
         self.rows = max(4, min(max_rows, round(h_px / self.ch)))
@@ -262,28 +266,81 @@ class Canvas:
         m[max(0, int(y0 * scale[1])):max(0, int(np.ceil(y1 * scale[1]))), max(0, int(x0 * scale[0])):max(0, int(np.ceil(x1 * scale[0])))] = True
         return m
 
-    def _line_dots(self, p, dashes):
-        """Dot (row, col) arrays along a polyline, honoring a dash pattern in px."""
-        sx, sy = 2 / self.cw, 4 / self.ch
-        out, dist = [], 0.0
+    def _visible_segments(self, p, clip):
+        """Liang-Barsky viewport clipping before any interpolation allocation.
+
+        Keep each original segment separate: NaNs never become connecting edges.
+        Return original lengths/offsets too, so invisible geometry advances dashes.
+        """
+        p = np.asarray(p, float)
+        a, b = p[:-1], p[1:]
+        valid = np.isfinite(a).all(1) & np.isfinite(b).all(1)
+        a, b = a[valid], b[valid]
+        delta = b - a
+        lengths = np.hypot(delta[:, 0], delta[:, 1])
+        distances = np.r_[0., np.cumsum(lengths)[:-1]] if len(a) else lengths
+        low, high = np.array([0., 0.]), np.array([self.w, self.h])
+        if clip is not None:
+            low, high = np.maximum(low, clip[:2]), np.minimum(high, clip[2:])
+        t0, t1 = np.zeros(len(a)), np.ones(len(a))
+        valid = np.isfinite(delta).all(1) & (low <= high).all()
+        for axis in (0, 1):
+            moving = delta[:, axis] != 0
+            near, far = np.full(len(a), -np.inf), np.full(len(a), np.inf)
+            np.divide(low[axis] - a[:, axis], delta[:, axis], out=near, where=moving)
+            np.divide(high[axis] - a[:, axis], delta[:, axis], out=far, where=moving)
+            valid &= moving | ((a[:, axis] >= low[axis]) & (a[:, axis] <= high[axis]))
+            t0 = np.maximum(t0, np.minimum(near, far))
+            t1 = np.minimum(t1, np.maximum(near, far))
+        valid &= t0 <= t1
+        a, delta, t0, t1 = a[valid], delta[valid], t0[valid], t1[valid]
+        start = np.clip(a + delta * t0[:, None], low, high)
+        end = np.clip(a + delta * t1[:, None], low, high)
+        return start, end, lengths[valid], distances[valid], t0, t1
+
+    def _line_dots(self, p, dashes, clip=None, staircase=False):
+        """Rasterize in bounded batches, reducing to occupied terminal dots.
+
+        At most max(2*cols, 4*rows)+2 samples per visible segment, at most
+        1024 segments per batch, at most 8*rows*cols returned dots. Every input
+        endpoint/extremum is sampled; missing-data gaps are never bridged.
+        """
+        sx, sy = 2 / self.cw, (2 if staircase else 4) / self.ch
+        scale = np.array([sx, sy])
+        a, b, lengths, distances, t0, t1 = self._visible_segments(p, clip)
         pat = None
         if dashes and dashes[1] is not None and len(dashes[1]) and sum(dashes[1]) > 0:
-            pat = np.asarray(dashes[1], float); pat = pat * max(1, self.cw * 0.6 / max(pat.min(), 1e-9) / 2)
-        for a, b in zip(p, p[1:]):
-            if not (np.isfinite(a).all() and np.isfinite(b).all()): continue
-            seg = np.hypot(*(b - a))
-            n = int(max(abs(b[0] - a[0]) * sx, abs(b[1] - a[1]) * sy)) + 2
-            t = np.linspace(0, 1, n)
-            q = a + (b - a) * t[:, None]
+            pat = np.asarray(dashes[1], float)
+            pat = pat * max(1, self.cw * 0.6 / max(pat.min(), 1e-9) / 2)
+        nr, nc = self.rows * (2 if staircase else 4), self.cols * 2
+        seen = np.zeros(nr * nc, bool)
+        out = []
+        for first in range(0, len(a), 1024):
+            last = first + 1024
+            start, delta = a[first:last], b[first:last] - a[first:last]
+            span = np.abs(delta) * scale
+            n = np.minimum(span.max(1).astype(int) + 2, max(nr, nc) + 2)
+            ids = np.repeat(np.arange(len(n)), n)
+            offset = np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+            t = offset * (1. / (n[ids] - 1))
+            q = start[ids] + delta[ids] * t[:, None]
+            rc = np.floor(q[:, ::-1] * scale[::-1]).astype(int)
             if pat is not None:
-                d = (dist + t * seg) % pat.sum()
-                on = np.searchsorted(np.cumsum(pat), d, side="right") % 2 == 0
-                q = q[on]
-            dist += seg
-            rc = np.stack([np.floor(q[:, 1] * sy), np.floor(q[:, 0] * sx)], 1).astype(int)
-            out.append(rc)
-            if pat is None and abs(b[1] - a[1]) * sy >= 3 and abs(b[1] - a[1]) * sy > 2 * abs(b[0] - a[0]) * sx >= 1:   # steep run: one dot column fragments into stray dots, so take the cell's other dot column too
-                out.append(rc ^ [0, 1])
+                phase = (distances[first:last][ids] +
+                         (t0[first:last][ids] + t * (t1[first:last] - t0[first:last])[ids]) * lengths[first:last][ids]) % pat.sum()
+                rc = rc[np.searchsorted(np.cumsum(pat), phase, side="right") % 2 == 0]
+            elif not staircase:
+                # Existing steep-run treatment: ink the cell's other dot column.
+                steep = (span[:, 1] >= 3) & (span[:, 1] > 2 * span[:, 0]) & (2 * span[:, 0] >= 1)
+                rc = np.concatenate([rc, rc[steep[ids]] ^ [0, 1]])
+            ok = (rc[:, 0] >= 0) & (rc[:, 0] < nr) & (rc[:, 1] >= 0) & (rc[:, 1] < nc)
+            rc = rc[ok]
+            keys = rc[:, 0] * nc + rc[:, 1]
+            _, keep = np.unique(keys, return_index=True)
+            keep.sort()  # first occurrence order for line stamps
+            keep = keep[~seen[keys[keep]]]
+            seen[keys[keep]] = True
+            out.append(rc[keep])
         return np.concatenate(out) if out else np.zeros((0, 2), int)
 
     def _poly_mask(self, polygons, nr, nc, sx, sy):
@@ -305,6 +362,26 @@ class Canvas:
                 for x0, x1 in zip(xa[::2], xa[1::2]):
                     m[r] ^= (xs >= x0) & (xs < x1)
         return m
+
+    def _serialize_rows(self, cell, sid_at, under, continuation, inv, heatrgb, color):
+        """Serialize cell-aligned rows; isolated for profiling separately from ink."""
+        rows = []
+        for r in range(self.rows):
+            parts = []
+            for c in range(self.cols):
+                if continuation[r, c]: continue
+                ch = cell[r, c] or " "
+                o = sid_at[r, c]
+                if color and (r, c) in heatrgb:
+                    (a, b, d), (x, y, z) = heatrgb[r, c]
+                    ch = f"\x1b[48;2;{a};{b};{d};38;2;{x};{y};{z}m{ch}\x1b[0m"
+                elif color and o >= 0 and ch != " ":
+                    rr, gg, bb = (int(v * 255) for v in inv[o])
+                    bgc = "\x1b[48;2;%d;%d;%dm" % tuple(int(v * 255) for v in inv[under[r, c]]) if under[r, c] >= 0 else ""
+                    ch = f"{bgc}\x1b[38;2;{rr};{gg};{bb}m{ch}\x1b[0m"
+                parts.append(ch)
+            rows.append("".join(parts).rstrip())
+        return rows
 
     # ---- compose ----------------------------------------------------------------
     def render(self, color=False):
@@ -455,7 +532,7 @@ class Canvas:
                 if sid in famsid: famruns.setdefault(sid, []).append((polys, clip)); continue
                 if ridge and sid == -1: continue   # a ridge's black outline would float above its scaled-down block
                 for p in polys:
-                    rc = self._line_dots(p, dashes)
+                    rc = self._line_dots(p, dashes, clip)
                     put_dots(rc, sid, clip)
                     if sid >= 0 and len(rc) > 8: stamps.setdefault(sid, []).append(rc)
             else:
@@ -536,13 +613,9 @@ class Canvas:
                 for polys, clip in runs:
                     span = {}
                     for p in polys:
-                        p = np.asarray(p, float)
-                        for a, b in zip(p, p[1:]):
-                            n = int(max(abs(b[0] - a[0]) / (self.cw / 2), abs(b[1] - a[1]) / (self.ch / 2))) + 2
-                            for x, y in a + (b - a) * np.linspace(0, 1, n)[:, None]:
-                                if np.isfinite(x) and np.isfinite(y) and (clip is None or clip[0] <= x <= clip[2] and clip[1] <= y <= clip[3]):
-                                    c_, r_ = self._col(x), self._row(y)
-                                    if 0 <= c_ < C_ and 0 <= r_ < R_: lo, hi = span.get(c_, (r_, r_)); span[c_] = (min(lo, r_), max(hi, r_))
+                        for r_, c_ in self._line_dots(p, None, clip, staircase=True) // [2, 2]:
+                            lo, hi = span.get(c_, (r_, r_))
+                            span[c_] = (min(lo, r_), max(hi, r_))
                     prev = None
                     for c_ in sorted(span):
                         top, bot = span[c_]
@@ -576,6 +649,7 @@ class Canvas:
 
         # text: real characters; never overwrite earlier text
         taken = np.zeros((R_, C_), bool)
+        continuation = np.zeros((R_, C_), bool)  # trailing cell of wide text
         placed = []
         order = sorted(self.texts, key=lambda t: {"title": 0, "label": 1, "legend": 2, "annot": 3}.get(t[6], 4))
         for x, y, s, ha, va, angle, role in order:
@@ -583,8 +657,8 @@ class Canvas:
                 self.side.append(("y2" if x > self.w / 2 else "y", s)); continue
             if angle and role == "tick":  # rotated tick labels: lay flat, hang below the anchor
                 ha, va = "center", ("top" if y > self.h / 2 else "bottom")
-            if len(s) > C_ and role in ("title", "label", "annot", "other") and "\n" not in s:
-                import textwrap; s = "\n".join(textwrap.wrap(s, C_))
+            if role in ("title", "label", "annot", "other"):
+                s = "\n".join(wrap(s, C_))
             lines = s.split("\n")
             n = len(lines)
             yc = {"top": y + n * self.ch / 2, "bottom": y - n * self.ch / 2, "baseline": y - n * self.ch / 2}.get(va, y)
@@ -593,13 +667,13 @@ class Canvas:
             for i, line in enumerate(lines):
                 line = line.strip() if n > 1 else line
                 r = r0 + i
-                w = len(line)
+                w = width(line)
                 c = round(x / self.cw - (w / 2 if ha == "center" else w if ha == "right" else 0))
                 if w > C_:
-                    line = line[:C_ - 1] + "…"; w = C_; self.meta["truncated"].append(s); self.meta["clipped"].append(s)
+                    line = truncate(line, C_); w = width(line); self.meta["truncated"].append(s); self.meta["clipped"].append(s)
                 if role in ("tick", "label") and (c < 0 or c + w > C_) and w > 4:  # cut, don't slide over the plot
                     keep = w + min(c, 0) - max(0, c + w - C_)
-                    line = line[:max(3, keep) - 1] + "…"; c = max(c, 0); w = len(line); self.meta["truncated"].append(s); self.meta["clipped"].append(s)
+                    line = truncate(line, max(3, keep)); c = max(c, 0); w = width(line); self.meta["truncated"].append(s); self.meta["clipped"].append(s)
                 if c < 0 or c + w > C_ or not 0 <= r < R_:
                     if not 0 <= r < R_ and abs(r - np.clip(r, 0, R_ - 1)) > 1:
                         self.meta["dropped"].append((role, s, "offgrid")); continue
@@ -611,8 +685,8 @@ class Canvas:
                     if ink:
                         keep = w - ink[-1] - 1 if ha == "right" else ink[0]
                         if keep < 3: self.meta["dropped"].append((role, s, "ink")); continue
-                        line = "…" + line[w - keep + 1:] if ha == "right" else line[:keep - 1] + "…"
-                        c += w - keep if ha == "right" else 0; w = keep; self.meta["truncated"].append(s)
+                        line = "…" + slice_cells(line, w - keep + 1) if ha == "right" else truncate(line, keep)
+                        c += w - keep if ha == "right" else 0; w = width(line); self.meta["truncated"].append(s)
                 busy = lambda r: taken[r, c:c + w].any() or (role == "tick" and taken[r, max(0, c - 1):c + w + 1].any())
                 if ridge and role not in ("tick", "title", "label", "legend") and 0 <= r < R_ and ((fill[r, c:c + w] >= 0).any() or busy(r)):
                     # a note over a ridge body: slide it along its own row to the free run nearest its anchor (right margin first), then to a neighbour row; never drop it
@@ -620,7 +694,7 @@ class Canvas:
                     pre = next((f"{t[2]}: " for t in self.texts if t[6] == "tick" and t[3] != "center" and t[0] < self.w / 2 and self._row(t[1]) == r), "")   # moved off its row: say whose it is
                     for r2 in (r, r - 1, r + 1):
                         if not 0 <= r2 < R_: continue
-                        pw = w + (len(pre) if r2 != r else 0)
+                        pw = w + (width(pre) if r2 != r else 0)
                         ok = [c2 for c2 in range(C_ - pw + 1) if not (fill[r2, c2:c2 + pw] >= 0).any() and not taken[r2, max(c2 - 1, 0):c2 + pw + 1].any() and not cell[r2, c2:c2 + pw].any()]
                         if ok:
                             c = min(ok, key=lambda c2: abs(c2 - c)); r = r2
@@ -633,8 +707,14 @@ class Canvas:
                         self.meta["dropped"].append((role, s, "overlap")); continue
                     r = alt[0]; r0 += r - (r0 + i)
                 taken[r, c:c + w] = True
-                for k, ch in enumerate(line):
-                    cell[r, c + k] = ch; sid_at[r, c + k] = -2
+                k = c
+                for token, size in clusters(line):
+                    if not size: continue
+                    cell[r, k] = token
+                    sid_at[r, k:k + size] = -2
+                    if size > 1:
+                        continuation[r, k + 1:k + size] = True
+                    k += size
                 self.meta["placed"].append((role, line)); placed.append((role, line, r, c, yc / self.ch + i - (n - 1) / 2))
 
 
@@ -660,21 +740,7 @@ class Canvas:
             cell[r, c] = "─" if sid is None or sid < 0 else (shade_of.get(sid, "█") if kind == "fill" and sid in shade_of else ramp(lum(inv[sid])) if kind == "fill" and self.cont and sid in inv else glyph(sid) if multi else ("█" if kind == "fill" else "•" if kind == "mark" else "─"))
             sid_at[r, c] = sid if sid is not None else -2
 
-        rows = []
-        for r in range(R_):
-            out = ""
-            for c in range(C_):
-                ch = cell[r, c] or " "
-                o = sid_at[r, c]
-                if color and (r, c) in heatrgb:
-                    (a, b, d), (x, y, z) = heatrgb[r, c]
-                    ch = f"\x1b[48;2;{a};{b};{d};38;2;{x};{y};{z}m{ch}\x1b[0m"
-                elif color and o >= 0 and ch != " ":
-                    rr, gg, bb = (int(v * 255) for v in inv[o])
-                    bgc = "\x1b[48;2;%d;%d;%dm" % tuple(int(v * 255) for v in inv[under[r, c]]) if under[r, c] >= 0 else ""
-                    ch = f"{bgc}\x1b[38;2;{rr};{gg};{bb}m{ch}\x1b[0m"
-                out += ch
-            rows.append(out.rstrip())
+        rows = self._serialize_rows(cell, sid_at, under, continuation, inv, heatrgb, color)
         while rows and not rows[-1].strip(): rows.pop()
         if self.heat: rows = [r for i, r in enumerate(rows) if r.strip() or not (i and not rows[i - 1].strip())]   # axes shrunk to the observed rows but the canvas did not: at most one blank row
         if self.ramp:   # colour key: ends carry the real values
@@ -682,15 +748,14 @@ class Canvas:
             NL = self.levels; gl = HEAT8 if NL == 8 else HEAT
             cellk = lambda i, g: "\x1b[48;2;%d;%d;%d;38;2;%sm%s\x1b[0m" % (*ramp_rgb(i, NL), "%d;%d;%d" % ramp_rgb(i, NL), g) if color else g
             ents = [f"{cellk(i, g)} {edges[i]}-{edges[i + 1]}" for i, g in enumerate(gl)]
-            if NL == 8: rows += [f"{lab}  ".lstrip() + "  ".join(ents[:4]), "  ".join(ents[4:])]   # two lines: eight ranges do not fit one
-            else: rows.append(f"{lab}  ".lstrip() + "  ".join(ents))
+            rows.extend(pack_entries(lab, ents, C_))
         while rows and not rows[0].strip(): rows.pop(0)
         if self.ytop and rows:   # y title sits on the title row's free left, over its axis
             for i, (side, s) in enumerate(self.side):
-                if side == "y" and len(s) + 4 <= len(rows[0]) - len(rows[0].lstrip()): rows[0] = f"y: {s}" + rows[0][len(s) + 3:]; self.side.pop(i); break
+                if side == "y" and width(s) + 4 <= width(rows[0]) - width(rows[0].lstrip()): rows[0] = f"y: {s}" + slice_cells(rows[0], width(s) + 3); self.side.pop(i); break
         for side, s in self.side:
-            rows.append(f"{side}: {s}"[:C_])
-        if rscaled: rows.append("each ridge scaled to its own peak"); self.meta["ridge_scaled"] = True
+            rows.extend(wrap(f"{side}: {s}", C_))
+        if rscaled: rows.extend(wrap("each ridge scaled to its own peak", C_)); self.meta["ridge_scaled"] = True
         while rows and not rows[0].strip(): rows.pop(0)
         while rows and not rows[-1].strip(): rows.pop()
         self.meta.update(cols=C_, rows=R_, n_series=nser,

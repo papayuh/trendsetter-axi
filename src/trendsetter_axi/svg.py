@@ -4,6 +4,7 @@ import base64, io, re
 import xml.etree.ElementTree as ET
 import numpy as np
 from .core import Canvas, sup
+from .cells import width
 
 NS = re.compile(r"\{.*?\}")
 NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, .5, 0), "blue": (0, 0, 1),
@@ -239,7 +240,7 @@ def render(svg, cols=80, ansi=False, shift=0):
 
     walk(root, base, {}, [])
     if not shift:  # tick/label text starting left of column 0 -> redo with the drawing shifted right by that overflow
-        left = [-(t[0] / cv.cw - len(t[2]) * {"right": 1, "center": .5}.get(t[3], 0))
+        left = [-(t[0] / cv.cw - width(t[2]) * {"right": 1, "center": .5}.get(t[3], 0))
                 for t in cv.texts if t[6] in ("tick", "label") and t[5] in (0, 180) and "\n" not in t[2]]
         ov = int(np.ceil(max(left, default=0)))
         if ov > 0: return render(svg, cols, ansi, min(ov, cols // 4))

@@ -29,9 +29,11 @@ print(render_figure(fig, cols=80))
 
 `render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text.
 
+`cols` is a terminal-cell budget for every output line, including titles, legends, color keys and captions. CJK characters use two cells; combining marks and ANSI styling do not add cells. Color keys wrap between complete numeric ranges, using compact notation for extreme values. Widths too small for a single character or key entry raise `ValueError` rather than emitting an overwide line.
+
 ## Extras
 
-The core package depends only on numpy and matplotlib. The example gallery (`trendsetter_axi.gallery`, 50 charts) needs pandas; the charts built with other libraries need those libraries too:
+The core package depends on numpy, matplotlib and wcwidth. The example gallery (`trendsetter_axi.gallery`, 50 charts) needs pandas; the charts built with other libraries need those libraries too:
 
 ```
 uv pip install -e '.[gallery]'
@@ -138,6 +140,8 @@ uv pip install -e '.[dev]' --python .venv/bin/python
 ```
 
 `python -m trendsetter_axi.mpl --test` runs the extra self-checks bundled with the matplotlib renderer.
+
+Raster sampling clips each segment to the viewport first, caps samples at terminal resolution, and reduces redundant ink to occupied dots without bridging NaN gaps. See [render budgets and before/after profiling](benchmarks/README.md) for reproducible timings and work limits.
 
 ## License
 

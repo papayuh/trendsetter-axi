@@ -11,6 +11,7 @@ from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.collections import QuadMesh, PolyCollection
 from matplotlib.container import BarContainer
 from .core import Canvas
+from .cells import truncate, width, wrap
 
 CW, CH = 7.0, 14.0  # one cell in points (dpi 72 => pixels)
 
@@ -31,7 +32,7 @@ class TextRenderer(RendererBase):
     def get_text_width_height_descent(self, s, prop, ismath):
         from .core import clean_text
         lines = clean_text(s).split("\n")
-        return max(len(l) for l in lines) * self.cv.cw, self.cv.ch / 1.2, 0
+        return max(width(l) for l in lines) * self.cv.cw, self.cv.ch / 1.2, 0
     def open_group(self, s, gid=None): self.groups.append(gid if gid and gid.startswith('trendsetter_axi-candle-') else s or "")
     def close_group(self, s):
         if self.groups: self.groups.pop()
@@ -248,7 +249,7 @@ def _snap(fig, cv):
             r = bb.width / cv.cw / nc if nc else 0
             if nc and r > 1 and abs(r - round(r)) > 1e-6:   # a fractional pitch (5.83 cols per column) draws cells of 5 and 6 cols, so values drift off their month labels: whole cells per data column
                 x0c = round(pos.x0 * fig.bbox.width / cv.cw); k = max(1, int(r) if r < 2 else round(r))
-                vl = max((len(t.get_text()) for t in ax.texts if t.get_gid() == "keep"), default=0)
+                vl = max((width(t.get_text()) for t in ax.texts if t.get_gid() == "keep"), default=0)
                 if vl and r > vl + 1: k = vl + 1   # labelled cells: value + one shade column, not a glyph on both sides of every number
                 while k > 1 and (x0c + k * nc) * cv.cw > fig.bbox.width: k -= 1
                 ax.set_position([(x0c + .25) * cv.cw / fig.bbox.width, pos.y0, k * nc * cv.cw / fig.bbox.width, pos.height]); pos = ax.get_position(); moved = True
@@ -268,7 +269,7 @@ def _snap(fig, cv):
                     tx = [t for t in ax.texts if t.get_transform() == ax.transData and (t.get_ha() == "right" or t.get_text().startswith(_ylab(ax, t))) and abs(t.get_position()[1] - yt[np.abs(yt - t.get_position()[1]).argmin()]) <= .45 * g]
                     x0, x1 = ax.get_xlim()
                     if tx and x1 > x0 and all(x0 <= t.get_position()[0] <= x1 for t in tx):
-                        gc = max(len(t.get_text()) for t in tx) + 2; W = bb.width / cv.cw
+                        gc = max(width(t.get_text()) for t in tx) + 2; W = bb.width / cv.cw
                         if gc < W / 2: nx = x1 + (x1 - x0) * gc / (W - gc); ax.set_xlim(x0, nx); [(t.set_position((nx, t.get_position()[1])), t.set_ha("right")) for t in tx]
                 for t in ax.texts:   # in-plot ridge labels (ax.text next to a baseline) sit on that baseline's row, not the one above
                     ty = t.get_position()[1]; near = yt[np.abs(yt - ty).argmin()]
@@ -327,7 +328,7 @@ def _shorten(fig, cols):
         for axis, w in ((ax.xaxis, max(5, int(ax.get_position().width * cols) // max(1, len(ax.get_xticks())))), (ax.yaxis, max(5, cols // 3))):  # y labels: at most a third of the width
             f = axis.get_major_formatter()
             if not isinstance(f, (FixedFormatter, FuncFormatter, StrCategoryFormatter)): continue   # numeric/date labels are short; wrapping them would lose set_locs
-            axis.set_major_formatter(FuncFormatter(lambda v, p, f=f, w=w: (lambda t: t if len(t) <= w else t[:w - 1] + "…")(str(f(v, p)))))
+            axis.set_major_formatter(FuncFormatter(lambda v, p, f=f, w=w: truncate(str(f(v, p)), w)))
 
 
 WEEKDAYS = dict(Mon="Monday", Tue="Tuesday", Wed="Wednesday", Thu="Thursday", Fri="Friday", Sat="Saturday", Sun="Sunday")
@@ -359,8 +360,8 @@ def _collapse(fig):
             ax.set_title(f"{ax.get_title()}\n{note}" if ax.get_title() else note)
 
 
-def _ramp(fig):
-    """A colorbar on a heat grid becomes a one-line key, `label ░ a-b ▒ b-c ▓ c-d █ d-e`, the four bin ranges in real values (3 sig digits)."""
+def _ramp(fig, cols=80):
+    """Replace a heat colorbar with complete, cell-wrapped numeric ranges."""
     f = lambda v: (lambda t: np.format_float_positional(float(t), trim="-") if "e" in t else t.rstrip("."))(f"{v:#.3g}")   # 3 significant digits, never scientific
     fig._tc_ramp = None; L = getattr(fig, "_tc_levels", 4)
     for ax in list(fig.axes):
@@ -368,13 +369,17 @@ def _ramp(fig):
             cb = getattr(m, "colorbar", None)
             if cb is None or np.ndim(m.get_array()) != 2 and not isinstance(m, QuadMesh): continue
             m.autoscale_None()
-            fig._tc_ramp = (cb.ax.get_ylabel() or cb.ax.get_xlabel(), [f(float(m.norm.inverse(k / L))) for k in range(L + 1)]); cb.remove()
+            values = [float(m.norm.inverse(k / L)) for k in range(L + 1)]
+            edges = [f(v) for v in values]
+            if any(width(a + "-" + b) + (3 if L == 8 else 2) > cols for a, b in zip(edges, edges[1:])):
+                edges = [f"{v:.3g}" for v in values]  # huge/tiny values: keep ranges atomic
+            fig._tc_ramp = (cb.ax.get_ylabel() or cb.ax.get_xlabel(), edges); cb.remove()
             return
 
 
 def prepare(fig, cols):
     """Resize the figure to the cell grid. Returns (w_px, h_px)."""
-    _ramp(fig); _collapse(fig); fig._tc_ytop = False
+    _ramp(fig, cols); _collapse(fig); fig._tc_ytop = False
     w_in, h_in = fig.get_size_inches()
     rows = max(10, min(36, round(cols * (h_in / w_in) * CW / CH)))
     fig.set_dpi(72)
@@ -383,10 +388,10 @@ def prepare(fig, cols):
     for ax in fig.axes:  # core lays rotated tick labels flat and drops collisions; don't let the layout reserve room for the rotation
         ax.tick_params(axis="both", labelrotation=0)
         for l in ax.get_xticklabels(): l.set_horizontalalignment("center")
-    import textwrap  # wrap long titles/xlabels now, so the layout pass reserves the extra lines
+    # Wrap titles/xlabels in cells now, so layout reserves their extra lines.
     for t, w, role in [(getattr(fig, "_suptitle", None), cols, "title")] + [(t, max(12, int(ax.get_position().width * cols)), role) for ax in fig.axes for t, role in ((ax.title, "title"), (ax.xaxis.label, "label"))]:
-        if t is not None and len(t.get_text()) > w and "\n" not in t.get_text():
-            t.set_text("\n".join(textwrap.wrap(t.get_text(), w))); fig._wrapped.update({l: role for l in t.get_text().split("\n")})
+        if t is not None and any(width(line) > w for line in t.get_text().split("\n")):
+            t.set_text("\n".join(wrap(t.get_text(), w))); fig._wrapped.update({l: role for l in t.get_text().split("\n")})
     nl = lambda t: len(t.get_text().split("\n")) * bool(t.get_text()) if t is not None else 0
     over = nl(getattr(fig, "_suptitle", None)) + max([nl(ax.title) + nl(ax.xaxis.label) for ax in fig.axes], default=0) + 5   # title/label lines + tick row + tight_layout pads
     min_plotrows = max(6, getattr(fig, '_tc_min_plotrows', 6))
@@ -398,7 +403,7 @@ def prepare(fig, cols):
         leg = ax.get_legend()
         if leg is None or not (cols < 60 or len(leg.get_texts()) > 8): continue
         labels = [t.get_text() for t in leg.get_texts()]
-        ncol = max(1, min(len(labels), int(ax.get_position().width * cols) // (max(map(len, labels)) + 5)))
+        ncol = max(1, min(len(labels), int(ax.get_position().width * cols) // (max(map(width, labels)) + 5)))
         below = (1.4 + len(ax.xaxis.label.get_text().split("\n")) * bool(ax.xaxis.label.get_text())) * CH   # tick row + xlabel lines
         ax.legend(leg.legend_handles, labels, title=leg.get_title().get_text() or None, loc="upper center", ncol=ncol, frameon=False, labelspacing=0.25,
                   bbox_to_anchor=(0.5, 0), bbox_transform=ax.transAxes + ScaledTranslation(0, -below / 72, fig.dpi_scale_trans))
@@ -420,14 +425,14 @@ def prepare(fig, cols):
                 from .ticks import tick_formatter
                 v = np.array([b.get_width() for b in c], float); f = tick_formatter(v[np.isfinite(v)], 3, strict=True)
                 lab = [f(x) if np.isfinite(x) else "" for x in v]
-                ax.bar_label(c, labels=lab, padding=CW); ax._tc_hlabels = max(map(len, lab))
+                ax.bar_label(c, labels=lab, padding=CW); ax._tc_hlabels = max(map(width, lab))
                 rows = min(max(rows, 2 * len(c) + over + 1), 56); fig.set_size_inches(cols * CW / 72, rows * CH / 72)
         for c in ax.containers:   # bar values: all when they fit, else the extremes
             if isinstance(c, BarContainer) and 0 < len(c) <= 60 and c.orientation == "vertical" and getattr(fig, "_tc_barlabels", True):
                 from .ticks import tick_formatter
                 v = np.array([b.get_height() for b in c], float); f = tick_formatter(v[np.isfinite(v)], 3, strict=True)
                 lab = [f(x) if np.isfinite(x) else "" for x in v]
-                if not all(len(l) + 1 <= ax.get_position().width * cols / len(c) for l in lab):
+                if not all(width(l) + 1 <= ax.get_position().width * cols / len(c) for l in lab):
                     keep = {i for i in (int(np.nanargmax(v)), int(np.nanargmin(v))) if v[max(0, i - 2):i + 3].max() <= v[i]}   # an extreme whose neighbours are taller would print over them
                     lab = [l if i in keep else "" for i, l in enumerate(lab)]
                 ax.bar_label(c, labels=lab, padding=0); ax._tc_labels = True
@@ -491,7 +496,7 @@ def render(fig, cols=80, color=False):
     del fig._get_renderer
     _hook(fig, False)
     text = rend.cv.render(color=color)
-    if cap: text += "\n" + cap; rend.cv.meta["clipped"] = cap
+    if cap: text += "\n" + "\n".join(wrap(cap, cols)); rend.cv.meta["clipped"] = cap
     return text, rend.cv.meta
 
 
