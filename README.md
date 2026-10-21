@@ -131,6 +131,17 @@ Heatmap (gallery id `10_mpl_imshow`):
 $/gal (today's)  ░ 2.00-2.79  ▒ 2.79-3.58  ▓ 3.58-4.37  █ 4.37-5.16
 ```
 
+## Demo
+
+One fixed, deterministic tour: basic charts, the same chart at 100/60/40/24 columns with measured max line width, a 100k-point render with timing, a CJK title, `render_svg`, and six gallery charts.
+
+```
+python examples/demo.py
+python examples/demo.py --cols 100 --section widths --section gallery
+```
+
+Sections: `basic`, `widths`, `big`, `cjk`, `svg`, `gallery`. Chart text is identical run to run; only the `[timing]` line varies.
+
 ## Development
 
 ```
