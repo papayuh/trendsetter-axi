@@ -74,7 +74,7 @@ class TextRenderer(RendererBase):
         if not filled and gc.get_linewidth() > 0:
             rgb, a = self._rgb(gc.get_rgb())
             if a > 0.05:
-                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, legend=legend, rule=self._in("LineCollection"), data=self._in("line2d") or self._in("LineCollection"))
+                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, legend=legend, rule=self._in("LineCollection"), data=not legend and (self._in("line2d") or self._in("LineCollection")))
 
     def draw_markers(self, gc, marker_path, marker_trans, path, trans, rgbFace=None):
         if self._in("axis") and not self._in("legend"): return  # tick marks: the frame says enough
@@ -193,16 +193,27 @@ def _hook(fig, on):
             else: a.__dict__.pop("draw", None)
 
 
+def _fixed(ax, axis):
+    """(first, second) limit of `axis` the caller (or a library such as plotnine) set: a side that differs from what autoscaling gives.
+    ponytail: a side set to exactly the autoscaled value counts as free; record set_xlim/set_ylim calls if that ever matters."""
+    get, setlim = (ax.get_xlim, ax.set_xlim) if axis == "x" else (ax.get_ylim, ax.set_ylim)
+    if getattr(ax, f"get_autoscale{axis}_on")(): return False, False
+    lim = get()
+    ax.autoscale(True, axis); auto = get(); setlim(lim)
+    return tuple(not np.isclose(a, b) for a, b in zip(lim, auto))
+
+
 def _pad(fig, cv):
-    """Keep data one row clear of the frame (a braille peak in the border row pokes through it); room for bar value labels."""
+    """Keep data one row clear of the frame (a braille peak in the border row pokes through it); room for bar value labels.
+    A limit the caller set stays where it is: only free sides move."""
     for ax in fig.axes:
         if _heat_axes(ax) or ax.get_yscale() != "linear": continue
-        bb = ax.get_window_extent()
+        bb, fx, fy = ax.get_window_extent(), _fixed(ax, "x"), _fixed(ax, "y")
         if getattr(ax, "_tc_hlabels", 0) and bb.width:   # barh values sit past the bar ends: room for the longest
             x0, x1 = ax.get_xlim(); ends = [b.get_x() + b.get_width() for c in ax.containers if isinstance(c, BarContainer) for b in c]
             need = (ax._tc_hlabels + 1) * cv.cw / bb.width * (x1 - x0)
-            if x1 > x0 and ends and x1 - max(ends) < need and ax.get_autoscalex_on(): ax.set_xlim(right=max(ends) + need)   # an explicit xlim is the caller's domain
-        if not ax.get_autoscaley_on(): continue   # explicit ylim: the caller chose the domain; padding it would show data they cut off
+            if x1 > x0 and ends and x1 - max(ends) < need and not fx[1]: ax.set_xlim(right=max(ends) + need)
+        if all(fy): continue
         for _ in range(3):   # row height in data units changes as the limits grow: settle
             lo, hi = ax.get_ylim()
             if hi < lo or not bb.height: break
@@ -225,8 +236,8 @@ def _pad(fig, cv):
                 lo_t, hi_t = (y - n * row, y) if va == "top" else (y, y + n * row) if va in ("bottom", "baseline") else (y - n * row / 2, y + n * row / 2)
                 d = [min(d[0], lo_t), max(d[1], hi_t)]
             if np.isfinite(d).all():
-                if hi - d[1] < need * row and free(hi): ax.set_ylim(top=d[1] + need * row)
-                if d[0] - lo < 1.2 * row and free(lo): ax.set_ylim(bottom=d[0] - 1.2 * row)
+                if hi - d[1] < need * row and free(hi) and not fy[1]: ax.set_ylim(top=d[1] + need * row)
+                if d[0] - lo < 1.2 * row and free(lo) and not fy[0]: ax.set_ylim(bottom=d[0] - 1.2 * row)
 
 
 def _rows_of(ax):
@@ -305,6 +316,8 @@ def _snap(fig, cv):
         elif _dist(ax) and ax.get_yscale() == "linear":   # violin: rules fall on pixel->row (floor); ticks sit on row edges, so a rule 0.2 units from a tick shared its row. Put ticks on row centres: rule rows are then within half a row of the value
             yt = [v for v in ax.get_yticks() if min(lo, hi) <= v <= max(lo, hi)]
             if len(yt) >= 2:
+                p = abs(yt[1] - yt[0]) / abs(hi - lo) * bb.height / cv.ch   # rows per tick step: fractional, ticks drift up to half a row off any common phase
+                if p >= 1 and int(p) / p >= .75: ax.set_position([pos.x0, pos.y1 - pos.height * int(p) / p, pos.width, pos.height * int(p) / p]); pos = ax.get_position()   # whole rows per step, top kept: every tick can sit on a row centre
                 H = fig.bbox.height; fr = np.array([((H - ax.transData.transform((0, v))[1]) / cv.ch) % 1 for v in yt]); a = np.angle(np.exp(2j * np.pi * (fr - .5)).mean()) / (2 * np.pi)
                 ax.set_position([pos.x0, pos.y0 + a * cv.ch / H, pos.width, pos.height]); moved = True
         if rows and rows * cv.ch <= bb.height + .5 * cv.ch:
@@ -704,7 +717,7 @@ def _test():
     assert re.search(r"48;2;[\d;]+m\x1b\[38;2;[\d;]+m─", v), "violin: median rule keeps the body colour behind it (no black cut-out)"
     # P10: violin medians vs the printed y ticks: each rule's row, read through the tick-label rows, is within 0.5 row of the true median
     rng = np.random.default_rng(3); mu = [1.8, 2.53, 2.74, 3.3]; data = [rng.normal(m, .45, 500) for m in mu]; data = [d - np.median(d) + m for d, m in zip(data, mu)]
-    f = Figure(figsize=(8, 4.5)); ax = f.subplots(); ax.violinplot(data, showmedians=True, showextrema=False); f.tight_layout()
+    f = Figure(figsize=(8, 4.5)); ax = f.subplots(); ax.violinplot(data, showmedians=True, showextrema=False); ax.set_ylim(0.8, 5); f.tight_layout()
     rows = strip(render(f, 80)[0]).split("\n"); tk = [(i, float(m.group(1))) for i, r in enumerate(rows) if (m := re.match(r"\s*(\d+(?:\.\d+)?)\s*│", r))]
     (i0, v0), (i1, v1) = tk[0], tk[-1]; pr = (v0 - v1) / (i1 - i0)   # value per row from the printed ticks
     rr = [i for i, r in enumerate(rows) if "───" in r and "└" not in r][::-1]; assert len(rr) == 4, ("violin: one median rule per group", rr)

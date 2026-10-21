@@ -14,6 +14,9 @@ def test_fake_renderer_fails_the_suite():
                        env={**os.environ, "TSAXI_FAKE_RENDERER": "x"}, cwd=HERE.parent, capture_output=True, text=True, timeout=300)
     assert r.returncode != 0, r.stdout
     failed = set(re.findall(r"^FAILED \S+::(\w+)", r.stdout, re.M))
-    defined = {n for f in RENDER_TESTS for n in re.findall(r"^def (test_\w+)", (HERE / f).read_text(), re.M)}
+    c = subprocess.run([sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:cacheprovider", *(str(HERE / f) for f in RENDER_TESTS)],
+                       cwd=HERE.parent, capture_output=True, text=True, timeout=300)
+    assert c.returncode == 0, c.stdout
+    defined = {m.group(1) for line in c.stdout.splitlines() if (m := re.match(r"\S+::(\w+)", line))}
     # test_gallery_ids never renders anything
     assert defined - failed == {"test_gallery_ids"}, sorted(defined - failed)

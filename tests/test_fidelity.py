@@ -34,8 +34,8 @@ def body(text):
     """Rows and columns strictly inside the axes frame, as a list of strings."""
     rows = text.split("\n")
     top = next(i for i, r in enumerate(rows) if "┌" in r)
-    bottom = next(i for i, r in enumerate(rows) if "└" in r)
     left, right = rows[top].index("┌"), rows[top].rindex("┐")
+    bottom = next(i for i, r in enumerate(rows) if i > top and r[left:left + 1] == "└")   # the frame corner, not a box-drawn curve
     return [r.ljust(right + 1)[left + 1:right] for r in rows[top + 1:bottom]]
 
 
@@ -62,11 +62,19 @@ X = np.linspace(0, 10, 400)   # 400 points over ~55 columns: every segment is sh
 
 # ---- colour and width must not change what is drawn ------------------------------------------------------
 
-@pytest.mark.parametrize("neutral", ["black", "0.2", "#444444", "dimgray", "0.7"])
+@pytest.mark.parametrize("neutral", ["black", "0.2", "#444444", "dimgray", "0.7", "lightgray"])
 def test_dense_curve_survives_color_change(neutral):
     blue = render(lambda ax: ax.plot(X, np.sin(X), color="tab:blue"))
     assert len(BRAILLE.findall("".join(body(blue)))) > 40, blue   # the fixture is a visible curve
     assert render(lambda ax: ax.plot(X, np.sin(X), color=neutral)) == blue
+
+
+@pytest.mark.parametrize("neutral", ["black", "0.7", "lightgray"])
+@pytest.mark.parametrize("build", [lambda ax, c: ax.plot([0, 10], [5, 5], color=c), lambda ax, c: ax.step(np.arange(8), [1, 3, 1, 4, 2, 5, 1, 3], color=c)], ids=["flat", "step"])
+def test_axis_aligned_curve_survives_color_change(build, neutral):
+    ink = lambda c: {i for r in body(render(lambda ax: build(ax, c))) for i, ch in enumerate(r) if ch != " "}
+    blue = ink("tab:blue")
+    assert len(blue) > 30 and len(ink(neutral)) >= 0.9 * len(blue)   # a flat or stepped series in any colour is drawn across the plot, not taken for a gridline
 
 
 @pytest.mark.parametrize("lw", [0.5, 3, 6])
@@ -92,6 +100,13 @@ def test_explicit_ylim_stays_explicit():
 def test_autoscaled_ylim_still_shows_the_whole_series():
     ticks = y_ticks(render(lambda ax: ax.plot([0, 100, 0])))
     assert min(ticks) <= 0 and max(ticks) >= 100, ticks
+
+
+def test_one_explicit_side_leaves_the_other_padded():
+    spike = render(lambda ax: (ax.plot([0, 100, 0]), ax.margins(y=0), ax.set_ylim(bottom=-10)))   # autoscaling alone would put the peak on the top edge
+    ticks = y_ticks(spike)
+    assert min(ticks) >= -10 and max(ticks) >= 100, spike
+    assert not BRAILLE.search(next(r for r in spike.split("\n") if "┌" in r)), spike   # the free top is padded: the peak is not in the border row
 
 
 def test_explicit_xlim_stays_explicit():
@@ -162,6 +177,16 @@ def test_svg_clip_rect_with_transform_and_nesting():
 def test_svg_clip_outside_everything_draws_nothing():
     assert ink_columns(tsa.render_svg(line_svg('<rect x="0" y="0" width="400" height="100"/>'), 80))   # the same line, unclipped, is there
     assert not ink_columns(tsa.render_svg(line_svg('<rect x="500" y="0" width="10" height="10"/>'), 80))
+
+
+def test_svg_dense_dark_line_outside_matplotlib_is_drawn():
+    pts = " ".join(f"L {x:.1f} {50 - 40 * np.sin(x / 30):.1f}" for x in np.linspace(0, 400, 600))
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100">
+<g class="gridlayer"><path class="ygrid crisp" d="M 0 50 L 400 50" style="fill:none;stroke:rgb(200,200,200)"/></g>
+<g class="trace scatter"><path class="js-line" d="M 0 50 {pts}" style="fill:none;stroke:#222;stroke-width:2"/></g></svg>"""
+    assert len(ink_columns(tsa.render_svg(svg, 80))) > 70   # plotly/vega/unknown strokes are data: every short segment is kept
+    grid_only = tsa.render_svg(svg.replace("#222", "none"), 80)
+    assert not re.search("[─━]", grid_only), grid_only     # a known gridline is still a gridline
 
 
 def test_svg_unsupported_clip_is_reported_not_ignored():

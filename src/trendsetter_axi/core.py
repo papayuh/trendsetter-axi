@@ -96,7 +96,7 @@ class Canvas:
     def bg(self, c): return neutral(c) and (lum(c) < 0.4 if self.dark else lum(c) > 0.8)
 
     def stroke(self, polylines, rgb, dashes=None, clip=None, legend=False, rule=False, data=False):   # data: the stroke is a data artist (a curve), never axis/grid geometry whatever its colour
-        if self.bg(rgb) or not polylines: return
+        if self.bg(rgb) and not data or not polylines: return
         pts = np.concatenate([np.asarray(p, float) for p in polylines if len(p)])
         if legend:  # one short key per handle; frames and long strokes are not keys
             (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
@@ -107,15 +107,15 @@ class Canvas:
         if x1 - x0 <= self.cw * 1.2 and y1 - y0 <= self.ch * 0.6 and len(p0) > 3 and np.hypot(*(p0[0] - p0[-1])) < 1e-3:
             return self.marker([pts.mean(0)], rgb, clip)   # hollow marker (open circle etc.)
         if neutral(rgb):  # dark gray/black: axis-aligned -> box drawing, else plain dots
-            grid = lum(rgb) > 0.6 and not self.dark or self.panel is not None and lum(rgb) > self.panel   # light gray axis-aligned strokes (or lighter than the panel) are gridlines: skip
+            grid = lum(rgb) > 0.6 and not self.dark or self.panel is not None and lum(rgb) > self.panel   # light gray axis-aligned strokes (or lighter than the panel) are gridlines unless the artist is data: skip
             for p in polylines:
                 p = np.asarray(p, float)
                 if len(p) < 2: continue
                 for a, b in zip(p, p[1:]):
                     if abs(a[1] - b[1]) < 0.5 and abs(a[0] - b[0]) >= 2 * self.cw:
-                        if not grid: self.strokes.append(("h", a, b, clip, lum(rgb) < 0.35))
+                        if data or not grid: self.strokes.append(("h", a, b, clip, lum(rgb) < 0.35))
                     elif abs(a[0] - b[0]) < 0.5 and abs(a[1] - b[1]) >= self.ch:
-                        if not grid: self.strokes.append(("v", a, b, clip, lum(rgb) < 0.35))
+                        if data or not grid: self.strokes.append(("v", a, b, clip, lum(rgb) < 0.35))
                     elif data or max(abs(a - b)) >= self.cw: self.strokes.append(("dots", -1, [np.array([a, b])], dashes, clip))   # short segments are decoration unless the artist is data: a dense curve is all short segments
             return
         p0 = np.asarray(polylines[0], float)

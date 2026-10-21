@@ -140,6 +140,9 @@ def role_of(classes):
     return "other"
 
 
+FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis")   # matplotlib frame/axis ids, plotly grid/zero/axis layers, vega axes
+
+
 def render(svg, cols=80, ansi=False, shift=0):
     root = ET.fromstring(svg)
     vb = root.get("viewBox")
@@ -192,7 +195,7 @@ def render(svg, cols=80, ansi=False, shift=0):
             return draw_image(el, M, clip)
         shapes = shape(tag, el)
         if shapes is not None and not any(c.startswith(("text_", "xtick_", "ytick_")) or "annotation" in c for c in ids_):  # text bbox, annotation boxes, gridlines: not data
-            draw_shape(shapes, M, st, legend, "violin" in " ".join(classes), clip, not legend and any(c.startswith(("line2d_", "LineCollection_")) for c in ids_))   # matplotlib's own ids tell data curves from frames
+            draw_shape(shapes, M, st, legend, "violin" in " ".join(classes), clip, not legend and not any(t.startswith(FRAME) for t in " ".join(ids_).split()))   # a stroke is data unless a known frame/axis/grid marker says otherwise: unclassified strokes are kept
         for ch in el: walk(ch, M, st, classes, clip)
 
     def tf(M, p):
