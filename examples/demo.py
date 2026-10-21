@@ -14,9 +14,7 @@ import numpy as np
 
 from trendsetter_axi import render_figure, render_svg
 from trendsetter_axi.cells import width
-from trendsetter_axi.gallery import CHARTS
 
-BY_ID = {c["id"]: c for c in CHARTS}
 GALLERY = ["01_mpl_line", "05_mpl_groupbar", "07_mpl_hist", "08_mpl_box", "46_mpl_spaghetti", "50_mpl_twinx"]
 
 
@@ -124,6 +122,9 @@ def section_svg(cols, out):
 
 
 def section_gallery(cols, out):
+    from trendsetter_axi.gallery import CHARTS  # needs pandas: install the [dev] or [gallery] extra
+
+    BY_ID = {c["id"]: c for c in CHARTS}
     for cid in GALLERY:
         fig = BY_ID[cid]["make"]()
         try:

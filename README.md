@@ -140,7 +140,7 @@ python examples/demo.py
 python examples/demo.py --cols 100 --section widths --section gallery
 ```
 
-Sections: `basic`, `widths`, `big`, `cjk`, `svg`, `gallery`. Chart text is identical run to run; only the `[timing]` line varies.
+Sections: `basic`, `widths`, `big`, `cjk`, `svg`, `gallery`. The `gallery` section needs pandas: `uv pip install -e '.[dev]'`. Chart text is identical run to run; only the `[timing]` line varies.
 
 ## Development
 
