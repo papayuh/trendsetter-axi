@@ -115,7 +115,6 @@ class Canvas:
                     elif max(abs(a - b)) >= self.cw: self.strokes.append(("dots", -1, [np.array([a, b])], dashes, clip))
             return
         p0 = np.asarray(polylines[0], float)
-        solid = not (dashes and dashes[1] is not None and len(dashes[1]))
         if (rule or x1 - x0 < 0.6 * self.w) and len(polylines) == 1 and len(p0) == 2 and abs(p0[0, 1] - p0[1, 1]) < 0.5 and abs(p0[0, 0] - p0[1, 0]) >= 2 * self.cw:   # a short flat ax.plot (violin median drawn as a line) is the same rule
             return self.rules.append((self._sid(rgb, "line"), p0[0], p0[1], clip))   # violin median / cap: always `─`, never a braille pattern that depends on the sub-row
         self.strokes.append(("dots", self._sid(rgb, "line"), [np.asarray(p, float) for p in polylines], dashes, clip))

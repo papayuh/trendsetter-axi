@@ -5,7 +5,6 @@ layout engine is pointed at this renderer, so matplotlib itself lays out ticks,
 legends and margins for the terminal grid instead of us patching collisions later.
 """
 import numpy as np
-import matplotlib
 from matplotlib.backend_bases import RendererBase
 from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
@@ -368,7 +367,7 @@ def _ramp(fig):
         for m in list(ax.images) + [c for c in ax.collections if isinstance(c, QuadMesh)]:
             cb = getattr(m, "colorbar", None)
             if cb is None or np.ndim(m.get_array()) != 2 and not isinstance(m, QuadMesh): continue
-            m.autoscale_None(); lo, hi = m.norm.vmin, m.norm.vmax
+            m.autoscale_None()
             fig._tc_ramp = (cb.ax.get_ylabel() or cb.ax.get_xlabel(), [f(float(m.norm.inverse(k / L))) for k in range(L + 1)]); cb.remove()
             return
 
