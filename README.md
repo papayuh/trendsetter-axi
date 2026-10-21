@@ -4,15 +4,17 @@ Terminal charts. trendsetter-axi renders matplotlib figures and SVG as unicode t
 
 ## Install
 
-PyPI publication is not done yet, so install from source for now:
+```
+uv pip install trendsetter-axi
+```
+
+From source:
 
 ```
 git clone https://github.com/papayuh/trendsetter-axi
 cd trendsetter-axi
 uv pip install -e .
 ```
-
-Once published this will be `uv pip install trendsetter-axi`.
 
 ## Usage
 
