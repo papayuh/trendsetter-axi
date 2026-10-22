@@ -74,9 +74,12 @@ def build():
     return key
 
 
+def asks(questions):
+    return "\n".join(f"{qid}: {q['q']}" + (f" (one of: {', '.join(q['options'])})" if q.get("options") else "")
+                       for qid, q in questions.items())
+
+
 def prompt(cid, fmt, questions):
-    asks = "\n".join(f"{qid}: {q['q']}" + (f" (one of: {', '.join(q['options'])})" if q.get("options") else "")
-                     for qid, q in questions.items())
     content = []
     if fmt in TEXTS:
         title = "Chart summary" if fmt == "summary" else "Chart, rendered as terminal text"   # same words for both text renderers
@@ -87,11 +90,11 @@ def prompt(cid, fmt, questions):
         head = "Chart: the attached image."
     else:
         head = "No chart is attached. Give your best guess for each answer."
-    content.append(dict(type="text", text=f"{head}\n\nQuestions:\n{asks}"))
+    content.append(dict(type="text", text=f"{head}\n\nQuestions:\n{asks(questions)}"))
     return dict(type="user", message=dict(role="user", content=content))
 
 
-def ask(model, cid, fmt, questions):
+def ask(model, cid, fmt, questions, cli):
     cmd = ["claude", "-p", "--model", model, "--tools", "", "--strict-mcp-config", "--setting-sources", "",
            "--no-session-persistence", "--system-prompt", SYSTEM,
            "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
@@ -103,7 +106,7 @@ def ask(model, cid, fmt, questions):
     return dict(chart=cid, format=fmt, model=model, reply=final.get("result", ""), is_error=final.get("is_error"),
                 input_tokens=u["input_tokens"] + u["cache_creation_input_tokens"] + u["cache_read_input_tokens"],
                 output_tokens=u["output_tokens"], duration_ms=final["duration_ms"], duration_api_ms=final["duration_api_ms"],
-                wall_s=round(wall, 3), cost_usd=final.get("total_cost_usd"))
+                wall_s=round(wall, 3), cost_usd=final.get("total_cost_usd"), asked=asks(questions), cli=cli)
 
 
 def parse(reply):
@@ -133,13 +136,15 @@ def grade(q, given):
     return v == q["answer"] if q["type"] == "int" else abs(v - q["answer"]) <= q["tol"]
 
 
-def load():
+def load(key):
+    """The last usable row per (chart, format, model): asked this answer key's questions and not an error."""
     rows = [json.loads(line) for line in RESULTS.read_text().splitlines()] if RESULTS.exists() else []
-    return {(r["chart"], r["format"], r["model"]): r for r in rows}
+    return {(r["chart"], r["format"], r["model"]): r for r in rows
+            if r["chart"] in key and r.get("asked") == asks(key[r["chart"]]["questions"]) and not r["is_error"]}
 
 
 def report(key, model):
-    rows = [r for r in load().values() if r["model"] == model and r["chart"] in key]
+    rows = [r for r in load(key).values() if r["model"] == model]
     by = {(r["chart"], r["format"]): r for r in rows}
     charts = [c for c in key if all((c, f) in by for f in FORMATS)]
     if not charts:
@@ -218,7 +223,7 @@ def report(key, model):
               f"image {said(c, 'image', qid)!r}" for c, i, qid, q in hits] or ["- none"]
     cost = sum(r["cost_usd"] or 0 for r in rows)
     L += ["", f"Cost reported by the CLI: ${cost:.2f}. Environment: matplotlib {matplotlib.__version__}, "
-          f"Python {sys.version.split()[0]}, {subprocess.run(['claude', '--version'], capture_output=True, text=True).stdout.strip()}.", ""]
+          f"Python {sys.version.split()[0]}, {', '.join(sorted({r['cli'] for r in rows}))}.", ""]
     REPORT.write_text("\n".join(L))
 
 
@@ -229,13 +234,14 @@ def main():
     args = ap.parse_args()
     key = build()
     if not args.no_ask:
-        done = load()
+        done = load(key)
+        cli = subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip()
         with RESULTS.open("a") as f:
             for cid, k in key.items():
                 for fmt in FORMATS:   # interleaved per chart, so drift over the run hits every format alike
                     if (cid, fmt, args.model) in done:
                         continue
-                    r = ask(args.model, cid, fmt, k["questions"])
+                    r = ask(args.model, cid, fmt, k["questions"], cli)
                     f.write(json.dumps(r) + "\n")
                     f.flush()
                     print(cid, fmt, r["input_tokens"], r["wall_s"], r["reply"][:80].replace("\n", " "), flush=True)
