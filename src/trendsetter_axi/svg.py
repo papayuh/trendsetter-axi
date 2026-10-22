@@ -4,7 +4,7 @@ import base64, io, re
 import xml.etree.ElementTree as ET
 import numpy as np
 from .core import Canvas, sup
-from .cells import width
+from .cells import width, wrap
 
 NS = re.compile(r"\{.*?\}")
 NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, .5, 0), "blue": (0, 0, 1),
@@ -140,6 +140,9 @@ def role_of(classes):
     return "other"
 
 
+FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis", "background", "xaxislayer", "yaxislayer", "minor-gridlayer")   # matplotlib frame/axis ids, plotly grid/zero/axis/tick layers, vega axes and view border
+
+
 def render(svg, cols=80, ansi=False, shift=0):
     root = ET.fromstring(svg)
     vb = root.get("viewBox")
@@ -151,13 +154,31 @@ def render(svg, cols=80, ansi=False, shift=0):
     k = (cols - shift) / cols   # shift > 0: squeeze the drawing right by `shift` columns so left tick labels fit
     base = np.array([[k, 0, shift * cv.cw - x0 * k], [0, 1, -y0], [0, 0, 1]])
 
-    def walk(el, M, st, classes, skip=False):
+    def clip_rect(el, M):
+        """The pixel rect of an element's clip-path, False when the clip cannot be honoured (recorded in cv.meta), None when it has none."""
+        ref = re.search(r"url\(\s*['\"]?#([^)'\"\s]+)", el.get("clip-path") or (styles(el, {}).get("clip-path") or ""))
+        if not ref: return None
+        cp = ids.get(ref.group(1))
+        kids = [k for k in cp] if cp is not None else []
+        shapes = shape(NS.sub("", kids[0].tag), kids[0]) if len(kids) == 1 else None
+        if cp is not None and cp.get("clipPathUnits") != "objectBoundingBox" and shapes and len(shapes) == 1:
+            Mc = M @ parse_transform(cp.get("transform")) @ parse_transform(kids[0].get("transform"))
+            r = Canvas._rect([tf(Mc, shapes[0][0])])
+            if r is not None: return r
+        cv.meta.setdefault("unsupported", []).append("clip-path #" + ref.group(1))   # not one axis-aligned rect: drawn unclipped, and the output says so
+        return False
+
+    def walk(el, M, st, classes, clip=None):
         tag = NS.sub("", el.tag)
         if tag in ("defs", "clipPath", "mask", "style", "title", "desc", "metadata", "marker", "pattern", "linearGradient", "radialGradient"):
             return
         st = styles(el, st)
         if st.get("display") == "none" or st.get("visibility") == "hidden" or float(st.get("opacity", 1) or 1) == 0: return
         M = M @ parse_transform(el.get("transform"))
+        r = clip_rect(el, M)
+        if r:   # nested clips intersect; an empty intersection draws nothing
+            clip = r if clip is None else (max(clip[0], r[0]), max(clip[1], r[1]), min(clip[2], r[2]), min(clip[3], r[3]))
+            if clip[0] >= clip[2] or clip[1] >= clip[3]: return
         classes = classes + [el.get("class") or "", el.get("id") or ""]
         ids_ = [c for c in classes if c]
         legend = "legend" in " ".join(classes) or (  # matplotlib/plotnine: figure-level artists outside any axes_N group are legend keys
@@ -166,22 +187,22 @@ def render(svg, cols=80, ansi=False, shift=0):
             ref = ids.get((el.get("{http://www.w3.org/1999/xlink}href") or el.get("href") or "").lstrip("#"))
             if ref is not None:
                 T = np.array([[1, 0, float(el.get("x", 0))], [0, 1, float(el.get("y", 0))], [0, 0, 1]])
-                walk(ref, M @ T, st, classes)
+                walk(ref, M @ T, st, classes, clip)
             return
         if tag == "text":
-            return draw_text(el, M, st, classes)
+            return draw_text(el, M, st, classes, clip)
         if tag == "image":
-            return draw_image(el, M)
+            return draw_image(el, M, clip)
         shapes = shape(tag, el)
         if shapes is not None and not any(c.startswith(("text_", "xtick_", "ytick_")) or "annotation" in c for c in ids_):  # text bbox, annotation boxes, gridlines: not data
-            draw_shape(shapes, M, st, legend, "violin" in " ".join(classes))
-        for ch in el: walk(ch, M, st, classes)
+            draw_shape(shapes, M, st, legend, "violin" in " ".join(classes), clip, not legend and not any(t.startswith(FRAME) for t in " ".join(ids_).split()))   # a stroke is data unless a known frame/axis/grid marker says otherwise: unclassified strokes are kept
+        for ch in el: walk(ch, M, st, classes, clip)
 
     def tf(M, p):
         p = np.asarray(p, float)
         return p @ M[:2, :2].T + M[:2, 2]
 
-    def draw_shape(shapes, M, st, legend, violin=False):
+    def draw_shape(shapes, M, st, legend, violin=False, clip=None, data=False):
         fill = color(st.get("fill", "black")); stroke = color(st.get("stroke"))
         fo = float(st.get("fill-opacity", 1) or 1) * float(st.get("opacity", 1) or 1)
         so = float(st.get("stroke-opacity", 1) or 1) * float(st.get("opacity", 1) or 1)
@@ -192,19 +213,19 @@ def render(svg, cols=80, ansi=False, shift=0):
         drawn = False
         if fill is not None and fo > 0.05 and any(c or len(p) > 2 for p, c in shapes):
             before = cv.ninks
-            cv.fill(closed, fill[:3], legend=legend, alpha=fo)
+            cv.fill(closed, fill[:3], clip, legend=legend, alpha=fo)
             drawn = cv.ninks > before
         if drawn and not legend and stroke is not None and so > 0.05 and sw > 0:  # plotly box: one path = box + median + whiskers; the fill only takes the closed part
             seg = [tf(M, p) for p, c in shapes if not c and len(p) == 2]
-            if seg: cv.stroke(seg, (.5, .5, .5) if violin else stroke[:3])   # a violin's inner box is ink on the body, not a line series: mid-grey box-drawing under the fill, no glyph stamps
+            if seg: cv.stroke(seg, (.5, .5, .5) if violin else stroke[:3], clip=clip)   # a violin's inner box is ink on the body, not a line series: mid-grey box-drawing under the fill, no glyph stamps
         if not drawn and stroke is not None and so > 0.05 and sw > 0:
             da = st.get("stroke-dasharray")
             dashes = None
             if da and da != "none":
                 dashes = (0, [float(x) for x in re.split(r"[\s,]+", da.replace("px", "").strip()) if x])
-            cv.stroke(closed, stroke[:3], dashes, legend=legend)
+            cv.stroke(closed, stroke[:3], dashes, clip, legend=legend, data=data)
 
-    def draw_text(el, M, st, classes):
+    def draw_text(el, M, st, classes, clip=None):
         ts = [t for t in el.iter() if NS.sub("", t.tag) in ("text", "tspan") and t.text and t.text.strip()]
         fsz = lambda t: float(m.group(1)) if (m := re.search(r"font-size:\s*([\d.]+)", t.get("style") or "")) else 0
         if len(ts) > 1 and all(t.get("y") for t in ts[1:]) and fsz(ts[1]):  # matplotlib mathtext: one tspan per glyph run
@@ -218,13 +239,14 @@ def render(svg, cols=80, ansi=False, shift=0):
         dy = el.get("dy")
         if dy: y += float(dy.replace("em", "")) * (fs if "em" in dy else 1)
         p = tf(M, [[x, y]])[0]
+        if clip is not None and not (clip[0] <= p[0] <= clip[2] and clip[1] <= p[1] <= clip[3]): return   # text is kept or dropped whole by its anchor
         angle = (-np.degrees(np.arctan2(M[1, 0], M[0, 0]))) % 360
         ha = {"middle": "center", "end": "right"}.get(st.get("text-anchor", "start"), "left")
         va = "center" if st.get("dominant-baseline") in ("middle", "central") else "top" if st.get("dominant-baseline") == "hanging" else "baseline"
         if va == "baseline": p = p + np.array([0, -fs * 0.35 + cv.ch / 2])  # glyph center, then core's baseline rule
         cv.text(p[0], p[1], s, ha, va, angle, role_of(classes))
 
-    def draw_image(el, M):
+    def draw_image(el, M, clip=None):
         href = el.get("{http://www.w3.org/1999/xlink}href") or el.get("href") or ""
         if "base64," not in href: return
         import matplotlib.image as mimg
@@ -236,7 +258,7 @@ def render(svg, cols=80, ansi=False, shift=0):
         num = lambda k, d: float(re.sub("[^0-9.eE-]", "", str(el.get(k, d))) or d)
         w, h = num("width", im.shape[1]), num("height", im.shape[0])
         (ax, ay), (bx, by) = tf(M, [[x, y], [x + w, y + h]])
-        cv.image(min(ax, bx), min(ay, by), max(ax, bx), max(ay, by), im if by >= ay else im[::-1], None if alpha is None else alpha if by >= ay else alpha[::-1])
+        cv.image(min(ax, bx), min(ay, by), max(ax, bx), max(ay, by), im if by >= ay else im[::-1], None if alpha is None else alpha if by >= ay else alpha[::-1], clip)
 
     walk(root, base, {}, [])
     if not shift:  # tick/label text starting left of column 0 -> redo with the drawing shifted right by that overflow
@@ -248,6 +270,7 @@ def render(svg, cols=80, ansi=False, shift=0):
         if t[6] == "other" and any(abs(t[1] - m[1]) < 1.5 * cv.ch and 0 <= t[0] - m[0] < 12 * cv.cw for m, *_ in cv.legend_marks):
             cv.texts[i] = t[:6] + ("legend",)
     text = cv.render(color=ansi)
+    if cv.meta.get("unsupported"): text += "\n" + "\n".join(wrap("unsupported: " + ", ".join(dict.fromkeys(cv.meta["unsupported"])) + " (drawn unclipped)", cols))
     return text, cv.meta
 
 

@@ -74,7 +74,7 @@ class TextRenderer(RendererBase):
         if not filled and gc.get_linewidth() > 0:
             rgb, a = self._rgb(gc.get_rgb())
             if a > 0.05:
-                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, legend=legend, rule=self._in("LineCollection"))
+                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, legend=legend, rule=self._in("LineCollection"), data=not legend and (self._in("line2d") or self._in("LineCollection")))
 
     def draw_markers(self, gc, marker_path, marker_trans, path, trans, rgbFace=None):
         if self._in("axis") and not self._in("legend"): return  # tick marks: the frame says enough
@@ -129,15 +129,27 @@ class TextRenderer(RendererBase):
 
     def draw_image(self, gc, x, y, im, transform=None):
         t = self._levels(None) if self.cur is not None and getattr(self.cur, "get_array", None) and np.ndim(self.cur.get_array()) == 2 else None
-        if t is not None:   # scalar image (imshow of numbers): masked cells stay blank, the rest take quantised levels
-            h, w = im.shape[:2]
-            if getattr(self.cur, "origin", "upper") == "lower": t = t[::-1]
-            return self.cv.heat_grid(np.linspace(x, x + w, t.shape[1] + 1), np.linspace(self.h - (y + h), self.h - y, t.shape[0] + 1), t, self._clip(gc))
+        grid = t is not None and self._image_grid(t)
+        if grid:   # scalar image (imshow of numbers): masked cells stay blank, the rest take quantised levels
+            return self.cv.heat_grid(*grid, self._clip(gc))   # edges of the whole array in pixels: cells outside the view or the clip are skipped, never squeezed into it
         im = np.asarray(im, float)[::-1] / 255.0   # mpl hands rows bottom-first
         rgb = im[..., :3] * im[..., 3:4] + (1 - im[..., 3:4])
         h, w = im.shape[:2]
         # im rows are top-first; (x, y) is the lower-left corner in y-up pixels
         self.cv.image(x, self.h - (y + h), x + w, self.h - y, rgb, im[..., 3])
+
+    def _image_grid(self, t):
+        """(xs, ys, t) for heat_grid: pixel edges of every cell of the image array through its own transform (extent, origin, zoom, inverted axes), ascending, row 0 at top. None when the image is not axis-aligned."""
+        a = self.cur
+        l, r, b, tp = a.get_extent(); n, m = t.shape
+        tr = a.get_transform()
+        xs = tr.transform(np.column_stack([np.linspace(l, r, m + 1), np.full(m + 1, b)]))
+        ys = tr.transform(np.column_stack([np.full(n + 1, l), np.linspace(tp, b, n + 1) if getattr(a, "origin", "upper") == "upper" else np.linspace(b, tp, n + 1)]))
+        if not (np.allclose(xs[:, 1], xs[0, 1]) and np.allclose(ys[:, 0], ys[0, 0])): return None
+        xs, ys = xs[:, 0], self.h - ys[:, 1]
+        if xs[0] > xs[-1]: xs, t = xs[::-1], t[:, ::-1]
+        if ys[0] > ys[-1]: ys, t = ys[::-1], t[::-1]
+        return xs, ys, t
 
     def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
         role = (self.wrapped.get(s) if mtext is None and s in self.wrapped else  # mpl passes mtext only for single-line text: wrapped titles/labels arrive line by line without it
@@ -181,15 +193,32 @@ def _hook(fig, on):
             else: a.__dict__.pop("draw", None)
 
 
+def _fixed(ax, axis):
+    """(first, second) limit of `axis` the caller (or a library such as plotnine) set: a side that differs from what autoscaling gives.
+    When autoscaling is off and neither differs, the side on a sticky edge (set_ylim(bottom=0) on bars) or else both (set_ylim(ax.get_ylim())).
+    ponytail: set_ylim(ax.get_ylim()) on bars pads the free top; record set_*lim calls if that ever matters."""
+    get, setlim = (ax.get_xlim, ax.set_xlim) if axis == "x" else (ax.get_ylim, ax.set_ylim)
+    if getattr(ax, f"get_autoscale{axis}_on")(): return False, False
+    lim = get()
+    ax.autoscale(True, axis); auto = get(); setlim(lim)
+    fixed = tuple(not np.isclose(a, b) for a, b in zip(lim, auto))
+    if any(fixed): return fixed
+    sticky = [v for a in ax.get_children() for v in getattr(a.sticky_edges, axis)]
+    on = tuple(any(np.isclose(v, q) for q in sticky) for v in lim)
+    return on if any(on) else (True, True)
+
+
 def _pad(fig, cv):
-    """Keep data one row clear of the frame (a braille peak in the border row pokes through it); room for bar value labels."""
+    """Keep data one row clear of the frame (a braille peak in the border row pokes through it); room for bar value labels.
+    A limit the caller set stays where it is: only free sides move."""
     for ax in fig.axes:
         if _heat_axes(ax) or ax.get_yscale() != "linear": continue
-        bb = ax.get_window_extent()
+        bb, fx, fy = ax.get_window_extent(), _fixed(ax, "x"), _fixed(ax, "y")
         if getattr(ax, "_tc_hlabels", 0) and bb.width:   # barh values sit past the bar ends: room for the longest
             x0, x1 = ax.get_xlim(); ends = [b.get_x() + b.get_width() for c in ax.containers if isinstance(c, BarContainer) for b in c]
             need = (ax._tc_hlabels + 1) * cv.cw / bb.width * (x1 - x0)
-            if x1 > x0 and ends and x1 - max(ends) < need: ax.set_xlim(right=max(ends) + need)
+            if x1 > x0 and ends and x1 - max(ends) < need and not fx[1]: ax.set_xlim(right=max(ends) + need)
+        if all(fy): continue
         for _ in range(3):   # row height in data units changes as the limits grow: settle
             lo, hi = ax.get_ylim()
             if hi < lo or not bb.height: break
@@ -212,8 +241,8 @@ def _pad(fig, cv):
                 lo_t, hi_t = (y - n * row, y) if va == "top" else (y, y + n * row) if va in ("bottom", "baseline") else (y - n * row / 2, y + n * row / 2)
                 d = [min(d[0], lo_t), max(d[1], hi_t)]
             if np.isfinite(d).all():
-                if hi - d[1] < need * row and free(hi): ax.set_ylim(top=d[1] + need * row)
-                if d[0] - lo < 1.2 * row and free(lo): ax.set_ylim(bottom=d[0] - 1.2 * row)
+                if hi - d[1] < need * row and free(hi) and not fy[1]: ax.set_ylim(top=d[1] + need * row)
+                if d[0] - lo < 1.2 * row and free(lo) and not fy[0]: ax.set_ylim(bottom=d[0] - 1.2 * row)
 
 
 def _rows_of(ax):
@@ -234,6 +263,12 @@ def moved_ax(ax, bars):  # True unless every bar stands on the axes' bottom edge
     return not (hi > lo and all(abs(b.get_y() - lo) < 1e-9 * max(1, abs(lo)) and b.get_height() > 0 for b in bars))
 
 
+def _visible(ax, e):
+    """Number of cells (edges `e`, either direction) with any part inside xlim."""
+    x0, x1 = sorted(ax.get_xlim()); e = np.asarray(e, float)
+    return int(((np.maximum(e[1:], e[:-1]) > x0 + 1e-9) & (np.minimum(e[1:], e[:-1]) < x1 - 1e-9)).sum())
+
+
 def _snap(fig, cv):
     """Heat grids and one-label-per-row category axes: exactly one text row per data row, ticks on row centres, so labels and ink line up.
     Returns True when an axes was moved (layout must then stay frozen)."""
@@ -242,10 +277,10 @@ def _snap(fig, cv):
         bb, pos, rows = ax.get_window_extent(), ax.get_position(), None
         lo, hi = ax.get_ylim()
         if _heat_axes(ax):
-            nc = next((a.get_array().shape[1] for a in ax.images if np.ndim(a.get_array()) == 2), 0)
+            im = next((a for a in ax.images if np.ndim(a.get_array()) == 2), None)
             mesh = next((c for c in ax.collections if isinstance(c, QuadMesh) and np.ndim(c.get_array()) == 2), None)
-            if not nc and mesh is not None:   # pcolormesh calendar: data columns inside xlim only (xlim may cut the last edge column)
-                e = mesh.get_coordinates()[0, :, 0]; x0, x1 = sorted(ax.get_xlim()); nc = int(((e[1:] > x0 + 1e-9) & (e[:-1] < x1 - 1e-9)).sum())
+            if im is not None: nc = _visible(ax, np.linspace(*im.get_extent()[:2], im.get_array().shape[1] + 1))   # zoomed image: only the columns inside xlim
+            else: nc = _visible(ax, mesh.get_coordinates()[0, :, 0]) if mesh is not None else 0   # pcolormesh calendar: data columns inside xlim only (xlim may cut the last edge column)
             r = bb.width / cv.cw / nc if nc else 0
             if nc and r > 1 and abs(r - round(r)) > 1e-6:   # a fractional pitch (5.83 cols per column) draws cells of 5 and 6 cols, so values drift off their month labels: whole cells per data column
                 x0c = round(pos.x0 * fig.bbox.width / cv.cw); k = max(1, int(r) if r < 2 else round(r))
@@ -286,6 +321,8 @@ def _snap(fig, cv):
         elif _dist(ax) and ax.get_yscale() == "linear":   # violin: rules fall on pixel->row (floor); ticks sit on row edges, so a rule 0.2 units from a tick shared its row. Put ticks on row centres: rule rows are then within half a row of the value
             yt = [v for v in ax.get_yticks() if min(lo, hi) <= v <= max(lo, hi)]
             if len(yt) >= 2:
+                p = abs(yt[1] - yt[0]) / abs(hi - lo) * bb.height / cv.ch   # rows per tick step: fractional, ticks drift up to half a row off any common phase
+                if p >= 1 and int(p) / p >= .75: ax.set_position([pos.x0, pos.y1 - pos.height * int(p) / p, pos.width, pos.height * int(p) / p]); pos = ax.get_position()   # whole rows per step, top kept: every tick can sit on a row centre
                 H = fig.bbox.height; fr = np.array([((H - ax.transData.transform((0, v))[1]) / cv.ch) % 1 for v in yt]); a = np.angle(np.exp(2j * np.pi * (fr - .5)).mean()) / (2 * np.pi)
                 ax.set_position([pos.x0, pos.y0 + a * cv.ch / H, pos.width, pos.height]); moved = True
         if rows and rows * cv.ch <= bb.height + .5 * cv.ch:
@@ -354,7 +391,7 @@ def _collapse(fig):
                 if new.colorbar is not None: new.colorbar.mappable = new
                 ax.set_ylim(len(idx), 0); ax.set_yticks(np.arange(len(idx)) + .5)
             else:
-                im.set_data(a[keep]); ax.set_ylim(len(idx) - .5, -.5); ax.set_yticks(range(len(idx)))
+                im.set_data(a[keep]); im.set_extent((*im.get_extent()[:2], len(idx) - .5, -.5)); ax.set_ylim(len(idx) - .5, -.5); ax.set_yticks(range(len(idx)))
             ax.set_yticklabels(names)
             note = (WEEKDAYS[names[0]] + "s only" if len(idx) == 1 and names[0] in WEEKDAYS else ", ".join(names) + " only" if len(idx) <= 3 else f"{len(idx)} of {len(keep)} rows have data")
             ax.set_title(f"{ax.get_title()}\n{note}" if ax.get_title() else note)
