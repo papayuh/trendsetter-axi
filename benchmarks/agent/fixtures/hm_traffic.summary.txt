@@ -1,0 +1,5 @@
+title: Traffic by weekday and hour
+x: Hour
+heatmap 'Vehicles / min' shape=7x24 min Sun/2=5 max Fri/17=107
+  row means: Mon=41 Tue=42 Wed=41 Thu=44 Fri=51 Sat=20 Sun=18
+losses: none

@@ -1,0 +1,19 @@
+                       Two customer segments
+        ┌─────────────────────────────────────────────────┐
+    7.5 │ o  Group A                 x x xx xx x xx     x │
+        │ x  Group B        x  x xx xxx  xxx x xx         │
+    5.0 │                                    x            │
+        │  o  ooooo ooo o                                 │
+    2.5 │ ooo  ooooo o                                    │
+        │         o                                       │
+        └─────────────────────────────────────────────────┘
+                 2           4            6            8
+                          Visits / month
+y: Spend ($100)
+
+title: Two customer segments
+x: Visits / month
+y: Spend ($100)
+scatter 'Group A' key o n=40 x=0.9..3.2 y=1.6..4.4 mean=2,3 r=0.16
+scatter 'Group B' key x n=40 x=3.8..8.2 y=5.5..8.4 mean=5.9,7 r=0.12
+losses: none

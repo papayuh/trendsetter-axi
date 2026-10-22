@@ -1,0 +1,6 @@
+title: Latency vs payload size
+x: Payload (MB)
+y: Latency (ms)
+scatter n=50 x=0.1..9.7 y=-2..45 mean=5.2,11 r=0.64
+  outliers (3,45); others x=0.1..9.7 y=-2..22
+losses: none

@@ -1,0 +1,4 @@
+title: Developers using each language
+x: % of respondents
+barh n=8 Python=51 JavaScript=62 SQL=52 Java=30 Go=14 Rust=13 C#=27 R=4
+losses: none

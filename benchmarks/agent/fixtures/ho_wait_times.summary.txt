@@ -1,0 +1,5 @@
+title: Support wait times
+x: Minutes
+y: Tickets
+histogram 20 bins of 2 from 0 to 36 peak 0-2=391 counts: 391 300 211 158 121 82 66 57 35 21 17 7 9 7 6 3 2 1 0 2
+losses: none

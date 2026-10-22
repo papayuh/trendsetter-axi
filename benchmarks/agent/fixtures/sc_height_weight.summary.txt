@@ -1,0 +1,5 @@
+title: Height vs weight
+x: Height (cm)
+y: Weight (kg)
+scatter n=80 x=150..198 y=44..88 mean=170,64 r=0.84
+losses: none

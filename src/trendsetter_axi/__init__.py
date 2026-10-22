@@ -1,9 +1,9 @@
 """Render matplotlib figures and SVG as unicode text for the terminal."""
-import copy, itertools
+import copy, dataclasses, itertools
 
 from matplotlib.category import UnitData
 
-from . import mpl as _mpl, result as _result, svg as _svg
+from . import core as _core, mpl as _mpl, result as _result, svg as _svg
 from .result import RenderLossError as RenderLossError, RenderResult as RenderResult   # public API
 
 __version__ = "0.1.0"
@@ -36,10 +36,10 @@ def _copy(fig):
     return work
 
 
-def _figure(fig, cols, color, result):
+def _figure(fig, cols, color, result, rows=None):
     work = _copy(fig)
     try:
-        text, meta = _mpl.render(work, cols, color)
+        text, meta = _mpl.render(work, cols, color, rows)
         if not result: return text
         return _result.build(text, meta, cols, *_mpl.describe(fig, meta), _mpl.losses(work, meta), _result.FIGURE)
     finally:
@@ -59,17 +59,25 @@ def render_svg(svg_text, cols=80, color=False):
     return _svg.render(svg_text, cols, ansi=color)[0]
 
 
-def render(source, cols=80, *, color=False, strict=False):
+def render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None):
     """Render a matplotlib Figure or SVG source (str or bytes) and report what the text lost, as a RenderResult.
 
     strict=True raises RenderLossError when the text would misrepresent the chart: a data artist or series with no
     visible cell, or a legend entry dropped or cut. Points outside the axes view are reported as losses but matplotlib
-    hides them too, so they never fail strict mode."""
+    hides them too, so they never fail strict mode.
+
+    ascii=True draws the same cells in ASCII (lines in ' - _ / \\ |, bars in #, heat levels in . : = #, series keys
+    o x ^ ...): coarser than braille, a fraction of the tokens for a model to read. Frame and labels are unchanged.
+    rows sets a figure's height in lines (at least 8; a heatmap or bar chart may take more so each row or bar keeps a line);
+    by default it follows the figure's aspect. SVG input ignores it."""
     if isinstance(source, (str, bytes)):
         text, meta = _svg.render(source, cols, ansi=color)
         series, scales, lost = _result.svg_series(meta)
         res = _result.build(text, meta, cols, series, scales, lost, _result.SVG)
     else:
-        res = _figure(source, cols, color, True)
+        res = _figure(source, cols, color, True, rows)
+    if ascii:
+        tr = lambda t: t.translate(_core.ASCII) if t else t  # noqa: E731
+        res = dataclasses.replace(res, text=tr(res.text), series=[dict(s, key=tr(s["key"])) for s in res.series])
     if strict and any(l["material"] for l in res.losses): raise RenderLossError(res)
     return res
