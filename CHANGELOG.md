@@ -8,6 +8,7 @@
 - `summary()` maps reference lines and shading drawn in axes or blended coordinates (`axhline`, `axvline`) back to data values.
 - `RenderResult.summary()`: compact scales, series values and losses read from the figure's data; SVG input says values are unavailable.
 - `color=True` on `render_figure` and `render_svg` adds 24-bit ANSI colour.
+- `benchmarks/agent`: the same 81 questions about 25 charts answered from the 80-column text, `summary()`, a PNG, mpl_ascii and plotext text, and no chart, with accuracy, tokens and latency per format. README gains a "Why" section with the integration path and those numbers.
 
 ## 0.1.0
 

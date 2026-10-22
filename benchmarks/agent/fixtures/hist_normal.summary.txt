@@ -1,0 +1,5 @@
+title: Exam scores
+x: Score, linear, 17.47..82.67
+y: Students, linear, 0..145.9
+bar n=20 min 75.26=2 max 51.55=139
+losses: none

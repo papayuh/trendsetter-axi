@@ -2,6 +2,25 @@
 
 Terminal charts. trendsetter-axi renders matplotlib figures and SVG as unicode text (braille lines, block bars, shaded heatmaps) that fits a fixed number of columns. Formerly prototyped as "termchart".
 
+## Why
+
+More analysis now happens in a terminal, next to an agent, with no IDE or notebook open. trendsetter-axi takes the matplotlib code you already have and makes one render serve both readers: a chart the person can read where they work, and a compact account of the same figure that an agent can check.
+
+```python
+from trendsetter_axi import render
+
+r = render(fig, cols=80, strict=True)   # your existing figure; raises RenderLossError if the text would misrepresent it
+print(r.text)                           # for the person: every line fits 80 cells
+context = r.summary()                   # for the agent: scales, series values from the figure's data, what was lost
+```
+
+- Output budget: `cols` bounds every line, titles and keys included; `r.dimensions` reports the width and height used.
+- Diagnostics: `r.losses` lists everything the text does not show, and `strict=True` turns a material loss into an error instead of a misleading chart.
+
+What it saves, measured on 81 questions about 25 charts with `claude-sonnet-5-5` ([benchmark](benchmarks/agent/README.md)): the summary answered 86% at a median 94 tokens per chart; a 640×480 PNG answered 99% at 408; the 80-column text answered 81% at 639. The token saving comes from `summary()`, not from the text chart, and when the model can take images the PNG is the more accurate input.
+
+Other ways to get a matplotlib figure into a terminal, checked in the same benchmark: [mpl_ascii](https://github.com/chriscave/mpl_ascii) 1.0.1 is a matplotlib backend (`plt.show()`, or `savefig("x.txt")`) whose width follows the figure size at 12 characters per inch, and [plotext](https://github.com/piccolomo/plotext) 6.1.0 converts a figure's lines, scatter points and bar rectangles with `plotext.matplotlib(fig)`. On the same questions their text scored 78% and 73%, against 81%. Neither drew the three heatmaps; mpl_ascii raised on the log-scale chart and plotext drew it on a linear axis. Neither has a data summary or reports what it dropped.
+
 ## Install
 
 ```

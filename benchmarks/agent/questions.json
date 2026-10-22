@@ -1,0 +1,1037 @@
+{
+ "line_stock": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 814,
+   "summary": 90,
+   "plotext": 593,
+   "mpl_ascii": 359
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "What is the highest closing price?",
+    "type": "number",
+    "answer": 106.2842,
+    "tol": 1.1395
+   },
+   "q2": {
+    "q": "On which trading day is the highest close?",
+    "type": "number",
+    "answer": 23.0,
+    "tol": 12.45
+   },
+   "q3": {
+    "q": "What is the closing price on trading day 125?",
+    "type": "number",
+    "answer": 100.3235,
+    "tol": 1.1395
+   },
+   "q4": {
+    "q": "Is the last close higher or lower than the first close?",
+    "type": "label",
+    "answer": "lower",
+    "options": [
+     "higher",
+     "lower"
+    ]
+   }
+  }
+ },
+ "line_temperature": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 505,
+   "summary": 92,
+   "plotext": 374,
+   "mpl_ascii": 290
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which month number (1-12) is warmest?",
+    "type": "int",
+    "answer": 7
+   },
+   "q2": {
+    "q": "What is the temperature in month 4?",
+    "type": "number",
+    "answer": 12.5,
+    "tol": 1.065
+   },
+   "q3": {
+    "q": "What is the lowest temperature?",
+    "type": "number",
+    "answer": 2.1,
+    "tol": 1.065
+   }
+  }
+ },
+ "line_visits": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 830,
+   "summary": 80,
+   "plotext": 611,
+   "mpl_ascii": 461
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Over the 60 days, is the overall trend up or down?",
+    "type": "label",
+    "answer": "up",
+    "options": [
+     "up",
+     "down"
+    ]
+   },
+   "q2": {
+    "q": "What is the value on the last day?",
+    "type": "number",
+    "answer": 1769.7538,
+    "tol": 42.0311
+   },
+   "q3": {
+    "q": "What is the maximum value?",
+    "type": "number",
+    "answer": 1867.092,
+    "tol": 42.0311
+   }
+  }
+ },
+ "line_decay": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 444,
+   "summary": 79,
+   "plotext": 315,
+   "mpl_ascii": 304
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "What is the concentration at hour 0?",
+    "type": "number",
+    "answer": 85.0,
+    "tol": 3.8573
+   },
+   "q2": {
+    "q": "At about what hour does the concentration first fall below half its starting value?",
+    "type": "number",
+    "answer": 4.6154,
+    "tol": 1.0
+   },
+   "q3": {
+    "q": "What is the concentration at the last hour shown?",
+    "type": "number",
+    "answer": 7.8539,
+    "tol": 3.8573
+   }
+  }
+ },
+ "line_log_users": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 423,
+   "summary": 102,
+   "plotext": 324,
+   "mpl_ascii": 17
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Is the y axis linear or logarithmic?",
+    "type": "label",
+    "answer": "logarithmic",
+    "options": [
+     "linear",
+     "logarithmic"
+    ]
+   },
+   "q2": {
+    "q": "How many users in 2020?",
+    "type": "number",
+    "answer": 169835.6304,
+    "tol": 25475.3
+   },
+   "q3": {
+    "q": "How many users in 2012?",
+    "type": "number",
+    "answer": 1000.0,
+    "tol": 150.0
+   }
+  }
+ },
+ "ml_products": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 639,
+   "summary": 134,
+   "plotext": 437,
+   "mpl_ascii": 324
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which product sells more in month 6?",
+    "type": "label",
+    "answer": "Beta",
+    "options": [
+     "Alpha",
+     "Beta"
+    ]
+   },
+   "q2": {
+    "q": "Which product sells more in month 20?",
+    "type": "label",
+    "answer": "Alpha",
+    "options": [
+     "Alpha",
+     "Beta"
+    ]
+   },
+   "q3": {
+    "q": "At about which month do the two lines cross?",
+    "type": "number",
+    "answer": 18.5,
+    "tol": 1.15
+   },
+   "q4": {
+    "q": "What is Beta's highest value?",
+    "type": "number",
+    "answer": 122.0488,
+    "tol": 3.4774
+   }
+  }
+ },
+ "ml_cities": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 1178,
+   "summary": 247,
+   "plotext": 711,
+   "mpl_ascii": 430
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which city is warmest in month 7?",
+    "type": "label",
+    "answer": "Cairo",
+    "options": [
+     "Oslo",
+     "Madrid",
+     "Cairo",
+     "Toronto"
+    ]
+   },
+   "q2": {
+    "q": "Which city is coldest in month 1?",
+    "type": "label",
+    "answer": "Toronto",
+    "options": [
+     "Oslo",
+     "Madrid",
+     "Cairo",
+     "Toronto"
+    ]
+   },
+   "q3": {
+    "q": "What is Madrid's temperature in month 7?",
+    "type": "number",
+    "answer": 25.6,
+    "tol": 1.68
+   },
+   "q4": {
+    "q": "In how many months is Oslo colder than Toronto?",
+    "type": "int",
+    "answer": 10
+   }
+  }
+ },
+ "ml_rates": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 987,
+   "summary": 197,
+   "plotext": 589,
+   "mpl_ascii": 403
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which series is highest in the last week?",
+    "type": "label",
+    "answer": "30y",
+    "options": [
+     "2y",
+     "10y",
+     "30y"
+    ]
+   },
+   "q2": {
+    "q": "Which series is highest in week 0?",
+    "type": "label",
+    "answer": "2y",
+    "options": [
+     "2y",
+     "10y",
+     "30y"
+    ]
+   },
+   "q3": {
+    "q": "What is the 2y yield in the last week?",
+    "type": "number",
+    "answer": 2.7083,
+    "tol": 0.094
+   }
+  }
+ },
+ "ml_cpu": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 1112,
+   "summary": 198,
+   "plotext": 766,
+   "mpl_ascii": 469
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which server reaches the highest CPU?",
+    "type": "label",
+    "answer": "db-1",
+    "options": [
+     "web-1",
+     "web-2",
+     "db-1"
+    ]
+   },
+   "q2": {
+    "q": "At which hour is that highest CPU reading?",
+    "type": "number",
+    "answer": 30.0,
+    "tol": 2.35
+   },
+   "q3": {
+    "q": "Which server is lowest at hour 2?",
+    "type": "label",
+    "answer": "web-2",
+    "options": [
+     "web-1",
+     "web-2",
+     "db-1"
+    ]
+   },
+   "q4": {
+    "q": "Which server is highest at hour 12?",
+    "type": "label",
+    "answer": "web-1",
+    "options": [
+     "web-1",
+     "web-2",
+     "db-1"
+    ]
+   }
+  }
+ },
+ "ml_forecast": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 758,
+   "summary": 136,
+   "plotext": 516,
+   "mpl_ascii": 372
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "On the last day, is actual above or below forecast?",
+    "type": "label",
+    "answer": "above",
+    "options": [
+     "above",
+     "below"
+    ]
+   },
+   "q2": {
+    "q": "What is the highest actual value?",
+    "type": "number",
+    "answer": 284.9583,
+    "tol": 4.8925
+   },
+   "q3": {
+    "q": "What is the forecast on day 0?",
+    "type": "number",
+    "answer": 205.0,
+    "tol": 4.8925
+   }
+  }
+ },
+ "bar_regions": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 786,
+   "summary": 58,
+   "plotext": 719,
+   "mpl_ascii": 593
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which region has the highest sales?",
+    "type": "label",
+    "answer": "East",
+    "options": [
+     "North",
+     "South",
+     "East",
+     "West",
+     "Central",
+     "Coast"
+    ]
+   },
+   "q2": {
+    "q": "Which region has the lowest sales?",
+    "type": "label",
+    "answer": "Central",
+    "options": [
+     "North",
+     "South",
+     "East",
+     "West",
+     "Central",
+     "Coast"
+    ]
+   },
+   "q3": {
+    "q": "How many regions have sales above 400?",
+    "type": "int",
+    "answer": 3
+   },
+   "q4": {
+    "q": "What are West's sales?",
+    "type": "number",
+    "answer": 365.0,
+    "tol": 26.5
+   }
+  }
+ },
+ "bar_fifteen": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 951,
+   "summary": 49,
+   "plotext": 938,
+   "mpl_ascii": 1049
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which product line has the most defects?",
+    "type": "label",
+    "answer": "P07",
+    "options": [
+     "P01",
+     "P02",
+     "P03",
+     "P04",
+     "P05",
+     "P06",
+     "P07",
+     "P08",
+     "P09",
+     "P10",
+     "P11",
+     "P12",
+     "P13",
+     "P14",
+     "P15"
+    ]
+   },
+   "q2": {
+    "q": "How many product lines have more than 60 defects?",
+    "type": "int",
+    "answer": 11
+   },
+   "q3": {
+    "q": "How many defects does P07 have?",
+    "type": "number",
+    "answer": 95.0,
+    "tol": 4.75
+   }
+  }
+ },
+ "barh_languages": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 277,
+   "summary": 80,
+   "plotext": 535,
+   "mpl_ascii": 326
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which language has the largest share?",
+    "type": "label",
+    "answer": "JavaScript",
+    "options": [
+     "Python",
+     "JavaScript",
+     "SQL",
+     "Java",
+     "Go",
+     "Rust",
+     "C#",
+     "R"
+    ]
+   },
+   "q2": {
+    "q": "How many languages are above 25%?",
+    "type": "int",
+    "answer": 5
+   },
+   "q3": {
+    "q": "What is Go's share?",
+    "type": "number",
+    "answer": 13.5,
+    "tol": 3.115
+   }
+  }
+ },
+ "bar_grouped": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 1122,
+   "summary": 121,
+   "plotext": 752,
+   "mpl_ascii": 768
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "In Q3, which store has higher revenue?",
+    "type": "label",
+    "answer": "Store B",
+    "options": [
+     "Store A",
+     "Store B"
+    ]
+   },
+   "q2": {
+    "q": "In how many quarters is Store A higher than Store B?",
+    "type": "int",
+    "answer": 2
+   },
+   "q3": {
+    "q": "What is the highest revenue of any bar?",
+    "type": "number",
+    "answer": 41.0,
+    "tol": 2.05
+   }
+  }
+ },
+ "bar_profit": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 550,
+   "summary": 107,
+   "plotext": 525,
+   "mpl_ascii": 529
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "How many months have a loss (below zero)?",
+    "type": "int",
+    "answer": 4
+   },
+   "q2": {
+    "q": "Which month has the biggest loss?",
+    "type": "label",
+    "answer": "Apr",
+    "options": [
+     "Jan",
+     "Feb",
+     "Mar",
+     "Apr",
+     "May",
+     "Jun",
+     "Jul",
+     "Aug",
+     "Sep",
+     "Oct",
+     "Nov",
+     "Dec"
+    ]
+   },
+   "q3": {
+    "q": "What is the best month's profit?",
+    "type": "number",
+    "answer": 30.0,
+    "tol": 2.2
+   }
+  }
+ },
+ "sc_height_weight": {
+  "kind": "scatter",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 320,
+   "summary": 67,
+   "plotext": 310,
+   "mpl_ascii": 320
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Is the relationship positive or negative?",
+    "type": "label",
+    "answer": "positive",
+    "options": [
+     "positive",
+     "negative"
+    ]
+   },
+   "q2": {
+    "q": "What is the largest weight shown?",
+    "type": "number",
+    "answer": 87.7358,
+    "tol": 2.1939
+   },
+   "q3": {
+    "q": "What is the smallest height shown?",
+    "type": "number",
+    "answer": 150.0812,
+    "tol": 2.4025
+   }
+  }
+ },
+ "sc_clusters": {
+  "kind": "scatter",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 315,
+   "summary": 104,
+   "plotext": 331,
+   "mpl_ascii": 370
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which group has higher spend on average?",
+    "type": "label",
+    "answer": "Group B",
+    "options": [
+     "Group A",
+     "Group B"
+    ]
+   },
+   "q2": {
+    "q": "About what is the average spend of Group A?",
+    "type": "number",
+    "answer": 3.0354,
+    "tol": 0.6776
+   },
+   "q3": {
+    "q": "What is the largest visits value in Group A?",
+    "type": "number",
+    "answer": 3.2007,
+    "tol": 0.3637
+   }
+  }
+ },
+ "sc_outlier": {
+  "kind": "scatter",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 266,
+   "summary": 70,
+   "plotext": 258,
+   "mpl_ascii": 287
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "One point is a clear outlier. What is its x value?",
+    "type": "number",
+    "answer": 3.0,
+    "tol": 0.4794
+   },
+   "q2": {
+    "q": "What is the outlier's y value?",
+    "type": "number",
+    "answer": 45.0,
+    "tol": 2.3353
+   },
+   "q3": {
+    "q": "How many points have y above 30?",
+    "type": "int",
+    "answer": 1
+   }
+  }
+ },
+ "hm_monthly": {
+  "kind": "heatmap",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 536,
+   "summary": 78,
+   "plotext": 270,
+   "mpl_ascii": 346
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which year has the single highest cell?",
+    "type": "label",
+    "answer": "2022",
+    "options": [
+     "2019",
+     "2020",
+     "2021",
+     "2022",
+     "2023",
+     "2024"
+    ]
+   },
+   "q2": {
+    "q": "Which month is that highest cell in?",
+    "type": "label",
+    "answer": "Jun",
+    "options": [
+     "Jan",
+     "Feb",
+     "Mar",
+     "Apr",
+     "May",
+     "Jun",
+     "Jul",
+     "Aug",
+     "Sep",
+     "Oct",
+     "Nov",
+     "Dec"
+    ]
+   },
+   "q3": {
+    "q": "What is the value of the highest cell?",
+    "type": "number",
+    "answer": 5.2,
+    "tol": 0.1426
+   },
+   "q4": {
+    "q": "What is the value of the lowest cell?",
+    "type": "number",
+    "answer": 2.3483,
+    "tol": 0.1426
+   }
+  }
+ },
+ "hm_correlation": {
+  "kind": "heatmap",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 311,
+   "summary": 64,
+   "plotext": 271,
+   "mpl_ascii": 304
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which variable is most negatively correlated with price?",
+    "type": "label",
+    "answer": "spread",
+    "options": [
+     "volume",
+     "spread",
+     "vol",
+     "beta"
+    ]
+   },
+   "q2": {
+    "q": "What is the correlation between price and volume?",
+    "type": "number",
+    "answer": 0.62,
+    "tol": 0.1
+   },
+   "q3": {
+    "q": "Excluding the diagonal, which variable pairs with 'vol' most strongly?",
+    "type": "label",
+    "answer": "beta",
+    "options": [
+     "price",
+     "volume",
+     "spread",
+     "beta"
+    ]
+   }
+  }
+ },
+ "hm_traffic": {
+  "kind": "heatmap",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 586,
+   "summary": 74,
+   "plotext": 269,
+   "mpl_ascii": 332
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which day has the busiest single hour?",
+    "type": "label",
+    "answer": "Fri",
+    "options": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri",
+     "Sat",
+     "Sun"
+    ]
+   },
+   "q2": {
+    "q": "At which hour is that busiest reading?",
+    "type": "number",
+    "answer": 17.0,
+    "tol": 1.15
+   },
+   "q3": {
+    "q": "Which day is quietest overall?",
+    "type": "label",
+    "answer": "Sun",
+    "options": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri",
+     "Sat",
+     "Sun"
+    ]
+   }
+  }
+ },
+ "hist_normal": {
+  "kind": "histogram",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 455,
+   "summary": 56,
+   "plotext": 479,
+   "mpl_ascii": 648
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Where is the tallest bin centred (x value)?",
+    "type": "number",
+    "answer": 51.552,
+    "tol": 2.964
+   },
+   "q2": {
+    "q": "How many students are in the tallest bin?",
+    "type": "number",
+    "answer": 139.0,
+    "tol": 6.95
+   },
+   "q3": {
+    "q": "How many bins have more than 60 students?",
+    "type": "int",
+    "answer": 8
+   }
+  }
+ },
+ "hist_skewed": {
+  "kind": "histogram",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 411,
+   "summary": 58,
+   "plotext": 420,
+   "mpl_ascii": 565
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Is the distribution skewed left or right?",
+    "type": "label",
+    "answer": "right",
+    "options": [
+     "left",
+     "right"
+    ]
+   },
+   "q2": {
+    "q": "Where is the peak (x value of the tallest bin's centre)?",
+    "type": "number",
+    "answer": 15.0586,
+    "tol": 5.5067
+   },
+   "q3": {
+    "q": "How many orders are in the tallest bin?",
+    "type": "number",
+    "answer": 309.0,
+    "tol": 15.45
+   }
+  }
+ },
+ "hist_bimodal": {
+  "kind": "histogram",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 425,
+   "summary": 56,
+   "plotext": 462,
+   "mpl_ascii": 661
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "How many distinct peaks does the distribution have?",
+    "type": "int",
+    "answer": 2
+   },
+   "q2": {
+    "q": "Where is the left peak (x of its tallest bin's centre)?",
+    "type": "number",
+    "answer": 30.4723,
+    "tol": 3.9463
+   },
+   "q3": {
+    "q": "Which peak is taller?",
+    "type": "label",
+    "answer": "left",
+    "options": [
+     "left",
+     "right"
+    ]
+   }
+  }
+ },
+ "line_weekly_sales": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 474,
+   "summary": 74,
+   "plotext": 362,
+   "mpl_ascii": 295
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "In how many weeks did sales fall versus the previous week?",
+    "type": "int",
+    "answer": 5
+   },
+   "q2": {
+    "q": "What were sales in week 9?",
+    "type": "number",
+    "answer": 440.0,
+    "tol": 11.75
+   },
+   "q3": {
+    "q": "In which week were sales highest?",
+    "type": "int",
+    "answer": 16
+   }
+  }
+ }
+}

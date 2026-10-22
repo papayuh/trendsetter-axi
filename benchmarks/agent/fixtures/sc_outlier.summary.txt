@@ -1,0 +1,5 @@
+title: Latency vs payload size
+x: Payload (MB), linear, -0.3512..10.2
+y: Latency (ms), linear, -4.041..47.34
+scatter n=50 x=0.1282..9.717 y=-1.706..45
+losses: none

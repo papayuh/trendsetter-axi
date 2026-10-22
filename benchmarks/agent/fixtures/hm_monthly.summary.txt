@@ -1,0 +1,5 @@
+title: Gas price by year and month
+x: linear, -0.5..11.5
+y: linear, 5.5..-0.5
+heatmap '$/gal' n=72 shape=6x12 missing=0 min 2021/Sep=2.348 max 2022/Jun=5.2
+losses: none

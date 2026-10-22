@@ -1,0 +1,6 @@
+title: Monthly units sold
+x: Month, linear, -0.15..25.15
+y: Units, linear, 49.02..125.5
+line 'Alpha' key ● n=24 x=1..24 y=52.5..110 first 1=52.5 last 24=110 min 1=52.5 max 24=110
+line 'Beta' key × n=24 x=1..24 y=80.25..122 first 1=121.4 last 24=80.78 min 23=80.25 max 2=122
+losses: none

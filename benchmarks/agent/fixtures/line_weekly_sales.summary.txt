@@ -1,0 +1,5 @@
+title: Weekly sales
+x: Week, linear, 0.25..16.75
+y: Units, linear, 298.2..556.8
+line n=16 x=1..16 y=310..545 first 1=310 last 16=545 min 1=310 max 16=545
+losses: none

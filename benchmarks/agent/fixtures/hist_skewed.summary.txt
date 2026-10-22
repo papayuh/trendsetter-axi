@@ -1,0 +1,5 @@
+title: Order values
+x: Order value ($), linear, -3.297..117.9
+y: Orders, linear, 0..324.4
+bar n=30 min 95.82=0 max 15.06=309
+losses: none

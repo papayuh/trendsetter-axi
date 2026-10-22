@@ -1,0 +1,5 @@
+title: ACME daily close
+x: Trading day, linear, -12.45..261.4
+y: Price ($), linear, 82.35..107.4
+line n=250 x=0..249 y=83.49..106.3 first 0=100.6 last 249=84.44 min 246=83.49 max 23=106.3
+losses: none

@@ -1,0 +1,6 @@
+title: Two customer segments
+x: Visits / month, linear, 0.5398..8.54
+y: Spend ($100), linear, 1.259..8.712
+scatter 'Group A' key ● n=40 x=0.9034..3.201 y=1.597..4.352
+scatter 'Group B' key × n=40 x=3.832..8.177 y=5.534..8.373
+losses: none

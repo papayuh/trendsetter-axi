@@ -1,0 +1,6 @@
+title: Orders: actual vs forecast
+x: Day, linear, -1.45..30.45
+y: Orders, linear, 182.2..289.9
+line 'actual' key ● n=30 x=0..29 y=187.1..285 first 0=190.4 last 29=284.9 min 1=187.1 max 25=285
+line 'forecast' key × n=30 x=0..29 y=205..268.8 first 0=205 last 29=268.8 min 0=205 max 29=268.8
+losses: none

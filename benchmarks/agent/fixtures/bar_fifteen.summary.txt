@@ -1,0 +1,5 @@
+title: Defects per product line
+x: category, 15 categories
+y: Defects, linear, 0..99.75
+bar n=15 min P05=25 max P07=95
+losses: none

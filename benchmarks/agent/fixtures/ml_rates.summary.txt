@@ -1,0 +1,7 @@
+title: Treasury yields
+x: Week, linear, -4.95..104
+y: Yield (%), linear, 2.614..4.682
+line '2y' key ● n=100 x=0..99 y=2.708..4.588 first 0=4.588 last 99=2.708 min 99=2.708 max 0=4.588
+line '10y' key × n=100 x=0..99 y=3.316..4.14 first 0=4.086 last 99=3.536 min 85=3.316 max 3=4.14
+line '30y' key ▲ n=100 x=0..99 y=3.823..4.498 first 0=4.254 last 99=4.173 min 55=3.823 max 5=4.498
+losses: none

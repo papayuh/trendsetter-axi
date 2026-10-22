@@ -1,0 +1,5 @@
+title: Feature correlations
+x: linear, -0.5..4.5
+y: linear, 4.5..-0.5
+heatmap n=25 shape=5x5 missing=0 min price/spread=-0.71 max price/price=1
+losses: none
