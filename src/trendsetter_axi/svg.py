@@ -140,7 +140,15 @@ def role_of(classes):
     return "other"
 
 
-FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis", "background", "xaxislayer", "yaxislayer", "minor-gridlayer")   # matplotlib frame/axis ids, plotly grid/zero/axis/tick layers, vega axes and view border
+# class/id prefix -> role, first match wins: plotly grid/zero/axis/tick layers, vega axes and view border. SVG carries no
+# artist info, so anything else (matplotlib's patch_N is a spine or a bar alike) is unknown and core guesses from colour.
+ROLES = (("gridlayer", "grid"), ("minor-gridlayer", "grid"), ("role-axis-grid", "grid"), ("zerolinelayer", "axis"), ("xlines", "axis"), ("ylines", "axis"),
+         ("xaxislayer", "axis"), ("yaxislayer", "axis"), ("role-axis", "axis"), ("background", "background"))
+
+
+def shape_role(ids):
+    toks = " ".join(ids).split()
+    return next((r for p, r in ROLES if any(t.startswith(p) for t in toks)), None)
 
 
 def render(svg, cols=80, ansi=False, shift=0):
@@ -195,14 +203,14 @@ def render(svg, cols=80, ansi=False, shift=0):
             return draw_image(el, M, clip)
         shapes = shape(tag, el)
         if shapes is not None and not any(c.startswith(("text_", "xtick_", "ytick_")) or "annotation" in c for c in ids_):  # text bbox, annotation boxes, gridlines: not data
-            draw_shape(shapes, M, st, legend, "violin" in " ".join(classes), clip, not legend and not any(t.startswith(FRAME) for t in " ".join(ids_).split()))   # a stroke is data unless a known frame/axis/grid marker says otherwise: unclassified strokes are kept
+            draw_shape(shapes, M, st, "legend" if legend else shape_role(ids_), "violin" in " ".join(classes), clip)
         for ch in el: walk(ch, M, st, classes, clip)
 
     def tf(M, p):
         p = np.asarray(p, float)
         return p @ M[:2, :2].T + M[:2, 2]
 
-    def draw_shape(shapes, M, st, legend, violin=False, clip=None, data=False):
+    def draw_shape(shapes, M, st, role, violin=False, clip=None):
         fill = color(st.get("fill", "black")); stroke = color(st.get("stroke"))
         fo = float(st.get("fill-opacity", 1) or 1) * float(st.get("opacity", 1) or 1)
         so = float(st.get("stroke-opacity", 1) or 1) * float(st.get("opacity", 1) or 1)
@@ -213,9 +221,9 @@ def render(svg, cols=80, ansi=False, shift=0):
         drawn = False
         if fill is not None and fo > 0.05 and any(c or len(p) > 2 for p, c in shapes):
             before = cv.ninks
-            cv.fill(closed, fill[:3], clip, legend=legend, alpha=fo)
+            cv.fill(closed, fill[:3], clip, role=role, alpha=fo)
             drawn = cv.ninks > before
-        if drawn and not legend and stroke is not None and so > 0.05 and sw > 0:  # plotly box: one path = box + median + whiskers; the fill only takes the closed part
+        if drawn and role != "legend" and stroke is not None and so > 0.05 and sw > 0:  # plotly box: one path = box + median + whiskers; the fill only takes the closed part
             seg = [tf(M, p) for p, c in shapes if not c and len(p) == 2]
             if seg: cv.stroke(seg, (.5, .5, .5) if violin else stroke[:3], clip=clip)   # a violin's inner box is ink on the body, not a line series: mid-grey box-drawing under the fill, no glyph stamps
         if not drawn and stroke is not None and so > 0.05 and sw > 0:
@@ -223,7 +231,7 @@ def render(svg, cols=80, ansi=False, shift=0):
             dashes = None
             if da and da != "none":
                 dashes = (0, [float(x) for x in re.split(r"[\s,]+", da.replace("px", "").strip()) if x])
-            cv.stroke(closed, stroke[:3], dashes, clip, legend=legend, data=data)
+            cv.stroke(closed, stroke[:3], dashes, clip, role=role)
 
     def draw_text(el, M, st, classes, clip=None):
         ts = [t for t in el.iter() if NS.sub("", t.tag) in ("text", "tspan") and t.text and t.text.strip()]

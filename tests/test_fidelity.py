@@ -88,6 +88,78 @@ def test_line_width_keeps_series_and_axes(lw):
     assert render(two(lw)) == base
 
 
+# ---- what an artist is decides how it draws, not its colour ----------------------------------------------
+
+def ink_cells(text):
+    return sum(ch != " " for r in body(text) for ch in r)
+
+
+def test_black_contour_lines_are_data():
+    x, y = np.meshgrid(np.linspace(-3, 3, 80), np.linspace(-3, 3, 80))
+    z = np.exp(-(x - 1) ** 2 - y ** 2) + np.exp(-(x + 1) ** 2 - y ** 2 / 3)
+    ink = lambda c: ink_cells(render(lambda ax: ax.contour(x, y, z, levels=5, colors=c), figsize=(8, 4)))
+    blue = ink("tab:blue")
+    assert blue > 60 and ink("black") >= 0.9 * blue   # a dense black curve is all short segments: still the data
+
+
+@pytest.mark.parametrize("gray", ["0.5", "0.85", "lightgray"])
+def test_gray_bars_are_data(gray):
+    bars = lambda c: render(lambda ax: ax.bar(range(6), [3, 9, 5, 7, 2, 6], color=c))
+    assert len(BLOCKS.findall("".join(body(bars(gray))))) > 20 and bars(gray) == bars("tab:blue")   # a light gray bar is a bar, not page background
+
+
+@pytest.mark.parametrize("gray", ["0.3", "0.7"])
+def test_gray_outline_series_is_data(gray):
+    v = np.random.default_rng(0).normal(0, 1, 2000)
+    step = lambda c: ink_cells(render(lambda ax: ax.hist(v, bins=20, histtype="step", color=c)))
+    assert step(gray) >= 0.9 * step("tab:blue")   # an outline-only histogram is a patch: neither gridlines nor decoration
+
+
+@pytest.mark.parametrize("dark", ["black", "0.25", "0.5"])
+def test_dark_filled_area_is_data(dark):
+    area = lambda c: render(lambda ax: (ax.fill_between(X, 0, np.sin(X) + 1.5, color=c), ax.plot(X, np.sin(X) / 2 + 1, color="tab:orange"), ax.set_ylim(0, 2.6)))   # the fill covers most of the figure
+    assert len(BLOCKS.findall(area(dark))) > 100 and area(dark) == area("tab:blue")   # a big dark fill is a series, not a dark theme or a gray panel
+
+
+def test_axes_facecolor_is_background_whatever_its_colour():
+    line = lambda c: render(lambda ax: (ax.set_facecolor(c), ax.plot(X, np.sin(X))))
+    assert len(BRAILLE.findall("".join(body(line("white"))))) > 40 and line("#dde8ff") == line("white")   # a tinted panel is not a filled series
+
+
+def test_annotation_arrow_is_drawn_but_never_a_series():
+    def chart(arrow):
+        def build(ax):
+            ax.plot(X, np.sin(X), label="a"); ax.plot(X, np.sin(X) + 3, label="b")
+            if arrow: ax.annotate("peak", (1.6, 1), xytext=(4, 2.2), arrowprops=dict(arrowstyle="->", color=arrow))
+        return build
+    red = render(chart("tab:red"))
+    assert "peak" in red and red != render(chart(None)) and red == render(chart("black")), red   # the arrow is ink, in any colour it is not a third series
+
+
+def test_light_spines_are_the_frame():
+    frame = render(lambda ax: (ax.plot(X, np.sin(X)), [s.set_color("0.75") for s in ax.spines.values()]))
+    assert "┌" in frame and "┘" in frame, frame   # a spine is the axes frame in any colour, never a gridline
+
+
+def test_svg_classes_decide_frame_and_grid_whatever_the_colour():
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" viewBox="0 0 400 120">
+<g class="gridlayer"><path class="ygrid crisp" d="M 0 105 L 400 105" style="fill:none;stroke:#222"/></g>
+<path class="xlines-above crisp" d="M0,115.5H400" style="stroke:#ccc"/>
+<g class="trace scatter"><path d="M 0 90 L 400 10" style="fill:none;stroke:#1f77b4;stroke-width:2"/></g></svg>"""
+    text = tsa.render_svg(svg, 80)
+    assert "─" * 60 in text and ink_columns(text), text
+    assert tsa.render_svg(svg.replace("#222", "#tmp").replace("#ccc", "#222").replace("#tmp", "#ccc"), 80) == text   # swap the colours: the gridline stays hidden, the axis line stays drawn
+
+
+def test_svg_vega_grid_rules_are_not_the_frame():
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" viewBox="0 0 400 120">
+<g class="mark-group role-axis"><g class="mark-rule role-axis-grid"><line x1="0" y1="105" x2="400" y2="105" style="stroke:#555"/></g>
+<g class="mark-rule role-axis-domain"><line x1="0" y1="115" x2="400" y2="115" style="stroke:#888"/></g></g>
+<g class="mark-line role-mark"><path d="M 0 90 L 400 10" style="fill:none;stroke:#4c78a8;stroke-width:2"/></g></svg>"""
+    rows = tsa.render_svg(svg, 80).split("\n")
+    assert sum("─" * 60 in r for r in rows) == 1 and ink_columns("\n".join(rows)), rows   # the domain line is drawn, the grid rule is not
+
+
 # ---- explicit limits are the caller's domain -------------------------------------------------------------
 
 def test_explicit_ylim_stays_explicit():
@@ -201,7 +273,7 @@ def test_svg_dense_dark_line_outside_matplotlib_is_drawn():
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100">
 <g class="gridlayer"><path class="ygrid crisp" d="M 0 50 L 400 50" style="fill:none;stroke:rgb(200,200,200)"/></g>
 <g class="trace scatter"><path class="js-line" d="M 0 50 {pts}" style="fill:none;stroke:#222;stroke-width:2"/></g></svg>"""
-    assert len(ink_columns(tsa.render_svg(svg, 80))) > 70   # plotly/vega/unknown strokes are data: every short segment is kept
+    assert len(ink_columns(tsa.render_svg(svg, 80))) > 70   # unclassified strokes are unknown, not decoration: every short segment is kept
     grid_only = tsa.render_svg(svg.replace("#222", "none"), 80)
     assert not re.search("[─━]", grid_only), grid_only     # a known gridline is still a gridline
 
