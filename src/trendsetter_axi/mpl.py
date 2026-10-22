@@ -10,6 +10,7 @@ from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.collections import QuadMesh, PolyCollection
 from matplotlib.container import BarContainer
+from matplotlib.image import _ImageBase
 from .core import Canvas
 from .cells import truncate, width, wrap
 
@@ -23,7 +24,7 @@ class TextRenderer(RendererBase):
         self.cv = Canvas(w, h, cols)
         self.groups = []
         self.wrapped = {}
-        self.cur = None   # the image / mesh artist being drawn: its array carries the values the pixels lost
+        self.drawing = []   # (artist, role) being drawn, outermost first (see _hook)
 
     # geometry / metrics
     def get_canvas_width_height(self): return self.w, self.h
@@ -38,8 +39,22 @@ class TextRenderer(RendererBase):
         if self.groups: self.groups.pop()
     def option_image_nocomposite(self): return True
 
+    def draw_artist(self, a, role, draw):
+        self.drawing.append((a, role))
+        try: return draw(self)
+        finally: self.drawing.pop()
+
+    @property
+    def cur(self):
+        """The image / mesh artist being drawn: its array carries the values the pixels lost."""
+        a = self.drawing[-1][0] if self.drawing else None
+        return a if isinstance(a, (_ImageBase, QuadMesh)) else None
+
     # helpers
     def _in(self, name): return any(name in g for g in self.groups)
+    def _role(self):
+        """What the artist being drawn is, from matplotlib's own artist tree; figure-level artists it does not list (plotnine legends) are placed by where they sit, else unknown."""
+        return self.drawing[0][1] if self.drawing else "legend" if self._leg() else None
     def _leg(self, t=None):  # plotnine draws legends straight into the figure: no "legend" group, just figure-level artists
         g = self.groups
         return self._in("legend") or "axes" not in g and (g[-1:] in (["line2d"], ["patch"], ["collection"]) or t is not None and g[-1:] == ["text"] and t.get_position() == (0, 0))
@@ -58,7 +73,7 @@ class TextRenderer(RendererBase):
     def draw_path(self, gc, path, transform, rgbFace=None):
         if self._in("text") or self._in("annotation") or self._in("tick"): return  # Text bbox patch, gridlines: not data
         polys = [self._flip(p) for p in path.to_polygons(transform, closed_only=False)]
-        clip, legend = self._clip(gc), self._leg()
+        clip, role = self._clip(gc), self._role()
         candle = next((g.removeprefix('trendsetter_axi-candle-') for g in self.groups if g.startswith('trendsetter_axi-candle-')), None)
         if candle:
             rgb, _ = self._rgb(rgbFace if rgbFace is not None else gc.get_rgb())
@@ -69,12 +84,12 @@ class TextRenderer(RendererBase):
             rgb, a = self._rgb(rgbFace, gc.get_forced_alpha() and gc.get_alpha() or None)
             if a > 0.05:
                 before = self.cv.ninks
-                self.cv.fill(polys, rgb, clip, legend=legend, alpha=a)
+                self.cv.fill(polys, rgb, clip, role=role, alpha=a)
                 filled = self.cv.ninks > before
         if not filled and gc.get_linewidth() > 0:
             rgb, a = self._rgb(gc.get_rgb())
             if a > 0.05:
-                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, legend=legend, rule=self._in("LineCollection"), data=not legend and (self._in("line2d") or self._in("LineCollection")))
+                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, role=role, rule=self._in("LineCollection"))
 
     def draw_markers(self, gc, marker_path, marker_trans, path, trans, rgbFace=None):
         if self._in("axis") and not self._in("legend"): return  # tick marks: the frame says enough
@@ -88,7 +103,7 @@ class TextRenderer(RendererBase):
         pts = self._flip(raw)
         c = rgbFace if rgbFace is not None and (len(rgbFace) < 4 or rgbFace[3] > 0.05) else gc.get_rgb()   # hollow marker: face (r,g,b,0), the edge carries the colour
         rgb, a = self._rgb(c)
-        if a > 0.05 and len(pts): self.cv.marker(pts, rgb, self._clip(gc), legend=self._leg())
+        if a > 0.05 and len(pts): self.cv.marker(pts, rgb, self._clip(gc), role=self._role())
 
     def _levels(self, shape):
         """0..1 levels (NaN = missing) of the artist being drawn, or None when it has no scalar array of this shape."""
@@ -185,12 +200,28 @@ def _dist(ax):
     return bool(polys) and (bool(_rows_of(ax)) and len(polys) >= 3 or any(sym(np.asarray(c.get_paths()[0].vertices)) for c in polys))
 
 
-def _hook(fig, on):
-    """Tell the renderer which image/mesh is drawing: its array has the values, the pixels only have colours."""
+def _roles(fig):
+    """(artist, role) for every artist whose meaning matplotlib knows: what it is decides how it draws, never its colour."""
+    yield fig.patch, "background"
+    for lg in fig.legends: yield lg, "legend"
     for ax in fig.axes:
-        for a in list(ax.images) + [c for c in ax.collections if isinstance(c, QuadMesh)]:
-            if on: a.draw = lambda r, a=a, f=a.draw: (setattr(r, "cur", a), f(r), setattr(r, "cur", None))[1]
-            else: a.__dict__.pop("draw", None)
+        yield ax.patch, "background"
+        for a in (*ax.spines.values(), ax.xaxis, ax.yaxis): yield a, "axis"
+        if ax.get_legend() is not None: yield ax.get_legend(), "legend"
+        for a in (*ax.lines, *ax.collections, *ax.patches, *ax.images): yield a, "data"
+        for a in ax.texts: yield a, "annotation"
+
+
+def _hook(fig):
+    """Tell the renderer which artist is drawing and what it is (images/meshes: their array has the values, the pixels only have colours).
+    Returns the hooked artists for _unhook."""
+    hooked = list(_roles(fig))
+    for a, role in hooked: a.draw = lambda r, a=a, role=role, f=a.draw: r.draw_artist(a, role, f)
+    return [a for a, _ in hooked]
+
+
+def _unhook(artists):
+    for a in artists: a.__dict__.pop("draw", None)
 
 
 def _fixed(ax, axis):
@@ -506,7 +537,7 @@ def render(fig, cols=80, color=False):
     cap = _clipped(fig)
     rend = TextRenderer(w, h, cols); rend.wrapped = fig._wrapped
     fig._get_renderer = lambda: rend         # layout engines measure text in cells
-    _hook(fig, True)
+    hooked = _hook(fig)
     from matplotlib.layout_engine import PlaceHolderLayoutEngine
     if fig.get_layout_engine() is None or isinstance(fig.get_layout_engine(), PlaceHolderLayoutEngine):  # fig.tight_layout() at build time leaves a no-op placeholder: layout must rerun in cells
         fig.set_layout_engine("tight")
@@ -531,7 +562,7 @@ def render(fig, cols=80, color=False):
         fig.draw(rend)                        # pass 2: real
     fig.set_layout_engine("none")             # freeze geometry for the shape-check reference
     del fig._get_renderer
-    _hook(fig, False)
+    _unhook(hooked)
     text = rend.cv.render(color=color)
     if cap: text += "\n" + "\n".join(wrap(cap, cols)); rend.cv.meta["clipped"] = cap
     return text, rend.cv.meta

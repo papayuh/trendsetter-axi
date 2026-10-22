@@ -41,6 +41,10 @@ def lum(c): return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
 def neutral(c): return max(c[:3]) - min(c[:3]) < 0.12 or max(c[:3]) < 0.15
 def background(c): return neutral(c) and lum(c) > 0.8
 
+# What a mark is, when the source knows (the matplotlib adapter asks each artist; SVG reads classes):
+# data | axis | grid | annotation | legend | background. None means unknown: guessed from colour and shape.
+HIDDEN = ("grid", "annotation", "background")   # never filled or marked: gridlines like matplotlib's, text boxes, page/panel fills; annotation arrows are drawn as strokes
+
 
 SUP = dict(zip("0123456789-+−", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺⁻"))
 def sup(t): return "".join(SUP[ch] for ch in t) if all(ch in SUP for ch in t) else "^" + t
@@ -95,19 +99,20 @@ class Canvas:
 
     def bg(self, c): return neutral(c) and (lum(c) < 0.4 if self.dark else lum(c) > 0.8)
 
-    def stroke(self, polylines, rgb, dashes=None, clip=None, legend=False, rule=False, data=False):   # data: the stroke is a data artist (a curve), never axis/grid geometry whatever its colour
-        if self.bg(rgb) and not data or not polylines: return
+    def stroke(self, polylines, rgb, dashes=None, clip=None, role=None, rule=False):
+        data = role == "data"   # a data artist (a curve) is never axis/grid geometry or background, whatever its colour
+        if role in ("grid", "background") or self.bg(rgb) and not data or not polylines: return
         pts = np.concatenate([np.asarray(p, float) for p in polylines if len(p)])
-        if legend:  # one short key per handle; frames and long strokes are not keys
+        if role == "legend":  # one short key per handle; frames and long strokes are not keys
             (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
             if x1 - x0 > 5 * self.cw or y1 - y0 > 2 * self.ch: return
             return self.legend_marks.append((pts.mean(0), None if neutral(rgb) else self._sid(rgb, None), "line"))
         (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
         p0 = np.asarray(polylines[0], float)
         if x1 - x0 <= self.cw * 1.2 and y1 - y0 <= self.ch * 0.6 and len(p0) > 3 and np.hypot(*(p0[0] - p0[-1])) < 1e-3:
-            return self.marker([pts.mean(0)], rgb, clip)   # hollow marker (open circle etc.)
-        if neutral(rgb):  # dark gray/black: axis-aligned -> box drawing, else plain dots
-            grid = lum(rgb) > 0.6 and not self.dark or self.panel is not None and lum(rgb) > self.panel   # light gray axis-aligned strokes (or lighter than the panel) are gridlines unless the artist is data: skip
+            return self.marker([pts.mean(0)], rgb, clip, role)   # hollow marker (open circle etc.)
+        if neutral(rgb) or role in ("axis", "annotation"):  # dark gray/black, the frame or an arrow (never a series): axis-aligned -> box drawing, else plain dots
+            grid = role is None and (lum(rgb) > 0.6 and not self.dark or self.panel is not None and lum(rgb) > self.panel)   # unknown light gray axis-aligned strokes (or lighter than the panel) are taken for gridlines: skip
             for p in polylines:
                 p = np.asarray(p, float)
                 if len(p) < 2: continue
@@ -116,27 +121,27 @@ class Canvas:
                         if data or not grid: self.strokes.append(("h", a, b, clip, lum(rgb) < 0.35))
                     elif abs(a[0] - b[0]) < 0.5 and abs(a[1] - b[1]) >= self.ch:
                         if data or not grid: self.strokes.append(("v", a, b, clip, lum(rgb) < 0.35))
-                    elif data or max(abs(a - b)) >= self.cw: self.strokes.append(("dots", -1, [np.array([a, b])], dashes, clip))   # short segments are decoration unless the artist is data: a dense curve is all short segments
+                    elif role != "axis" or max(abs(a - b)) >= self.cw: self.strokes.append(("dots", -1, [np.array([a, b])], dashes, clip))   # short frame segments are tick marks; anything else may be a dense curve, which is all short segments
             return
         p0 = np.asarray(polylines[0], float)
         if (rule or x1 - x0 < 0.6 * self.w) and len(polylines) == 1 and len(p0) == 2 and abs(p0[0, 1] - p0[1, 1]) < 0.5 and abs(p0[0, 0] - p0[1, 0]) >= 2 * self.cw:   # a short flat ax.plot (violin median drawn as a line) is the same rule
             return self.rules.append((self._sid(rgb, "line"), p0[0], p0[1], clip))   # violin median / cap: always `─`, never a braille pattern that depends on the sub-row
         self.strokes.append(("dots", self._sid(rgb, "line"), [np.asarray(p, float) for p in polylines], dashes, clip))
 
-    def fill(self, polygons, rgb, clip=None, legend=False, continuous=False, alpha=1.0):
+    def fill(self, polygons, rgb, clip=None, role=None, continuous=False, alpha=1.0):
         polygons = [np.asarray(p, float) for p in polygons if len(p) > 2]
-        if not polygons or self.bg(rgb) and not continuous: return
+        if not polygons: return
         pts = np.concatenate(polygons)
         (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
-        if not continuous and neutral(rgb) and lum(rgb) < 0.35 and (x1 - x0) * (y1 - y0) >= 0.4 * self.w * self.h:
-            self.dark = True; return   # page/panel background of a dark theme
-        if not continuous and neutral(rgb) and lum(rgb) <= 0.8 and (x1 - x0) * (y1 - y0) >= 0.4 * self.w * self.h:
-            self.panel = lum(rgb); return   # mid-grey panel (plotnine theme_dark/gray): background, not data
-        if legend:
+        page = (role == "background" or role is None and not continuous) and (x1 - x0) * (y1 - y0) >= 0.4 * self.w * self.h   # a big neutral fill is the page/panel; a smaller background fill (one subplot) is hidden below
+        if page and neutral(rgb) and lum(rgb) < 0.35: self.dark = True; return   # page/panel background of a dark theme
+        if page and neutral(rgb) and lum(rgb) <= 0.8: self.panel = lum(rgb); return   # mid-grey panel (plotnine theme_dark/gray): background, not data
+        if role in HIDDEN or self.bg(rgb) and not continuous and (role != "data" or (lum(rgb) < 0.03 if self.dark else lum(rgb) > 0.97)): return   # a data fill in the page colour (white bar) is not ink: its edge draws
+        if role == "legend":
             return self.legend_marks.append((pts.mean(0), self._sid(rgb, None), "fill"))
         if continuous: return self.cont.append((polygons, rgb, clip))
         if x1 - x0 <= self.cw * 1.2 and y1 - y0 <= self.ch * 0.6:  # tiny closed shape = marker
-            return self.tiny.append((polygons, rgb, clip))   # marker unless it is one cell of a tiled heatmap (see render)
+            return self.tiny.append((polygons, rgb, clip, role))   # marker unless it is one cell of a tiled heatmap (see render)
         self.fills.append((polygons, self._sid(rgb, "fill"), clip, alpha < 0.95, (x1 - x0) * (y1 - y0)))
 
     def candle(self, polygons, rgb, clip, kind):
@@ -144,10 +149,10 @@ class Canvas:
         if not len(points): return
         self.candles.append((points.min(0), points.max(0), self._sid(rgb, 'line'), clip, kind))
 
-    def marker(self, points, rgb, clip=None, legend=False):
-        if self.bg(rgb): return
-        sid = -1 if neutral(rgb) else self._sid(rgb, None if legend else "mark")
-        if legend: return self.legend_marks.append((np.mean(points, 0), sid, "mark"))
+    def marker(self, points, rgb, clip=None, role=None):
+        if role in HIDDEN or self.bg(rgb) and role != "data": return
+        sid = -1 if neutral(rgb) else self._sid(rgb, None if role == "legend" else "mark")
+        if role == "legend": return self.legend_marks.append((np.mean(points, 0), sid, "mark"))
         self.marks.append((np.asarray(points, float).reshape(-1, 2), sid, clip))
 
     def image(self, x0, y0, x1, y1, rgb, alpha=None, clip=None):  # rgb: (h, w, 3) floats 0..1, row 0 at top
@@ -387,9 +392,9 @@ class Canvas:
     def render(self, color=False):
         if self.tiny:   # many tiny fills in >8 colours tile a heatmap: continuous ramp, not glyph markers
             rect = lambda ps: len(ps) == 1 and len(ps[0]) in (4, 5) and all(np.ptp(np.round(ps[0][:4, k], 1)) > 0 and len(set(np.round(ps[0][:4, k], 1))) == 2 for k in (0, 1))   # axis-aligned quad: a heatmap cell, not a circle/diamond marker
-            if len(self.tiny) > 50 and len({tuple(np.round(c[:3], 2)) for _, c, _ in self.tiny}) > 8 and sum(rect(p) for p, _, _ in self.tiny) > 0.9 * len(self.tiny): self.cont += self.tiny
+            if len(self.tiny) > 50 and len({tuple(np.round(t[1][:3], 2)) for t in self.tiny}) > 8 and sum(rect(t[0]) for t in self.tiny) > 0.9 * len(self.tiny): self.cont += [t[:3] for t in self.tiny]
             else:
-                for polys, rgb, clip in self.tiny: self.marker([np.concatenate(polys).mean(0)], rgb, clip)
+                for polys, rgb, clip, role in self.tiny: self.marker([np.concatenate(polys).mean(0)], rgb, clip, role)
             self.tiny = []
         R_, C_ = self.rows, self.cols
         sx, sy = 2 / self.cw, 4 / self.ch
