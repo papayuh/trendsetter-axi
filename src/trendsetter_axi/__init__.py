@@ -4,7 +4,7 @@ import copy, itertools
 from matplotlib.category import UnitData
 
 from . import mpl as _mpl, result as _result, svg as _svg
-from .result import RenderLossError, RenderResult
+from .result import RenderLossError as RenderLossError, RenderResult as RenderResult   # public API
 
 __version__ = "0.1.0"
 

@@ -640,7 +640,6 @@ def describe(fig, meta):
         fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
         data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
-        bars = {id(b): c for c in ax.containers if isinstance(c, BarContainer) for b in c}
         for c in ax.containers:
             if not isinstance(c, BarContainer) or not len(c): continue
             h = c.orientation == "horizontal"

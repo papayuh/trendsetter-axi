@@ -35,7 +35,7 @@ Both functions take `color=True` for 24-bit ANSI colour. Colour never changes th
 
 ### What the text lost: `render`
 
-`render(source, cols=80, color=False, strict=False)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return.
+`render(source, cols=80, *, color=False, strict=False)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return.
 
 ```python
 from trendsetter_axi import render
