@@ -3,7 +3,7 @@ mpl_ascii and plotext make from the same figure, and nothing (a guessing baselin
 
 Run from repo root:
     PYTHONPATH=src python benchmarks/agent/run.py            # build fixtures, ask the model (resumes), write RESULTS.md
-    PYTHONPATH=src python benchmarks/agent/run.py --no-ask   # fixtures and o200k counts only, no model calls
+    PYTHONPATH=src python benchmarks/agent/run.py --no-ask   # rebuild fixtures, regrade results.jsonl into RESULTS.md, no model calls
 
 Model calls go through the locally logged-in `claude -p` CLI: one call per chart and format, all of a chart's questions in
 that call, no tools, no MCP servers, no settings files, a short fixed system prompt. Building the fixtures needs tiktoken,

@@ -16,7 +16,7 @@ Numbers: [RESULTS.md](RESULTS.md). Raw replies, token counts and timings: `resul
 ```sh
 uv pip install -e '.[dev]' tiktoken mpl_ascii==1.0.1 plotext==6.1.0
 PYTHONPATH=src python benchmarks/agent/run.py --no-ask   # rebuild fixtures, regrade results.jsonl, rewrite RESULTS.md
-PYTHONPATH=src python benchmarks/agent/run.py            # also make any model calls not yet in results.jsonl
+PYTHONPATH=src python benchmarks/agent/run.py            # also make model calls missing from results.jsonl (or errored, or asked older questions)
 ```
 
 Model calls use the locally logged-in `claude -p` (Claude Code CLI): no API key, no tools, no MCP servers, no settings files, one short system prompt. To rerun from scratch, delete `results.jsonl`. `--model` picks another model; rows are kept per model.
