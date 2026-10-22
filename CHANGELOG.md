@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- `render(source, cols, color=False, strict=False)` returns a `RenderResult`: `text`, `dimensions`, `series`, `scales`, `warnings`, `losses` and `supported_features`. `render_figure` and `render_svg` still return the same string.
+- Losses count data artists that drew nothing or ended with no visible cell, data points outside the axes view, cut legend entries and dropped or cut text.
+- `strict=True` raises `RenderLossError` on a material loss.
+- `RenderResult.summary()`: compact scales, series values and losses read from the figure's data; SVG input says values are unavailable.
+- `color=True` on `render_figure` and `render_svg` adds 24-bit ANSI colour.
+
 ## 0.1.0
 
 First release.

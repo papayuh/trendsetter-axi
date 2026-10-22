@@ -8,7 +8,10 @@ import numpy as np
 from matplotlib.backend_bases import RendererBase
 from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
-from matplotlib.collections import QuadMesh, PolyCollection
+from matplotlib.category import UnitData
+from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh
+from matplotlib.colors import to_hex, to_rgb
+from matplotlib.lines import Line2D
 from matplotlib.container import BarContainer
 from matplotlib.image import _ImageBase
 from .core import Canvas
@@ -25,6 +28,7 @@ class TextRenderer(RendererBase):
         self.groups = []
         self.wrapped = {}
         self.drawing = []   # (artist, role) being drawn, outermost first (see _hook)
+        self.owners = []    # [artist, primitives queued] per top-level data artist drawn, for loss accounting
 
     # geometry / metrics
     def get_canvas_width_height(self): return self.w, self.h
@@ -40,9 +44,13 @@ class TextRenderer(RendererBase):
     def option_image_nocomposite(self): return True
 
     def draw_artist(self, a, role, draw):
+        own = role == "data" and not self.drawing
+        if own: self.cv.owner, n = len(self.owners), self.cv.nprims; self.owners.append([a, 0])
         self.drawing.append((a, role))
         try: return draw(self)
-        finally: self.drawing.pop()
+        finally:
+            self.drawing.pop()
+            if own: self.owners[self.cv.owner][1] = self.cv.nprims - n; self.cv.owner = None
 
     @property
     def cur(self):
@@ -565,7 +573,133 @@ def render(fig, cols=80, color=False):
     _unhook(hooked)
     text = rend.cv.render(color=color)
     if cap: text += "\n" + "\n".join(wrap(cap, cols)); rend.cv.meta["clipped"] = cap
+    rend.cv.meta.update(owners=rend.owners, owned=rend.cv.owned)
     return text, rend.cv.meta
+
+
+def _fmt(axis, v):
+    """A data value as the axis means it: a date, a category name, else 4 significant digits."""
+    if isinstance(axis.units, UnitData):
+        names = {i: k for k, i in axis.units._mapping.items()}
+        if np.isclose(v, round(v)) and round(v) in names: return str(names[round(v)])
+    if "Date" in type(axis.get_converter()).__name__:
+        d = mdates.num2date(v); lo, hi = axis.get_view_interval()
+        return d.strftime("%Y-%m-%d" if (d.hour, d.minute) == (0, 0) or abs(hi - lo) > 3 else "%Y-%m-%d %H:%M")   # time of day only on a short view
+    return f"{v:.4g}"
+
+
+def _scale(ax, k):
+    axis = getattr(ax, k + "axis")
+    kind = "category" if isinstance(axis.units, UnitData) else "date" if "Date" in type(axis.get_converter()).__name__ else axis.get_scale()
+    d = dict(label=axis.label.get_text(), scale=kind)
+    if kind == "category": d["categories"] = len(axis.units._mapping)
+    else: d["range"] = "..".join(_fmt(axis, v) for v in getattr(ax, f"get_{k}lim")())
+    return d
+
+
+def _data_axes(fig): return [ax for ax in fig.axes if not hasattr(ax, "_colorbar")]
+
+
+def _name(a, bars):
+    c = bars.get(id(a), a)
+    label = c.get_label() if hasattr(c, "get_label") else None
+    return label if label and not label.startswith("_") else None
+
+
+def _points(a, bars):
+    """Display coordinates of an artist's finite data points (bar ends for bars), or None when it has no point data."""
+    if isinstance(a, Line2D): xy, tr = a.get_xydata(), a.get_transform()
+    elif isinstance(a, PathCollection): xy, tr = np.asarray(a.get_offsets(), float), a.get_offset_transform()
+    elif id(a) in bars and a.get_width() and a.get_height():
+        h = bars[id(a)].orientation == "horizontal"
+        xy, tr = np.array([[a.get_x() + a.get_width(), a.get_y() + a.get_height() / 2] if h else [a.get_x() + a.get_width() / 2, a.get_y() + a.get_height()]]), a.axes.transData
+    else: return None
+    xy = np.asarray(xy, float).reshape(-1, 2)
+    xy = xy[np.isfinite(xy).all(1)]
+    return tr.transform(xy) if len(xy) else xy
+
+
+def _heat_at(ax, a, z, k):
+    """Row, column labels of flat heat cell k: the tick label at the cell centre, else the centre value."""
+    i, j = divmod(int(k), z.shape[1])
+    if isinstance(a, QuadMesh): x, y = a.get_coordinates()[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
+    else:
+        l, r, b, t = a.get_extent(); n, m = z.shape
+        x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
+    tick = lambda axis, v: next((lab.get_text() for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if abs(tv - v) < .5 and lab.get_text()), None) or _fmt(axis, v)
+    return f"{tick(ax.yaxis, y)}/{tick(ax.xaxis, x)}"
+
+
+def describe(fig, meta):
+    """Scales and series of every data axes, read from the figure's own data (never from the text): what the chart says in numbers."""
+    keys = {tuple(s["rgb"]): s["key"] for s in meta["series"]}
+    key = lambda c: keys.get(tuple(round(float(v), 2) for v in to_rgb(c)))
+    scales, series = [], []
+    for j, ax in enumerate(_data_axes(fig)):
+        scales.append(dict(axes=j, title=ax.get_title(), x=_scale(ax, "x"), y=_scale(ax, "y")))
+        fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
+        rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
+        bars = {id(b): c for c in ax.containers if isinstance(c, BarContainer) for b in c}
+        for c in ax.containers:
+            if not isinstance(c, BarContainer) or not len(c): continue
+            h = c.orientation == "horizontal"
+            pos, val = ([b.get_y() + b.get_height() / 2 for b in c], [b.get_width() for b in c]) if h else ([b.get_x() + b.get_width() / 2 for b in c], [b.get_height() for b in c])
+            fp, fv = (fy, fx) if h else (fx, fy)
+            pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
+            if len(pairs) > 12: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
+            series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(c[0].get_facecolor()), color=to_hex(c[0].get_facecolor()), n=len(c), values=pairs))
+        for a in ax.lines:
+            xy = a.get_xydata(); xy = xy[np.isfinite(xy).all(1)]
+            if not len(xy): continue
+            if len(xy) <= 8: v = [f"{fx(x)}={fy(y)}" for x, y in xy]
+            else:
+                lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
+                v = [f"first {fx(xy[0, 0])}={fy(xy[0, 1])}", f"last {fx(xy[-1, 0])}={fy(xy[-1, 1])}", f"min {fx(lo[0])}={fy(lo[1])}", f"max {fx(hi[0])}={fy(hi[1])}"]
+            series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]), values=v))
+        for a in ax.collections:
+            if isinstance(a, QuadMesh): continue
+            fc = a.get_facecolor(); c = fc[0] if len(fc) else (a.get_edgecolor()[0] if len(a.get_edgecolor()) else "k")
+            if isinstance(a, PathCollection):
+                xy = np.asarray(a.get_offsets(), float); xy = xy[np.isfinite(xy).all(1)]
+                series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]), values=[]))
+            elif isinstance(a, PolyCollection) and len(a.get_paths()):
+                v = np.concatenate([p.vertices for p in a.get_paths()]); v = v[np.isfinite(v).all(1)]
+                series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
+        for a in [*ax.images, *(c for c in ax.collections if isinstance(c, QuadMesh))]:
+            z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float)) if a.get_array() is not None else None
+            if z is None or z.ndim != 2: continue
+            cb = getattr(a, "colorbar", None)
+            label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
+            v = [f"min {_heat_at(ax, a, z, z.argmin())}={z.min():.4g}", f"max {_heat_at(ax, a, z, z.argmax())}={z.max():.4g}"] if z.count() else []
+            series.append(dict(name=label or _name(a, {}), kind="heatmap", axes=j, key=None, color=None, n=int(z.count()), shape=f"{z.shape[0]}x{z.shape[1]}",
+                               missing=int(z.mask.sum()) if np.ma.is_masked(z) else 0, values=v))
+    return series, scales
+
+
+def losses(fig, meta):
+    """Data the text does not show, measured on the drawn figure: data artists that left no visible cell, and points outside the axes view.
+    ponytail: series are keyed by colour, so an artist sharing its colour with a drawn one counts as drawn; per-artist ink ids if that matters."""
+    bars = {id(b): c for ax in _data_axes(fig) for c in ax.containers if isinstance(c, BarContainer) for b in c}
+    kind = lambda a: "bar" if id(a) in bars else type(a).__name__
+    lost, clipped = {}, {}
+    for i, (a, n) in enumerate(meta["owners"]):
+        if not a.get_visible() or a.axes is None: continue
+        pts = _points(a, bars)
+        if pts is not None and a.get_clip_on():
+            x0, y0, x1, y1 = a.axes.bbox.extents
+            out = int((~((pts[:, 0] >= x0 - .5) & (pts[:, 0] <= x1 + .5) & (pts[:, 1] >= y0 - .5) & (pts[:, 1] <= y1 + .5))).sum())
+            if out:
+                k = (kind(a), _name(a, bars)); o, t = clipped.get(k, (0, 0)); clipped[k] = (o + out, t + len(pts))
+            if out == len(pts): continue   # wholly outside: clipped, not lost
+        sids = meta["owned"].get(i, set())
+        if n == 0 or sids and not sids & meta["drawn"]:
+            if pts is not None and not len(pts) or isinstance(a, Collection) and not any(np.isfinite(p.vertices).all(1).any() for p in a.get_paths()): continue   # no data to draw
+            k = (kind(a), _name(a, bars), "drew nothing" if n == 0 else "hidden: no visible cell"); lost[k] = lost.get(k, 0) + 1
+    out = [dict(kind="lost_artist", what=f"{k} {name!r}" if name else k, detail=f"{c} {why}" if c > 1 else why, material=True)
+           for (k, name, why), c in lost.items()]
+    out += [dict(kind="clipped_data", what=f"{k} {name!r}" if name else k, detail=f"{o} of {t} points outside the axes view", material=True)
+            for (k, name), (o, t) in clipped.items()]
+    return out
 
 
 def bars_without_ink(fig, text, cols=80):
