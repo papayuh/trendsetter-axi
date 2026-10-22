@@ -4,6 +4,7 @@ import io
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 import trendsetter_axi as tsa
@@ -137,3 +138,24 @@ def test_svg_marks_values_unavailable(close):
     assert not r.supported_features["source_values"] and not r.supported_features["artist_roles"]
     assert r.series and all(s["values"] is None for s in r.series)
     assert "values unavailable" in r.summary()
+
+
+@pytest.mark.parametrize("under", ["black", "0.3"])
+def test_hidden_neutral_series_is_lost(close, under):
+    """A black or gray curve drawn over by another series is as lost as a coloured one."""
+    def build(ax):
+        x = np.linspace(0, 6, 200)
+        ax.plot(x, np.sin(x), color=under, label="baseline")
+        ax.plot(x, np.sin(x), color="tab:red", lw=3, label="model")
+    r = tsa.render(figure(build), 60)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [("lost_artist", "Line2D 'baseline'", True)], r.losses
+    with pytest.raises(tsa.RenderLossError, match="baseline"):
+        tsa.render(figure(build), 60, strict=True)
+
+
+def test_visible_neutral_series_is_not_lost(close):
+    def build(ax):
+        ax.plot([1, 3, 2, 4], color="black", label="actual")
+        ax.plot([4, 2, 3, 1], color="tab:red", label="forecast")
+        ax.axhline(2.5, color="gray")
+    assert tsa.render(figure(build), 60, strict=True).losses == []
