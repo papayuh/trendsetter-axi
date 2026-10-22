@@ -133,10 +133,10 @@ class Canvas:
         if not polygons: return
         pts = np.concatenate(polygons)
         (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
-        page = role == "background" or role is None and not continuous and (x1 - x0) * (y1 - y0) >= 0.4 * self.w * self.h   # unknown: a big neutral fill is taken for the page/panel
+        page = (role == "background" or role is None and not continuous) and (x1 - x0) * (y1 - y0) >= 0.4 * self.w * self.h   # a big neutral fill is the page/panel; a smaller background fill (one subplot) is hidden below
         if page and neutral(rgb) and lum(rgb) < 0.35: self.dark = True; return   # page/panel background of a dark theme
         if page and neutral(rgb) and lum(rgb) <= 0.8: self.panel = lum(rgb); return   # mid-grey panel (plotnine theme_dark/gray): background, not data
-        if role in HIDDEN or self.bg(rgb) and not continuous and role != "data": return
+        if role in HIDDEN or self.bg(rgb) and not continuous and (role != "data" or (lum(rgb) < 0.03 if self.dark else lum(rgb) > 0.97)): return   # a data fill in the page colour (white bar) is not ink: its edge draws
         if role == "legend":
             return self.legend_marks.append((pts.mean(0), self._sid(rgb, None), "fill"))
         if continuous: return self.cont.append((polygons, rgb, clip))

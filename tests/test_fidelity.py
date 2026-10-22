@@ -126,6 +126,25 @@ def test_axes_facecolor_is_background_whatever_its_colour():
     assert len(BRAILLE.findall("".join(body(line("white"))))) > 40 and line("#dde8ff") == line("white")   # a tinted panel is not a filled series
 
 
+def test_one_dark_subplot_does_not_darken_the_figure():
+    def pair(face):
+        fig, axs = plt.subplots(1, 2, figsize=(8, 3))
+        try:
+            if face: axs[0].set_facecolor(face)
+            for ax in axs: ax.plot(X, np.sin(X))
+            return tsa.render_figure(fig, 80)
+        finally:
+            plt.close(fig)
+    dark = pair("0.1")
+    assert dark.count("┌") == 2 and dark.count("┘") == 2 and dark == pair(None), dark   # one subplot's axes patch is hidden, not a dark page that hides every frame
+
+
+def test_white_bars_stay_outlined():
+    bars = render(lambda ax: ax.bar(range(6), [3, 9, 5, 7, 2, 6], color="white", edgecolor="black"))
+    inside = "".join(body(bars))
+    assert "█" not in inside and inside.count("│") > 10 and "┌" in inside, bars   # a bar in the page colour is its edge, not a solid block
+
+
 def test_annotation_arrow_is_drawn_but_never_a_series():
     def chart(arrow):
         def build(ax):
