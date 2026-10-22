@@ -601,7 +601,7 @@ def _compact(axis, lo, hi):
 def _samples(x, y, n=10):
     """About n points to stand for a long line: its first and last point and nice x positions between, y interpolated there (nearest point if x is not sorted)."""
     xs = [v for v in mticker.MaxNLocator(nbins=n, steps=[1, 2, 2.5, 5, 10]).tick_values(x.min(), x.max()) if x.min() < v < x.max()]
-    xs = sorted({x[0], *xs, x[-1]}) if x[0] <= x[-1] else [x[0], *xs, x[-1]]
+    xs = sorted({x[0], *xs, x[-1]}) if x[0] <= x[-1] else [x[0], *xs[::-1], x[-1]]
     if np.all(np.diff(x) > 0): return np.array(xs), np.interp(xs, x, y)
     i = [int(np.abs(x - v).argmin()) for v in xs]
     return x[i], y[i]
@@ -648,14 +648,14 @@ def _points(a, bars):
 
 
 def _heat_at(ax, a, z, k):
-    """Row, column labels of flat heat cell k: the tick label at the cell centre, else the centre value."""
+    """(row, column) labels of flat heat cell k: the tick label at the cell centre, else the centre value."""
     i, j = divmod(int(k), z.shape[1])
     if isinstance(a, QuadMesh): x, y = a.get_coordinates()[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
     else:
         l, r, b, t = a.get_extent(); n, m = z.shape
         x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
     tick = lambda axis, v: next((lab.get_text() for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if abs(tv - v) < .5 and lab.get_text()), None) or _fmt(axis, v)
-    return f"{tick(ax.yaxis, y)}/{tick(ax.xaxis, x)}"
+    return tick(ax.yaxis, y), tick(ax.xaxis, x)
 
 
 def describe(fig, meta):
@@ -718,11 +718,11 @@ def describe(fig, meta):
             cb = getattr(a, "colorbar", None)
             label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
             cz = _compact(None, float(z.min()), float(z.max())) if z.count() else None
-            v = [f"min {_heat_at(ax, a, z, z.argmin())}={cz(z.min())}", f"max {_heat_at(ax, a, z, z.argmax())}={cz(z.max())}"] if z.count() else []
+            v = [f"min {'/'.join(_heat_at(ax, a, z, z.argmin()))}={cz(z.min())}", f"max {'/'.join(_heat_at(ax, a, z, z.argmax()))}={cz(z.max())}"] if z.count() else []
             cells = {}
             if z.count():   # small grids in full, else the mean of every row and column (when there are few enough)
-                rl = [_heat_at(ax, a, z, i * z.shape[1]).split("/")[0] for i in range(z.shape[0])]
-                cl = [_heat_at(ax, a, z, k).split("/")[1] for k in range(z.shape[1])]
+                rl = [_heat_at(ax, a, z, i * z.shape[1])[0] for i in range(z.shape[0])]
+                cl = [_heat_at(ax, a, z, k)[1] for k in range(z.shape[1])]
                 fmt = lambda row: " ".join("." if m else cz(x) for x, m in zip(row.data, np.ma.getmaskarray(row)))  # noqa: E731
                 if z.size <= 36: cells = dict(cols=" ".join(cl), grid=[f"{r}: {fmt(z[i])}" for i, r in enumerate(rl)])
                 else:

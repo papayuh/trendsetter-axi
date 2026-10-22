@@ -146,6 +146,15 @@ def test_summary_reads_each_kind_compactly(close):
     s = tsa.render(figure(heat), 60).summary()
     assert "  cols: a b\n  top: 1 2\n  low: 3 4" in s and "max low/b=4" in s, s   # small grids in full
 
+    def slashed(ax):
+        ax.imshow(np.arange(49.0).reshape(7, 7)); ax.set_xticks(range(7), [f"c/{i}" for i in range(7)]); ax.set_yticks(range(7), [f"r/{i}" for i in range(7)])
+    s = tsa.render(figure(slashed), 60).summary()
+    assert "row means: r/0=3 r/1=10" in s and "col means: c/0=21 c/1=22" in s and "max r/6/c/6=48" in s, s   # labels may hold '/'
+
+    def falling(ax): ax.plot(np.linspace(100, 0, 101), np.linspace(100, 0, 101) ** 2)
+    xs = next(l for l in tsa.render(figure(falling), 60).summary().splitlines() if "at x:" in l).split(":")[1].split()
+    assert [float(v) for v in xs] == sorted((float(v) for v in xs), reverse=True), xs   # samples keep the line's x order
+
     x = np.arange(20.0); y = 2 * x; y[5] = 90
     def scatter(ax): ax.scatter(x, y)
     s = tsa.render(figure(scatter), 60).summary()
@@ -160,6 +169,7 @@ def test_ascii_and_rows_keep_the_layout_and_cut_glyph_cost(close):
         ax.legend()
     plain, lean = tsa.render(figure(build), 60), tsa.render(figure(build), 60, ascii=True)
     assert all(ord(ch) < 128 or 0x2500 <= ord(ch) <= 0x257f for ch in lean.text), lean.text   # only ASCII and box drawing
+    assert "∙▯".translate(core.ASCII) == ".|"   # dot staircases and flat candle bodies
     assert [width(l) for l in lean.text.split("\n")] == [width(l) for l in plain.text.split("\n")]   # same cells, other glyphs
     assert all(s["key"] is None or s["key"].isascii() for s in lean.series) and lean.summary().count("losses") == 1
     tall = tsa.render(figure(build), 60, rows=20)
