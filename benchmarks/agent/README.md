@@ -23,7 +23,7 @@ PYTHONPATH=src python benchmarks/agent/run.py --tag after                  # als
 PYTHONPATH=src python benchmarks/agent/run.py --tag after --split heldout  # the same for the held-out charts
 ```
 
-Model calls use the locally logged-in `claude -p` (Claude Code CLI): no API key, no tools, no MCP servers, no settings files, one short system prompt. Every row in `results.jsonl` records its tag, the questions it asked and a hash of the chart it showed. A call is re-made when either changed; a call whose chart and questions are identical to an earlier one is reused under the new tag (marked `reused_from`), so the image, mpl_ascii, plotext and no-chart calls were made once. `--formats` limits a run to some formats; `--model` picks another model.
+Model calls use the locally logged-in `claude -p` (Claude Code CLI): no API key, no tools, no MCP servers, no settings files, one short system prompt. Every row in `results.jsonl` records its tag, the questions it asked, a hash of the chart it showed and the CLI, matplotlib and Python versions it ran under (the environment line in RESULTS.md comes from these). A call is re-made when the questions or the chart changed; a call whose chart and questions are identical to an earlier one is reused under the new tag (marked `reused_from`), so the image, mpl_ascii, plotext and no-chart calls were made once. `--formats` limits a run to some formats; `--model` picks another model.
 
 ## Method
 
