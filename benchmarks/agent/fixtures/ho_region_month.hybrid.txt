@@ -1,0 +1,17 @@
+                    Units sold by region and
+                              month
+  North ....... ....... ....... ::::::: ::::::: =======
+  South ::::::: ....... ....... ::::::: ::::::: :::::::
+   East ....... ....... ....... ::::::: ####### :::::::
+   West ....... ======= ::::::: ....... ======= :::::::
+           Jan     Feb     Mar     Apr     May     Jun
+Units  . 21.8-38.4  : 38.4-54.9  = 54.9-71.5  # 71.5-88.0
+
+title: Units sold by region and month
+heatmap 'Units' shape=4x6 min South/Mar=22 max East/May=88
+  cols: Jan Feb Mar Apr May Jun
+  North: 23 26 26 44 38 60
+  South: 40 27 22 48 40 45
+  East: 32 26 31 49 88 52
+  West: 28 56 54 27 59 50
+losses: none

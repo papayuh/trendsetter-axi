@@ -1,0 +1,1 @@
+(mpl_ascii failed on this figure: IndexError: list index out of range)

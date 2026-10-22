@@ -12,12 +12,25 @@ from trendsetter_axi import render
 r = render(fig, cols=80, strict=True)   # your existing figure; raises RenderLossError if the text would misrepresent it
 print(r.text)                           # for the person: every line fits 80 cells
 context = r.summary()                   # for the agent: scales, series values from the figure's data, what was lost
+
+lean = render(fig, cols=60, rows=12, ascii=True)
+hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also see the shape: a small ASCII chart, then the numbers
 ```
 
-- Output budget: `cols` bounds every line, titles and keys included; `r.dimensions` reports the width and height used.
+- Output budget: `cols` bounds every line, titles and keys included, `rows` sets a figure's height, and `ascii=True` draws the same cells in glyphs that cost a fraction of the tokens; `r.dimensions` reports the width and height used.
 - Diagnostics: `r.losses` lists everything the text does not show, and `strict=True` turns a material loss into an error instead of a misleading chart.
 
-What it saves, measured on 81 questions about 25 charts with `claude-sonnet-5-5` ([benchmark](benchmarks/agent/README.md)): the summary answered 86% at a median 94 tokens per chart; a 640×480 PNG answered 99% at 408; the 80-column text answered 81% at 639. The token saving comes from `summary()`, not from the text chart, and when the model can take images the PNG is the more accurate input.
+What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
+
+| what the model gets | accuracy, dev / held-out | tokens per chart (median), dev / held-out |
+| --- | ---: | ---: |
+| `summary()` | 98% / 95% | 102 / 114 |
+| hybrid: 60×12 ASCII chart + `summary()` | 96% / 100% | 316 / 326 |
+| 640×480 PNG | 99% / 100% | 408 / 408 |
+| `render(fig, 80, ascii=True).text` | 79% / 90% | 422 / 421 |
+| `render(fig, 80).text`, the terminal chart | 81% / 90% | 639 / 701 |
+
+The token saving comes from `summary()` and the hybrid, not from the terminal chart: that one is for the person. When the model can take images, the PNG is as accurate as the hybrid for about a quarter more input tokens.
 
 Other ways to get a matplotlib figure into a terminal, checked in the same benchmark: [mpl_ascii](https://github.com/chriscave/mpl_ascii) 1.0.1 is a matplotlib backend (`plt.show()`, or `savefig("x.txt")`) whose width follows the figure size at 12 characters per inch, and [plotext](https://github.com/piccolomo/plotext) 6.1.0 converts a figure's lines, scatter points and bar rectangles with `plotext.matplotlib(fig)`. On the same questions their text scored 78% and 73%, against 81%. Neither drew the three heatmaps; mpl_ascii raised on the log-scale chart and plotext drew it on a linear axis. Neither has a data summary or reports what it dropped.
 
@@ -54,7 +67,7 @@ Both functions take `color=True` for 24-bit ANSI colour. Colour never changes th
 
 ### What the text lost: `render`
 
-`render(source, cols=80, *, color=False, strict=False)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return.
+`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` sets a figure's height in lines (at least 8; heatmaps and bar charts can take more so each row or bar keeps its line).
 
 ```python
 from trendsetter_axi import render
@@ -70,9 +83,10 @@ print(r.summary())
 
 ```
 title: Example
-x: x, linear, 0.8..5.2
-y: y, linear, 0..6
-line 'demand' n=5 x=1..5 y=2..7 1=2 2=4 3=3 4=5 5=7
+x: x
+y: y
+lines at x: 1 2 3 4 5
+  'demand': 2 4 3 5 7
 losses: clipped_data Line2D 'demand': 1 of 5 points outside the axes view
 ```
 
@@ -80,13 +94,13 @@ Fields:
 
 - `text`: the chart.
 - `dimensions`: `cols` (the budget), `width` (widest line) and `height` (lines), in terminal cells.
-- `series`: one dict per series: `name`, `kind` (line, scatter, bar, barh, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. A line lists all its points up to 8, else first, last, min and max; bars list every bar up to 12, else min and max; a heatmap gives its shape, missing cells and the labelled min and max cells.
+- `series`: one dict per series: `name`, `kind` (line, scatter, bar, barh, histogram, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. A line lists all its points up to 16, else its first and last point and about 10 evenly spaced ones between, plus its exact min and max; bars list every bar up to 40, else min and max; equal-width bars edge to edge are a `histogram` (bins, counts, peak bin); a heatmap gives its shape, missing cells and the labelled min and max cells, the whole grid up to 36 cells, else row and column means up to 12 of each; a scatter gives its mean, Pearson r and up to 3 points far off its trend line. Numbers are rounded to a step near 1/60 of their axis span (3 significant digits on a log axis).
 - `scales`: per axes, the title and each axis's label, kind (linear, log, date, category) and range.
 - `losses`: everything the text does not show, as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`.
 - `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour.
 - `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
 
-`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values.
+`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values.
 
 `strict=True` raises `RenderLossError` when a loss is material, that is when the text would misrepresent the chart: a lost data artist or series, or a cut legend entry. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
 

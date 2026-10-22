@@ -1,0 +1,29 @@
+                                Two customer segments
+      ┌───────────────────────────────────────────────────────────────────────┐
+      │ o  Group A                              x          x     x            │
+    8 │ x  Group B                                            x               │
+      │                                            x  xx  x       x        x  │
+      │                                x    x   x x           x x             │
+    7 │                            x    x x   x                               │
+      │                                   xx      x  xx  x x                  │
+      │                                     x   x x   x     x xx              │
+    6 │                                               x       xx              │
+      │                                                                       │
+      │                                                    x                  │
+      │                                                                       │
+    5 │                                                                       │
+      │                                                                       │
+      │        o                                                              │
+    4 │           o    o                                                      │
+      │    o   o o o o  o o                                                   │
+      │        o  o   o o     o                                               │
+    3 │     o        oo  o                                                    │
+      │  o  o    oo  oo                                                       │
+      │  oo o   o  o o                                                        │
+    2 │         o o   o                                                       │
+      │                                                                       │
+      │             o                                                         │
+      └───────────────────────────────────────────────────────────────────────┘
+                   2                 4                 6                 8
+                                   Visits / month
+y: Spend ($100)

@@ -1,5 +1,5 @@
 title: Session length
-x: Minutes, linear, 9.162..95.98
-y: Sessions, linear, 0..159.6
-bar n=25 min 49.41=0 max 30.47=152
+x: Minutes
+y: Sessions
+histogram 25 bins of 3 from 13 to 92 peak 29-32=152 counts: 3 8 26 84 126 152 119 54 22 5 1 0 4 15 23 28 62 76 70 57 28 17 13 5 2
 losses: none

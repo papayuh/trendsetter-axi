@@ -1,8 +1,9 @@
 title: Mean monthly temperature by city
-x: Month, linear, 0.45..12.55
-y: °C, linear, -7.18..29.78
-line 'Oslo' key ● n=12 x=1..12 y=-4.3..16.4 first 1=-4.3 last 12=-3.1 min 1=-4.3 max 7=16.4
-line 'Madrid' key × n=12 x=1..12 y=6.3..25.6 first 1=6.3 last 12=6.9 min 1=6.3 max 7=25.6
-line 'Cairo' key ▲ n=12 x=1..12 y=14..28.1 first 1=14 last 12=15.5 min 1=14 max 8=28.1
-line 'Toronto' key ◆ n=12 x=1..12 y=-5.5..21.5 first 1=-5.5 last 12=-2.2 min 1=-5.5 max 7=21.5
+x: Month
+y: °C
+lines at x: 1 2 3 4 5 6 7 8 9 10 11 12
+  'Oslo' ●: -4 -4 0 4 11 15 16 15 11 6 1 -3
+  'Madrid' ×: 6 8 11 13 17 22 26 25 21 15 10 7
+  'Cairo' ▲: 14 15 18 22 25 27 28 28 26 24 19 16
+  'Toronto' ◆: -6 -4 0 7 13 19 22 21 16 10 4 -2
 losses: none

@@ -1,5 +1,6 @@
 title: Mean monthly temperature
-x: Month (1 = Jan), linear, 0.45..12.55
-y: °C, linear, 1.035..24.46
-line n=12 x=1..12 y=2.1..23.4 first 1=2.1 last 12=3.3 min 1=2.1 max 7=23.4
+x: Month (1 = Jan)
+y: °C
+lines at x: 1 2 3 4 5 6 7 8 9 10 11 12
+  y: 2 3 8 12 17 21 23 23 19 13 7 3
 losses: none

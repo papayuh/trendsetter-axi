@@ -1,5 +1,4 @@
 title: Q3 sales by region
-x: category, 6 categories
-y: Sales ($k), linear, 0..556.5
+y: Sales ($k)
 bar n=6 North=412 South=287 East=530 West=365 Central=198 Coast=451
 losses: none

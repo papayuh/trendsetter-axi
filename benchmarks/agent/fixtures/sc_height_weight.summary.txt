@@ -1,5 +1,5 @@
 title: Height vs weight
-x: Height (cm), linear, 147.7..200.5
-y: Weight (kg), linear, 41.66..89.93
-scatter n=80 x=150.1..198.1 y=43.86..87.74
+x: Height (cm)
+y: Weight (kg)
+scatter n=80 x=150..198 y=44..88 mean=170,64 r=0.84
 losses: none

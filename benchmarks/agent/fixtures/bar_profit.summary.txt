@@ -1,6 +1,6 @@
 title: Monthly profit / loss
-x: category, 12 categories
-y: $k, linear, -16.2..32.2
+y: $k
 bar n=12 Jan=12 Feb=8 Mar=-5 Apr=-14 May=3 Jun=21 Jul=17 Aug=-9 Sep=6 Oct=25 Nov=-2 Dec=30
-line n=2 x=-0.99..11.99 y=0..0 -0.99=0 11.99=0
+lines at x: -0.99 11.99
+  y: 0 0
 losses: none

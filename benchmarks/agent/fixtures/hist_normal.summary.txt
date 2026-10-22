@@ -1,5 +1,5 @@
 title: Exam scores
-x: Score, linear, 17.47..82.67
-y: Students, linear, 0..145.9
-bar n=20 min 75.26=2 max 51.55=139
+x: Score
+y: Students
+histogram 20 bins of 3 from 20 to 80 peak 50-53=139 counts: 5 5 10 18 39 51 76 94 87 110 139 99 87 75 47 24 17 13 2 2
 losses: none

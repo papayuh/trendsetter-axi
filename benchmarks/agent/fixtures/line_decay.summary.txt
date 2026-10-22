@@ -1,5 +1,6 @@
 title: Drug concentration after dose
-x: Hours, linear, -1..21
-y: mg/L, linear, 3.997..88.86
-line n=40 x=0..20 y=7.854..85 first 0=85 last 20=7.854 min 20=7.854 max 0=85
+x: Hours
+y: mg/L
+lines at x: 0 2 4 6 8 10 12 14 16 18 20
+  n=40: 85 62 46 34 26 20 16 13 11 9 8 (min 20=8 max 0=85)
 losses: none

@@ -1,6 +1,5 @@
 title: Revenue by quarter
-x: linear, -0.64..4.64
-y: Revenue ($k), linear, 0..43.05
+y: Revenue ($k)
 bar 'Store A' key █ n=5 -0.2=23 0.8=31 1.8=28 2.8=40 3.8=36
 bar 'Store B' key ▓ n=5 0.2=27 1.2=25 2.2=33 3.2=38 4.2=41
 losses: none

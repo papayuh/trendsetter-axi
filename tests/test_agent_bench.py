@@ -12,15 +12,16 @@ bench = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bench)
 
 
-def test_committed_answer_key_matches_the_charts():
-    # results.jsonl was graded against questions.json; a chart edit without a rerun would leave them disagreeing
-    key = json.loads((BENCH / "questions.json").read_text())
-    assert list(key) == list(bench.CHARTS)
-    for cid, (kind, make) in bench.CHARTS.items():
-        fig, questions = make()
-        plt.close(fig)
-        assert key[cid]["kind"] == kind
-        assert list(key[cid]["questions"].values()) == questions
+def test_committed_answer_keys_match_the_charts():
+    # results.jsonl was graded against questions*.json; a chart edit without a rerun would leave them disagreeing
+    for charts, path in bench.SPLITS.values():
+        key = json.loads(path.read_text())
+        assert list(key) == list(charts)
+        for cid, (kind, make) in charts.items():
+            fig, questions = make()
+            plt.close(fig)
+            assert key[cid]["kind"] == kind
+            assert list(key[cid]["questions"].values()) == questions
 
 
 def test_grade():
@@ -32,12 +33,14 @@ def test_grade():
     assert bench.parse('{"q1": 4}\n\nCorrection: {"q1": 5}') == {"q1": 5}
 
 
-def test_report_grades_only_rows_asked_the_current_questions(tmp_path, monkeypatch):
+def test_scores_only_rows_asked_the_current_questions():
     key = json.loads((BENCH / "questions.json").read_text())
-    monkeypatch.setattr(bench, "REPORT", tmp_path / "RESULTS.md")
-    numbers = lambda text: text.split("Environment:")[0]  # noqa: E731
-    bench.report(key, "claude-sonnet-5-5")
-    assert numbers(bench.REPORT.read_text()) == numbers((BENCH / "RESULTS.md").read_text())
+    assert "line_stock" in bench.scored(key, "claude-sonnet-5-5", "after")[3]
     key["line_stock"]["questions"]["q1"]["q"] = "What is the lowest closing price?"
-    bench.report(key, "claude-sonnet-5-5")
-    assert "`line_stock`" not in bench.REPORT.read_text()
+    assert "line_stock" not in bench.scored(key, "claude-sonnet-5-5", "after")[3]
+
+
+def test_report_regenerates_from_results(tmp_path, monkeypatch):
+    monkeypatch.setattr(bench, "REPORT", tmp_path / "RESULTS.md")
+    bench.write_report("claude-sonnet-5-5")
+    assert bench.REPORT.read_text() == (BENCH / "RESULTS.md").read_text()

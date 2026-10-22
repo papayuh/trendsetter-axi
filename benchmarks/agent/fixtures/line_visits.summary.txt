@@ -1,5 +1,6 @@
 title: Daily site visits
-x: Day, linear, -2.95..61.95
-y: Visits, linear, 984.4..1909
-line n=60 x=0..59 y=1026..1867 first 0=1282 last 59=1770 min 6=1026 max 58=1867
+x: Day
+y: Visits
+lines at x: 0 10 20 30 40 50 59
+  n=60: 1282 1367 1220 1580 1356 1733 1770 (min 6=1026 max 58=1867)
 losses: none

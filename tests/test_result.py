@@ -116,16 +116,54 @@ def test_summary_values_come_from_the_source(close):
         ax.bar(["north", "south", "east"], [3, 9.25, 5], label="sales")
         ax.set(title="Sales", ylabel="units")
     r = tsa.render(figure(build), 60)
-    assert r.series == [dict(name="sales", kind="bar", axes=0, key=None, color="#1f77b4", n=3, values=["north=3", "south=9.25", "east=5"])]
+    assert r.series == [dict(name="sales", kind="bar", axes=0, key=None, color="#1f77b4", n=3, values=["north=3", "south=9.2", "east=5"])]   # 1/60 of the span
     assert r.scales[0]["x"] == dict(label="", scale="category", categories=3) and r.scales[0]["y"]["label"] == "units"
     s = r.summary()
-    assert "bar 'sales' n=3 north=3 south=9.25 east=5" in s and "title: Sales" in s and s.endswith("losses: none")
+    assert "bar 'sales' n=3 north=3 south=9.2 east=5" in s and "title: Sales" in s and s.endswith("losses: none")
     assert len(s) < len(r.text) / 4   # an agent reads numbers, not braille
 
     def line(ax):
         ax.plot(range(20), [v % 7 for v in range(20)], label="saw")
     s = tsa.render(figure(line), 60).summary()
-    assert "line 'saw' n=20 x=0..19 y=0..6 first 0=0 last 19=5 min 0=0 max 6=6" in s, s
+    assert "lines at x: 0 2 4 6 8 10 12 14 16 18 19\n  'saw' n=20: 0 2 4 6 1 3 5 0 2 4 5 (min 0=0 max 6=6)" in s, s   # sampled: first, last, nice x between, exact extremes
+
+
+def test_summary_reads_each_kind_compactly(close):
+    def lines(ax):
+        ax.plot(range(1, 13), range(12), label="a")
+        ax.plot(range(1, 13), range(12, 0, -1), label="b")
+        ax.legend()
+    s = tsa.render(figure(lines), 60).summary()
+    assert s.count("lines at x:") == 1 and "'a' ● : 0 1 2" not in s and "'b' ×: 12 11 10" in s, s   # one shared x row, every point up to 16
+
+    rng = np.random.default_rng(0)
+    def hist(ax): ax.hist(rng.normal(size=500), bins=np.linspace(-4, 4, 17))
+    s = tsa.render(figure(hist), 60).summary()
+    assert "histogram 16 bins of 0.5 from -4 to 4 peak" in s and "counts:" in s, s
+
+    def heat(ax):
+        ax.imshow([[1, 2], [3, 4]]); ax.set_xticks([0, 1], ["a", "b"]); ax.set_yticks([0, 1], ["top", "low"])
+    s = tsa.render(figure(heat), 60).summary()
+    assert "  cols: a b\n  top: 1 2\n  low: 3 4" in s and "max low/b=4" in s, s   # small grids in full
+
+    x = np.arange(20.0); y = 2 * x; y[5] = 90
+    def scatter(ax): ax.scatter(x, y)
+    s = tsa.render(figure(scatter), 60).summary()
+    assert "outliers (5,90); others x=0..19 y=0..38" in s, s
+
+
+def test_ascii_and_rows_keep_the_layout_and_cut_glyph_cost(close):
+    def build(ax):
+        ax.plot(np.linspace(0, 10, 200), np.sin(np.linspace(0, 10, 200)), label="sin")
+        ax.plot([0, 10], [1, -1], label="fall")
+        ax.bar([2, 5, 8], [0.3, 0.7, 0.5], label="bars")
+        ax.legend()
+    plain, lean = tsa.render(figure(build), 60), tsa.render(figure(build), 60, ascii=True)
+    assert all(ord(ch) < 128 or 0x2500 <= ord(ch) <= 0x257f for ch in lean.text), lean.text   # only ASCII and box drawing
+    assert [width(l) for l in lean.text.split("\n")] == [width(l) for l in plain.text.split("\n")]   # same cells, other glyphs
+    assert all(s["key"] is None or s["key"].isascii() for s in lean.series) and lean.summary().count("losses") == 1
+    tall = tsa.render(figure(build), 60, rows=20)
+    assert tall.dimensions["height"] > plain.dimensions["height"] and tall.dimensions["width"] <= 60
 
 
 def test_svg_marks_values_unavailable(close):

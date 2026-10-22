@@ -1,5 +1,5 @@
 title: Traffic by weekday and hour
-x: Hour, linear, -0.5..23.5
-y: linear, 6.5..-0.5
-heatmap 'Vehicles / min' n=168 shape=7x24 missing=0 min Sun/2=4.621 max Fri/17=107
+x: Hour
+heatmap 'Vehicles / min' shape=7x24 min Sun/2=5 max Fri/17=107
+  row means: Mon=41 Tue=42 Wed=41 Thu=44 Fri=51 Sat=20 Sun=18
 losses: none
