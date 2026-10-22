@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `render(source, cols=80, *, color=False, strict=False)` returns a `RenderResult`: `text`, `dimensions`, `series`, `scales`, `warnings`, `losses` and `supported_features`. `render_figure` and `render_svg` still return the same string.
+- Losses count data artists that drew nothing or ended with no visible cell, data points outside the axes view, cut legend entries and dropped or cut text.
+- `strict=True` raises `RenderLossError` on a material loss: a lost data artist or series, or a cut legend entry. Points outside the axes view are reported but not material, since matplotlib hides them too.
+- `summary()` maps reference lines and shading drawn in axes or blended coordinates (`axhline`, `axvline`) back to data values.
+- `RenderResult.summary()`: compact scales, series values and losses read from the figure's data; SVG input says values are unavailable.
+- `color=True` on `render_figure` and `render_svg` adds 24-bit ANSI colour.
+
 ## 0.1.0
 
 First release.

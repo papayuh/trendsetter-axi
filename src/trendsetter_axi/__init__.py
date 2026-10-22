@@ -3,7 +3,8 @@ import copy, itertools
 
 from matplotlib.category import UnitData
 
-from . import mpl as _mpl, svg as _svg
+from . import mpl as _mpl, result as _result, svg as _svg
+from .result import RenderLossError as RenderLossError, RenderResult as RenderResult   # public API
 
 __version__ = "0.1.0"
 
@@ -35,17 +36,40 @@ def _copy(fig):
     return work
 
 
-def render_figure(fig, cols=80):
-    """Render a matplotlib Figure at most `cols` terminal cells wide per line. The figure itself is left unchanged."""
+def _figure(fig, cols, color, result):
     work = _copy(fig)
     try:
-        return _mpl.render(work, cols)[0]
+        text, meta = _mpl.render(work, cols, color)
+        if not result: return text
+        return _result.build(text, meta, cols, *_mpl.describe(fig, meta), _mpl.losses(work, meta), _result.FIGURE)
     finally:
         if work.canvas.manager is not None:
             import matplotlib.pyplot as plt
             plt.close(work)
 
 
-def render_svg(svg_text, cols=80):
+def render_figure(fig, cols=80, color=False):
+    """Render a matplotlib Figure at most `cols` terminal cells wide per line. The figure itself is left unchanged.
+    color=True adds 24-bit ANSI colour; it never changes the cell width."""
+    return _figure(fig, cols, color, False)
+
+
+def render_svg(svg_text, cols=80, color=False):
     """Render SVG source (plain text, e.g. from matplotlib with svg.fonttype='none') as text."""
-    return _svg.render(svg_text, cols)[0]
+    return _svg.render(svg_text, cols, ansi=color)[0]
+
+
+def render(source, cols=80, *, color=False, strict=False):
+    """Render a matplotlib Figure or SVG source (str or bytes) and report what the text lost, as a RenderResult.
+
+    strict=True raises RenderLossError when the text would misrepresent the chart: a data artist or series with no
+    visible cell, or a legend entry dropped or cut. Points outside the axes view are reported as losses but matplotlib
+    hides them too, so they never fail strict mode."""
+    if isinstance(source, (str, bytes)):
+        text, meta = _svg.render(source, cols, ansi=color)
+        series, scales, lost = _result.svg_series(meta)
+        res = _result.build(text, meta, cols, series, scales, lost, _result.SVG)
+    else:
+        res = _figure(source, cols, color, True)
+    if strict and any(l["material"] for l in res.losses): raise RenderLossError(res)
+    return res

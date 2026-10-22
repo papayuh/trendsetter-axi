@@ -31,6 +31,48 @@ print(render_figure(fig, cols=80))
 
 `render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text. A `clip-path` that is one axis-aligned rectangle is honoured; any other clip is drawn unclipped and the output ends with an `unsupported: ...` line saying so.
 
+Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
+
+### What the text lost: `render`
+
+`render(source, cols=80, *, color=False, strict=False)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return.
+
+```python
+from trendsetter_axi import render
+
+fig, ax = plt.subplots()
+ax.plot([1, 2, 3, 4, 5], [2, 4, 3, 5, 7], label="demand")
+ax.set(title="Example", xlabel="x", ylabel="y")
+ax.set_ylim(0, 6)   # hides the last point, as matplotlib does: reported in losses, not material
+
+r = render(fig, cols=80)
+print(r.summary())
+```
+
+```
+title: Example
+x: x, linear, 0.8..5.2
+y: y, linear, 0..6
+line 'demand' n=5 x=1..5 y=2..7 1=2 2=4 3=3 4=5 5=7
+losses: clipped_data Line2D 'demand': 1 of 5 points outside the axes view
+```
+
+Fields:
+
+- `text`: the chart.
+- `dimensions`: `cols` (the budget), `width` (widest line) and `height` (lines), in terminal cells.
+- `series`: one dict per series: `name`, `kind` (line, scatter, bar, barh, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. A line lists all its points up to 8, else first, last, min and max; bars list every bar up to 12, else min and max; a heatmap gives its shape, missing cells and the labelled min and max cells.
+- `scales`: per axes, the title and each axis's label, kind (linear, log, date, category) and range.
+- `losses`: everything the text does not show, as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`.
+- `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour.
+- `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
+
+`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values.
+
+`strict=True` raises `RenderLossError` when a loss is material, that is when the text would misrepresent the chart: a lost data artist or series, or a cut legend entry. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
+
+Lost artists are found by series colour: an artist that shares its colour with one that drew counts as drawn.
+
 ### What a mark means
 
 For matplotlib figures the renderer asks each artist what it is, so colour never decides it. Lines, collections, patches and images on an axes are data: a black contour, light gray bars or a big dark filled area draw like any other colour, and only a fill the colour of the page (a white bar) is left out so its edge draws. Spines and axes are the frame, the figure and axes patches are background, legends give the series keys, `ax.text` boxes are not drawn and an annotation arrow is plain ink, never a series. Gridlines are not drawn. Series keys still follow colour: two artists of one colour share a key. Artists matplotlib does not list on a figure or axes (plotnine draws its legend straight into the figure) are judged by where they sit and how they look.
