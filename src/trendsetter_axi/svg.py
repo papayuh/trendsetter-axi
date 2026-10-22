@@ -4,7 +4,7 @@ import base64, io, re
 import xml.etree.ElementTree as ET
 import numpy as np
 from .core import Canvas, sup
-from .cells import width
+from .cells import width, wrap
 
 NS = re.compile(r"\{.*?\}")
 NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, .5, 0), "blue": (0, 0, 1),
@@ -140,7 +140,7 @@ def role_of(classes):
     return "other"
 
 
-FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis", "background")   # matplotlib frame/axis ids, plotly grid/zero/axis layers, vega axes and view border
+FRAME = ("patch_", "matplotlib.axis_", "gridlayer", "zerolinelayer", "xlines", "ylines", "role-axis", "background", "xaxislayer", "yaxislayer", "minor-gridlayer")   # matplotlib frame/axis ids, plotly grid/zero/axis/tick layers, vega axes and view border
 
 
 def render(svg, cols=80, ansi=False, shift=0):
@@ -270,7 +270,7 @@ def render(svg, cols=80, ansi=False, shift=0):
         if t[6] == "other" and any(abs(t[1] - m[1]) < 1.5 * cv.ch and 0 <= t[0] - m[0] < 12 * cv.cw for m, *_ in cv.legend_marks):
             cv.texts[i] = t[:6] + ("legend",)
     text = cv.render(color=ansi)
-    if cv.meta.get("unsupported"): text += "\nunsupported: " + ", ".join(dict.fromkeys(cv.meta["unsupported"])) + " (drawn unclipped)"
+    if cv.meta.get("unsupported"): text += "\n" + "\n".join(wrap("unsupported: " + ", ".join(dict.fromkeys(cv.meta["unsupported"])) + " (drawn unclipped)", cols))
     return text, cv.meta
 
 

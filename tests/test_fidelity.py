@@ -115,6 +115,17 @@ def test_limits_equal_to_autoscale_stay_explicit(fix):
     assert BRAILLE.search(next(r for r in spike.split("\n") if "┌" in r)), spike   # the peak sits on the caller's top limit, not padded away from it
 
 
+@pytest.mark.parametrize("build", [lambda ax: ax.bar(range(4), [3, 9, 5, 7]), lambda ax: ax.hist([1, 2, 2, 3, 3, 3, 3, 4, 4], bins=4)], ids=["bar", "hist"])
+def test_bottom_on_sticky_zero_leaves_the_top_padded(build):
+    def chart(fix):
+        def b(ax):
+            build(ax); ax.set_title("t")
+            if fix: ax.set_ylim(bottom=0)
+        return b
+    fixed = render(chart(True))
+    assert BLOCKS.search("".join(body(fixed))) and fixed == render(chart(False)), fixed   # bottom=0 is where autoscale puts it anyway: the free top keeps its padding, the tallest label stays inside
+
+
 def test_explicit_xlim_stays_explicit():
     zoom = render(lambda ax: (ax.plot([0, 1, 2], [0, 1, 0]), ax.set_xlim(0.5, 1.5)))
     ticks = x_ticks(zoom)
@@ -206,6 +217,19 @@ def test_svg_vega_view_border_is_not_data():
 def test_svg_unsupported_clip_is_reported_not_ignored():
     text = tsa.render_svg(line_svg('<circle cx="200" cy="50" r="30"/>'), 80)
     assert "unsupported: clip-path #c" in text, text
+    narrow = tsa.render_svg(line_svg('<circle cx="200" cy="50" r="30"/>').replace('"c"', '"clip83cf7exyplot"').replace("#c)", "#clip83cf7exyplot)"), 40)
+    assert "clip83cf7exyplot" in narrow and max(map(len, narrow.split("\n"))) <= 40, narrow   # the note keeps the cols budget
+
+
+def test_svg_plotly_tick_marks_are_frame():
+    ticks = "".join(f'<path class="xtick ticks crisp" d="M{x},100v5" style="stroke:#444"/>' for x in range(0, 401, 50))
+    yticks = "".join(f'<path class="ytick ticks crisp" d="M0,{y}h-5" style="stroke:#444"/>' for y in range(0, 101, 25))
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="-10 0 420 120">
+<g class="minor-gridlayer"><path class="xgrid crisp" d="M 0 30 L 400 30" style="stroke:rgb(200,200,200)"/></g>
+<g class="xaxislayer-above">{ticks}</g><g class="yaxislayer-above">{yticks}</g>
+<path class="xlines-above crisp" d="M0,100.5H400" style="stroke:#444"/><path class="ylines-above crisp" d="M0.5,0V100" style="stroke:#444"/></svg>"""
+    text = tsa.render_svg(svg, 80)
+    assert not BRAILLE.search(text) and "─" * 60 in text, text   # ticks and the minor grid are not data: a clean axis frame, no braille blobs
 
 
 def test_matplotlib_svg_zoom_stays_inside_the_axes():

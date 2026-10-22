@@ -194,14 +194,18 @@ def _hook(fig, on):
 
 
 def _fixed(ax, axis):
-    """(first, second) limit of `axis` the caller (or a library such as plotnine) set: a side that differs from what autoscaling gives,
-    or both when autoscaling is off and neither differs (set_ylim(ax.get_ylim()), limits equal to the margins)."""
+    """(first, second) limit of `axis` the caller (or a library such as plotnine) set: a side that differs from what autoscaling gives.
+    When autoscaling is off and neither differs, the side on a sticky edge (set_ylim(bottom=0) on bars) or else both (set_ylim(ax.get_ylim())).
+    ponytail: set_ylim(ax.get_ylim()) on bars pads the free top; record set_*lim calls if that ever matters."""
     get, setlim = (ax.get_xlim, ax.set_xlim) if axis == "x" else (ax.get_ylim, ax.set_ylim)
     if getattr(ax, f"get_autoscale{axis}_on")(): return False, False
     lim = get()
     ax.autoscale(True, axis); auto = get(); setlim(lim)
     fixed = tuple(not np.isclose(a, b) for a, b in zip(lim, auto))
-    return fixed if any(fixed) else (True, True)
+    if any(fixed): return fixed
+    sticky = [v for a in ax.get_children() for v in getattr(a.sticky_edges, axis)]
+    on = tuple(any(np.isclose(v, q) for q in sticky) for v in lim)
+    return on if any(on) else (True, True)
 
 
 def _pad(fig, cv):
