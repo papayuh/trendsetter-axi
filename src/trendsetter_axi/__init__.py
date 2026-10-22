@@ -63,7 +63,8 @@ def render(source, cols=80, *, color=False, strict=False):
     """Render a matplotlib Figure or SVG source (str or bytes) and report what the text lost, as a RenderResult.
 
     strict=True raises RenderLossError when the text would misrepresent the chart: a data artist or series with no
-    visible cell, data points outside the axes view, or a legend entry dropped or cut."""
+    visible cell, or a legend entry dropped or cut. Points outside the axes view are reported as losses but matplotlib
+    hides them too, so they never fail strict mode."""
     if isinstance(source, (str, bytes)):
         text, meta = _svg.render(source, cols, ansi=color)
         series, scales, lost = _result.svg_series(meta)

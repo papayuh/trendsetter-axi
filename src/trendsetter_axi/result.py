@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from .cells import width
 
-MATERIAL = ("lost_artist", "lost_series", "clipped_data", "series_label")   # the text misrepresents the chart: strict=True refuses these
+MATERIAL = ("lost_artist", "lost_series", "series_label")   # the text misrepresents the chart: strict=True refuses these
 FIGURE = dict(color=True, artist_roles=True, source_values=True, artist_losses=True)
 SVG = dict(color=True, artist_roles=False, source_values=False, artist_losses=False)   # SVG has shapes, not artists or data
 
@@ -54,8 +54,9 @@ def build(text, meta, cols, series, scales, losses, features):
         if (role, s, why) in seen: continue
         seen.add((role, s, why))
         legend = role == "legend"   # a series name the reader cannot see
-        losses.append(dict(kind="series_label" if legend else "text", what=f"{role} {s!r}", detail=why, material=legend))
-    losses += [dict(kind="unsupported", what=u, detail="drawn unclipped", material=False) for u in dict.fromkeys(meta.get("unsupported", []))]
+        losses.append(dict(kind="series_label" if legend else "text", what=f"{role} {s!r}", detail=why))
+    losses += [dict(kind="unsupported", what=u, detail="drawn unclipped") for u in dict.fromkeys(meta.get("unsupported", []))]
+    for l in losses: l["material"] = l["kind"] in MATERIAL
     warnings = [f"{meta['guessed']} axis-aligned light strokes taken for gridlines by colour, not drawn"] if meta["guessed"] else []
     rows = text.split("\n")
     return RenderResult(text, dict(cols=cols, width=max(map(width, rows)), height=len(rows)), series, scales, warnings, losses, features)
@@ -65,7 +66,7 @@ def svg_series(meta):
     """Series of an SVG render: what the canvas drew, keyed by colour. SVG has no data, so no values; a series that drew nothing visible is a loss."""
     series = [dict(name=None, kind="/".join(s["kinds"]) or "legend", axes=0, key=s["key"], color="#%02x%02x%02x" % tuple(round(v * 255) for v in s["rgb"]), values=None)
               for s in meta["series"] if s["kinds"]]
-    lost = [dict(kind="lost_series", what=f"{s['kind']} {s['color']}", detail="drawn with no visible cell", material=True)
+    lost = [dict(kind="lost_series", what=f"{s['kind']} {s['color']}", detail="drawn with no visible cell")
             for s, m in zip(series, [m for m in meta["series"] if m["kinds"]]) if m["id"] not in meta["drawn"]]
     title = next((line for role, line in meta["placed"] if role == "title"), "")
     return series, [dict(axes=0, title=title)], lost

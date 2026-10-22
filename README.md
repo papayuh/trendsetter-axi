@@ -43,7 +43,7 @@ from trendsetter_axi import render
 fig, ax = plt.subplots()
 ax.plot([1, 2, 3, 4, 5], [2, 4, 3, 5, 7], label="demand")
 ax.set(title="Example", xlabel="x", ylabel="y")
-ax.set_ylim(0, 6)
+ax.set_ylim(0, 6)   # hides the last point, as matplotlib does: reported in losses, not material
 
 r = render(fig, cols=80)
 print(r.summary())
@@ -63,13 +63,13 @@ Fields:
 - `dimensions`: `cols` (the budget), `width` (widest line) and `height` (lines), in terminal cells.
 - `series`: one dict per series: `name`, `kind` (line, scatter, bar, barh, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. A line lists all its points up to 8, else first, last, min and max; bars list every bar up to 12, else min and max; a heatmap gives its shape, missing cells and the labelled min and max cells.
 - `scales`: per axes, the title and each axis's label, kind (linear, log, date, category) and range.
-- `losses`: everything the text does not show, as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`.
+- `losses`: everything the text does not show, as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`.
 - `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour.
 - `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
 
 `summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values.
 
-`strict=True` raises `RenderLossError` when a loss is material, that is when the text would misrepresent the chart: a lost data artist or series, clipped data, or a cut legend entry. Dropped tick labels are not material. The error's `result` holds the full `RenderResult`.
+`strict=True` raises `RenderLossError` when a loss is material, that is when the text would misrepresent the chart: a lost data artist or series, or a cut legend entry. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
 
 Lost artists are found by series colour: an artist that shares its colour with one that drew counts as drawn.
 

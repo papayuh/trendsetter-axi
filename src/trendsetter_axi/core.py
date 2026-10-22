@@ -714,10 +714,10 @@ class Canvas:
                             break
                     else: self.meta["inked"].append(s)
                 if busy(r):
-                    alt = [r2 for r2 in (r + 1, r - 1) if role != "tick" and 0 <= r2 < R_ and not busy(r2)]
-                    if not alt:
+                    free = [r2 for r2 in (r + 1, r - 1) if role != "tick" and 0 <= r2 < R_ and not busy(r2)]
+                    if not free:
                         self.meta["dropped"].append((role, s, "overlap")); continue
-                    r = alt[0]; r0 += r - (r0 + i)
+                    r = free[0]; r0 += r - (r0 + i)
                 taken[r, c:c + w] = True
                 k = c
                 for token, size in clusters(line):

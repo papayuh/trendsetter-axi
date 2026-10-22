@@ -638,6 +638,7 @@ def describe(fig, meta):
     for j, ax in enumerate(_data_axes(fig)):
         scales.append(dict(axes=j, title=ax.get_title(), x=_scale(ax, "x"), y=_scale(ax, "y")))
         fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
+        data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
         bars = {id(b): c for c in ax.containers if isinstance(c, BarContainer) for b in c}
         for c in ax.containers:
@@ -649,7 +650,7 @@ def describe(fig, meta):
             if len(pairs) > 12: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
             series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(c[0].get_facecolor()), color=to_hex(c[0].get_facecolor()), n=len(c), values=pairs))
         for a in ax.lines:
-            xy = a.get_xydata(); xy = xy[np.isfinite(xy).all(1)]
+            xy = a.get_xydata(); xy = data(a.get_transform(), xy[np.isfinite(xy).all(1)])
             if not len(xy): continue
             if len(xy) <= 8: v = [f"{fx(x)}={fy(y)}" for x, y in xy]
             else:
@@ -660,10 +661,10 @@ def describe(fig, meta):
             if isinstance(a, QuadMesh): continue
             fc = a.get_facecolor(); c = fc[0] if len(fc) else (a.get_edgecolor()[0] if len(a.get_edgecolor()) else "k")
             if isinstance(a, PathCollection):
-                xy = np.asarray(a.get_offsets(), float); xy = xy[np.isfinite(xy).all(1)]
+                xy = np.asarray(a.get_offsets(), float); xy = data(a.get_offset_transform(), xy[np.isfinite(xy).all(1)])
                 series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]), values=[]))
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
-                v = np.concatenate([p.vertices for p in a.get_paths()]); v = v[np.isfinite(v).all(1)]
+                v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
         for a in [*ax.images, *(c for c in ax.collections if isinstance(c, QuadMesh))]:
             z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float)) if a.get_array() is not None else None
@@ -695,9 +696,9 @@ def losses(fig, meta):
         if n == 0 or sids and not sids & meta["drawn"]:
             if pts is not None and not len(pts) or isinstance(a, Collection) and not any(np.isfinite(p.vertices).all(1).any() for p in a.get_paths()): continue   # no data to draw
             k = (kind(a), _name(a, bars), "drew nothing" if n == 0 else "hidden: no visible cell"); lost[k] = lost.get(k, 0) + 1
-    out = [dict(kind="lost_artist", what=f"{k} {name!r}" if name else k, detail=f"{c} {why}" if c > 1 else why, material=True)
+    out = [dict(kind="lost_artist", what=f"{k} {name!r}" if name else k, detail=f"{c} {why}" if c > 1 else why)
            for (k, name, why), c in lost.items()]
-    out += [dict(kind="clipped_data", what=f"{k} {name!r}" if name else k, detail=f"{o} of {t} points outside the axes view", material=True)
+    out += [dict(kind="clipped_data", what=f"{k} {name!r}" if name else k, detail=f"{o} of {t} points outside the axes view")
             for (k, name), (o, t) in clipped.items()]
     return out
 

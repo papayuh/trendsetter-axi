@@ -64,14 +64,32 @@ def test_hidden_series_is_lost(close):
     assert [(l["kind"], l["what"]) for l in r.losses] == [("lost_artist", "Line2D 'actual'")], r.losses
 
 
-def test_clipped_data_is_a_loss(close):
+def test_clipped_data_is_reported_but_not_material(close):
     def build(ax):
         ax.plot(range(10), label="y")
         ax.set_ylim(0, 5)
     r = tsa.render(figure(build), 60)
-    assert [(l["kind"], l["detail"]) for l in r.losses] == [("clipped_data", "4 of 10 points outside the axes view")], r.losses
-    with pytest.raises(tsa.RenderLossError, match="clipped_data"):
-        tsa.render(figure(build), 60, strict=True)
+    assert [(l["kind"], l["detail"], l["material"]) for l in r.losses] == [("clipped_data", "4 of 10 points outside the axes view", False)], r.losses
+    assert tsa.render(figure(build), 60, strict=True).losses == r.losses
+
+
+def test_readme_ylim_example_passes_strict(close):
+    def build(ax):
+        ax.plot([1, 2, 3, 4, 5], [2, 4, 3, 5, 7], label="demand")
+        ax.set(title="Example", xlabel="x", ylabel="y")
+        ax.set_ylim(0, 6)
+    r = tsa.render(figure(build), 80, strict=True)
+    assert "losses: clipped_data Line2D 'demand': 1 of 5 points outside the axes view" in r.summary()
+
+
+def test_reference_lines_report_data_values(close):
+    def build(ax):
+        ax.plot([1, 2, 3], [10, 20, 30])
+        ax.axhline(15)
+        ax.axvline(2)
+    data, h, v = [s for s in tsa.render(figure(build), 60).series if s["kind"] == "line"]
+    assert h["y"] == "15..15" and v["x"] == "2..2", (h, v)
+    assert h["x"] != "0..1" and v["y"] != "0..1", (h, v)   # view limits in data units, not axes fractions
 
 
 def test_cut_legend_label_is_material_and_tick_drops_are_not(close):
