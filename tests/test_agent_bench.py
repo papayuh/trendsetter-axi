@@ -191,8 +191,10 @@ def test_full_lifecycle_with_fake_provider(tmp_path, monkeypatch):
     assert "incomplete" not in report
 
     lines = bench.RESULTS.read_text().splitlines()
-    bench.RESULTS.write_text("\n".join(l for l in lines if not ('"hm_correlation"' in l and '"format": "hybrid"' in l)) + "\n")
+    bench.RESULTS.write_text("\n".join(l for l in lines if not ('"hm_correlation"' in l and '"format": "hybrid"' in l)
+                                         and '"bar_fifteen"' not in l) + "\n")
     bench.write_report("m")
     report = bench.REPORT.read_text()
-    assert "incomplete charts" in report and "`hm_correlation` (hybrid)" in report
-    assert "questions on 2 charts" in report
+    assert "2 incomplete charts" in report and "`hm_correlation` (hybrid)" in report
+    assert f"`bar_fifteen` ({', '.join(arms)})" in report
+    assert "questions on 1 charts" in report

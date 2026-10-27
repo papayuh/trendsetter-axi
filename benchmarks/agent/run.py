@@ -211,7 +211,7 @@ def scored(key, model, tag):
     by = {(c, f): r for (c, f, m), r in found.items() if m == model}
     fmts = [f for f in dict.fromkeys(FORMATS + sorted({f for _, f in by})) if f == "none" or any((c, f) in by for c in key)]
     charts = [c for c in key if all((c, f) in by for f in fmts)]
-    incomplete = {c: [f for f in fmts if (c, f) not in by] for c in key if c not in charts and any((c, f) in by for f in fmts)}
+    incomplete = {c: [f for f in fmts if (c, f) not in by] for c in key if c not in charts}
     score = {(c, f): [grade(q, parse(r["reply"]).get(qid)) for qid, q in key[c]["questions"].items()] for (c, f), r in by.items()}
     return by, score, [f for f in fmts if f != "none"] + ["none"], charts, incomplete, excluded
 
