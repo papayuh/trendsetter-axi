@@ -54,7 +54,7 @@ On dev, `before`:
 ## What changed
 
 - `summary()` now carries the data: every line point up to 16, else the first and last point, ~10 evenly spaced points between and the exact extremes. Lines that share x positions share one `lines at x:` row. It also gives every bar up to 40, histograms as bins plus counts plus the peak bin, heatmaps up to 36 cells in full (larger ones as row and column means), and scatter mean, r and outliers. Numbers are rounded to a step near 1/60 of the axis span, and linear axes drop their view range. That paid for the added data.
-- `render(..., ascii=True)` translates braille, block and shade glyphs to ASCII after layout, so every line keeps its width and frame. `render(..., rows=N)` sets the height.
+- `render(..., ascii=True)` translates braille, block and shade glyphs to ASCII after layout, so every line keeps its width and frame. `render(..., rows=N)` sets the preferred height.
 
 ## Results
 
