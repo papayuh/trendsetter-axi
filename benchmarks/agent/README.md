@@ -58,6 +58,8 @@ On dev, `before`:
 
 ## Results
 
+A single-model pilot, measured at commit 9288d2b: `claude-sonnet-5-5`, one run per tag, no repeats, 25 dev and 12 held-out charts, and no baseline that hands the model the data directly. The tables round to whole percents.
+
 | format | dev before | dev after | held-out before | held-out after | tokens dev before → after | tokens held-out before → after |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | summary | 86% | **98%** | 90% | **95%** | 94 → 102 | 97 → 114 |
@@ -72,7 +74,7 @@ On dev, `before`:
 
 Tokens are the median per chart. The default text chart is unchanged, so its rows are reused.
 
-- **Summary target (≥ 95% at ≤ ~120 tokens): met on both splits.** 98% at 102 tokens on dev, 95% at 114 on held-out. The model also stopped working it out the hard way: median output fell from 133 to 38 tokens (held-out 142 to 33), and output tokens cost more than input. Its remaining misses are counting slips with the numbers in front of it (months where one city is colder than another, areas under 3.0, bins over 100) and one interpolation on a sampled line.
+- **Summary target (≥ 95% at ≤ ~120 tokens): met on dev, one question short on held-out.** 79/81 (97.5%) at 102 tokens on dev; 37/39 (94.9%) at 114 on held-out, one question under the 95% target. The model also stopped working it out the hard way: median output fell from 133 to 38 tokens (held-out 142 to 33), and output tokens cost more than input. Its remaining misses are counting slips with the numbers in front of it (months where one city is colder than another, areas under 3.0, bins over 100) and one interpolation on a sampled line.
 - **Hybrid** is the best text input: 96% and 100% at ~320 tokens and ~35 output tokens. That is fewer input tokens than the PNG at about the same accuracy.
 - **Text chart target (accuracy up, tokens at least halved): not met.**
   - `ascii` at 16 rows cuts the tokens 59% (639 → 263). It scored 83% against 81% on dev but only 67% against 90% on held-out: 16 rows of ASCII hold about 16 levels where braille at 30 rows holds 120, and it lost values on lines, a log axis and heatmaps.

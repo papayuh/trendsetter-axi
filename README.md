@@ -9,7 +9,7 @@ More analysis now happens in a terminal, next to an agent, with no IDE or notebo
 ```python
 from trendsetter_axi import render
 
-r = render(fig, cols=80, strict=True)   # your existing figure; raises RenderLossError if the text would misrepresent it
+r = render(fig, cols=80, strict=True)   # your existing figure; raises RenderLossError if a series left no visible cell or a legend entry was cut
 print(r.text)                           # for the person: every line fits 80 cells
 context = r.summary()                   # for the agent: scales, series values from the figure's data, what was lost
 
@@ -17,18 +17,20 @@ lean = render(fig, cols=60, rows=12, ascii=True)
 hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also see the shape: a small ASCII chart, then the numbers
 ```
 
-- Output budget: `cols` bounds every line, titles and keys included, `rows` sets a figure's height, and `ascii=True` draws the same cells in glyphs that cost a fraction of the tokens; `r.dimensions` reports the width and height used.
-- Diagnostics: `r.losses` lists everything the text does not show, and `strict=True` turns a material loss into an error instead of a misleading chart.
+- Output size: `cols` bounds every line, titles and keys included, and is the only hard budget; `rows` is the preferred height, which heatmaps and bar charts exceed so each data row or bar keeps a line; `ascii=True` draws the same cells in glyphs that cost a fraction of the tokens; `r.dimensions` reports the width and height used.
+- Diagnostics: `r.losses` lists what the renderer detects the text does not show, and `strict=True` raises when a data artist or series left no visible cell or a legend entry was cut or dropped. It does not catch everything: see [known limits of `strict`](#known-limits-of-strict).
 
 What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
 
 | what the model gets | accuracy, dev / held-out | tokens per chart (median), dev / held-out |
 | --- | ---: | ---: |
-| `summary()` | 98% / 95% | 102 / 114 |
-| hybrid: 60×12 ASCII chart + `summary()` | 96% / 100% | 316 / 326 |
-| 640×480 PNG | 99% / 100% | 408 / 408 |
-| `render(fig, 80, ascii=True).text` | 79% / 90% | 422 / 421 |
-| `render(fig, 80).text`, the terminal chart | 81% / 90% | 639 / 701 |
+| `summary()` | 98% (79/81) / 95% (37/39) | 102 / 114 |
+| hybrid: 60×12 ASCII chart + `summary()` | 96% (78/81) / 100% (39/39) | 316 / 326 |
+| 640×480 PNG | 99% (80/81) / 100% (39/39) | 408 / 408 |
+| `render(fig, 80, ascii=True).text` | 79% (64/81) / 90% (35/39) | 422 / 421 |
+| `render(fig, 80).text`, the terminal chart | 81% (66/81) / 90% (35/39) | 639 / 701 |
+
+This is a single-model pilot measured at commit 9288d2b: one run per format, no repeats, no baseline that hands the model the data directly. Later changes to `summary()` are not re-measured until the next benchmark run.
 
 The token saving comes from `summary()` and the hybrid, not from the terminal chart: that one is for the person. When the model can take images, the PNG is as accurate as the hybrid for about a quarter more input tokens.
 
@@ -67,7 +69,7 @@ Both functions take `color=True` for 24-bit ANSI colour. Colour never changes th
 
 ### What the text lost: `render`
 
-`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` sets a figure's height in lines (at least 8; heatmaps and bar charts can take more so each row or bar keeps its line).
+`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard budget.
 
 ```python
 from trendsetter_axi import render
@@ -94,17 +96,24 @@ Fields:
 
 - `text`: the chart.
 - `dimensions`: `cols` (the budget), `width` (widest line) and `height` (lines), in terminal cells.
-- `series`: one dict per series: `name`, `kind` (line, scatter, bar, barh, histogram, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. A line lists all its points up to 16, else its first and last point and about 10 evenly spaced ones between, plus its exact min and max; bars list every bar up to 40, else min and max; equal-width bars edge to edge are a `histogram` (bins, counts, peak bin); a heatmap gives its shape, missing cells and the labelled min and max cells, the whole grid up to 36 cells, else row and column means up to 12 of each; a scatter gives its mean, Pearson r and up to 3 points far off its trend line. Numbers are rounded to a step near 1/60 of their axis span (3 significant digits on a log axis).
+- `series`: one dict per series: `name`, `kind` (line, scatter, bar, barh, histogram, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. A line lists all its points up to 16, else its first and last point and about 10 evenly spaced ones between, plus its exact min and max; bars list every bar up to 40, else min and max; equal-width bars edge to edge are a `histogram` (bins, counts, peak bin); a heatmap gives its shape, missing cells and the labelled min and max cells, the whole grid up to 36 cells, else row and column means up to 12 of each; a scatter gives its mean, Pearson r and up to 3 points far off its trend line. Numbers are rounded to a step near 1/60 of their axis span (3 significant digits on a log axis), and values are stored as those rounded presentation strings, not floats. Until T1, a line's sampled points (past 16) are interpolated at nice x positions between its first and last point, not taken from its data, and NaN gaps, masked points and hidden artists are not excluded from the values.
 - `scales`: per axes, the title and each axis's label, kind (linear, log, date, category) and range.
-- `losses`: everything the text does not show, as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`.
+- `losses`: what the renderer detects the text does not show (see [known limits](#known-limits-of-strict)), as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`.
 - `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour.
 - `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
 
-`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values.
+`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line lists render losses only: errorbars, pies, contours and other artists the summary does not describe are currently left out of it without notice (until T3).
 
-`strict=True` raises `RenderLossError` when a loss is material, that is when the text would misrepresent the chart: a lost data artist or series, or a cut legend entry. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
+`strict=True` raises `RenderLossError` when a loss is material. Two checks make a loss material: a data artist or series that left no visible cell, or a legend entry that was cut or dropped. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
 
-Lost artists are found by series colour: an artist that shares its colour with one that drew counts as drawn.
+#### Known limits of `strict`
+
+`strict=True` passes these, so the text can still mislead:
+
+- Lost artists are found by series colour: same-colour series that fully overlap count as drawn (T9).
+- A line under an opaque fill at a higher zorder still shows through the fill in the text (T9).
+- A heatmap larger than the text grid is sampled, and a cell the sampling skips is lost without a diagnostic (T4).
+- SVG masks, gradients and non-rectangular clips are approximated: a non-rectangular clip is reported as `unsupported`, masks and gradients are not reported (T5).
 
 ### What a mark means
 

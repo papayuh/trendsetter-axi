@@ -30,10 +30,12 @@ class RenderResult:
     def summary(self):
         """Compact text for an agent: scales, series values from the source data, losses. Far fewer tokens than the chart.
 
-        Lines list every point up to 16, else about 10 evenly spaced samples plus the exact min and max; lines that share
-        their x positions share one `at x:` row. Bars list every bar up to 40; equal-width edge-to-edge bars read as a
-        histogram (bins, counts, peak). Heatmaps up to 36 cells come in full, larger ones as row and column means.
-        Scatters give the mean, Pearson r and points far off the trend line. Numbers keep about 1/60 of the axis span."""
+        Lines list every point up to 16, else about 10 samples interpolated at nice x positions plus the exact min and
+        max; lines that share their x positions share one `at x:` row. Bars list every bar up to 40; equal-width
+        edge-to-edge bars read as a histogram (bins, counts, peak). Heatmaps up to 36 cells come in full, larger ones as row and column means.
+        Scatters give the mean, Pearson r and points far off the trend line. Numbers keep about 1/60 of the axis span
+        and are rounded presentation strings. NaN gaps, masked points and hidden artists are not yet excluded. `losses:`
+        lists render losses only; errorbars, pies, contours and other undescribed artists are left out without notice."""
         multi = len(self.scales) > 1
         lines, shared = [], {}
         for sc in self.scales:
