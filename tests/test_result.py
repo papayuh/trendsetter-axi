@@ -207,3 +207,108 @@ def test_visible_neutral_series_is_not_lost(close):
         ax.plot([4, 2, 3, 1], color="tab:red", label="forecast")
         ax.axhline(2.5, color="gray")
     assert tsa.render(figure(build), 60, strict=True).losses == []
+
+
+def observed(s, x, y, ax):
+    """Every (at, ys) of a line is a fixture row with finite y, at the summary's rounding step, in the line's own order."""
+    step = lambda lo, hi: 10.0 ** -max(0, -round(np.log10(abs(hi - lo) / 60)))
+    sx, sy = step(*ax.get_xlim()), step(*ax.get_ylim())
+    rows, k = [i for i in range(len(x)) if np.isfinite(x[i]) and np.isfinite(y[i])], -1
+    for a, b in zip(s["at"], s["ys"]):
+        k = next((i for i in rows if i > k and abs(float(a) - x[i]) <= sx / 2 + 1e-9 and abs(float(b) - y[i]) <= sy / 2 + 1e-9), None)
+        assert k is not None, (a, b, s["at"], s["ys"])
+
+
+def line_of(fig):
+    return next(s for s in tsa.render(fig, 60).series if s["kind"] == "line")
+
+
+def test_line_samples_are_observations_and_keep_gap_edges(close):
+    x = np.arange(40.0); y = x.copy(); y[10:30] = np.nan
+    fig = figure(lambda ax: ax.plot(x, y, label="gapped"))
+    s = line_of(fig)
+    observed(s, x, y, fig.axes[0])
+    assert "9" in s["at"] and "30" in s["at"] and not any(10 <= float(a) <= 29 for a in s["at"]), s["at"]
+    assert s["n"] == 20 and s["missing"] == 20
+    assert isinstance(s["points"], np.ndarray) and np.array_equal(s["points"], np.column_stack([x, y])[np.isfinite(y)])
+
+
+def test_sampling_cutoff_both_sides(close):
+    x = np.arange(17.0) ** 1.5; y = np.sin(x)
+    gap = y.copy(); gap[8] = np.nan
+    fig = figure(lambda ax: ax.plot(x, gap))
+    s = line_of(fig)
+    assert s["sampled"] is False and len(s["at"]) == 16
+    observed(s, x, gap, fig.axes[0])
+    fig = figure(lambda ax: ax.plot(x, y))
+    s = line_of(fig)
+    assert s["sampled"] is True
+    observed(s, x, y, fig.axes[0])
+
+
+def test_samples_follow_x_order(close):
+    t = np.arange(30.0) ** 1.5
+    down = (t.max() - t, np.cos(t))
+    wander = (np.r_[t[:15], t[15:][::-1] / 2], np.sin(t))
+    dup = np.insert(t, 10, t[10]), np.insert(t, 10, t[10] + 40)   # two rows at one x, different y
+    for x, y in (down, wander, dup):
+        fig = figure(lambda ax: ax.plot(x, y))
+        s = line_of(fig)
+        assert s["sampled"] is True
+        observed(s, x, y, fig.axes[0])
+        plt.close(fig)
+    fig = figure(lambda ax: ax.plot(*down))
+    assert [float(v) for v in line_of(fig)["at"]] == sorted((float(v) for v in line_of(fig)["at"]), reverse=True)
+
+
+def scatter_of(build):
+    r = tsa.render(figure(build), 60)
+    return next(s for s in r.series if s["kind"] == "scatter"), r
+
+
+def test_masked_scatter_rows_are_excluded(close):
+    y = np.ma.array([1.0, 999.0, 3.0], mask=[0, 1, 0])
+    def build(ax):
+        ax.scatter([0, 1, 2], y)
+        ax.set_ylim(0, 1000)
+    s, r = scatter_of(build)
+    assert s["n"] == 2 and s["missing"] == 1 and "r" not in s, s
+    assert s["mean"] == "1,2", s   # x (0+2)/2, y (1+3)/2 at steps 0.1 and 1
+    assert np.array_equal(s["points"], [[0, 1], [2, 3]])
+    s, r = scatter_of(lambda ax: ax.scatter([0, 1, 2], y))   # autoscaled to the valid rows: the masked 999 would sit outside the view
+    assert s["n"] == 2 and not [l for l in r.losses if l["kind"] == "clipped_data"], r.losses
+    for kw in (dict(x=np.ma.array([0, 1, 2, 3.0], mask=[0, 1, 0, 0]), y=[1, 2, 3, 4]),
+               dict(x=[0, 1, 2, 3], y=[1, 2, 3, 4], s=np.ma.array([10, 20, 30, 40.0], mask=[0, 1, 0, 0])),
+               dict(x=[0, 1, 2, 3], y=[1, 2, 3, 4], c=np.ma.array([1, 2, 3, 4.0], mask=[0, 1, 0, 0]))):
+        s, r = scatter_of(lambda ax: ax.scatter(**kw))
+        assert s["n"] == 3 and s["missing"] == 1 and len(s["points"]) == 3, (kw, s)
+
+
+def test_all_missing_series_is_reported_not_invented(close):
+    def build(ax):
+        ax.plot(np.arange(40.0), np.full(40, np.nan), label="empty")
+        ax.scatter([0, 1, 2], np.ma.array([1, 2, 3.0], mask=True), label="gone")
+    r = tsa.render(figure(build), 60)
+    line, dots = (next(s for s in r.series if s["name"] == n) for n in ("empty", "gone"))
+    assert (line["n"], line["missing"], line["values"]) == (0, 40, []) and (dots["n"], dots["missing"], dots["values"]) == (0, 3, []), r.series
+    lines = r.summary().splitlines()
+    assert "line 'empty' n=0 missing=40" in lines and "scatter 'gone' n=0 missing=3" in lines, r.summary()
+
+
+def test_hidden_artists_are_not_described(close):
+    fig = plt.figure(figsize=(8, 3))
+    ax, off = fig.subplots(1, 2)
+    ax.plot([0, 1, 2], [1, 2, 3], label="visible")
+    ax.plot([0, 1, 2], [99, 199, 299], label="hidden", visible=False)
+    bc = ax.bar([0, 1, 2], [5, 7, 9], label="bars")
+    bc[1].set_visible(False)
+    off.plot([0, 1], [5, 6], label="on hidden axes")
+    off.set_visible(False)
+    r = tsa.render(fig, 60)
+    names = [s["name"] for s in r.series]
+    assert "visible" in names and "hidden" not in names and "on hidden axes" not in names, names
+    bar = next(s for s in r.series if s["name"] == "bars")
+    assert bar["values"] == ["0=5", "2=9"] and bar["n"] == 2, bar
+    assert len(r.scales) == 1, r.scales
+    assert [w for w in r.warnings if "hidden" in w] == ["3 hidden artists not described"], r.warnings   # the line, the bar, the axes
+    assert r.losses == [], r.losses
