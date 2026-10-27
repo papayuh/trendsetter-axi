@@ -52,7 +52,7 @@ class RenderResult:
                     shared[at] = [f"{'axes ' + str(s['axes']) + ' ' if multi else ''}lines at x: " + " ".join(s["at"])]
                     lines.append(shared[at])
                 ext = " ".join(v for v in s["values"] if v.startswith(("min ", "max ")))
-                name = " ".join(v for v in (s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}") if v)
+                name = " ".join(v for v in (s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}", s.get("missing") and f"missing={s['missing']}") if v)
                 shared[at].append(f"  {name or 'y'}: " + " ".join(s["ys"]) + (f" ({ext})" if ext else ""))
                 continue
             parts = [f"{k}={s[k]}" for k in ("n", "shape", "x", "y", "z", "missing", "mean", "r") if s.get(k) not in (None, "")
@@ -81,6 +81,7 @@ def build(text, meta, cols, series, scales, losses, features):
     losses += [dict(kind="unsupported", what=u, detail="drawn unclipped") for u in dict.fromkeys(meta.get("unsupported", []))]
     for l in losses: l["material"] = l["kind"] in MATERIAL
     warnings = [f"{meta['guessed']} axis-aligned light strokes taken for gridlines by colour, not drawn"] if meta["guessed"] else []
+    if meta.get("hidden"): warnings.append(f"{meta['hidden']} hidden artist{'s' * (meta['hidden'] > 1)} not described")
     rows = text.split("\n")
     return RenderResult(text, dict(cols=cols, width=max(map(width, rows)), height=len(rows)), series, scales, warnings, losses, features)
 

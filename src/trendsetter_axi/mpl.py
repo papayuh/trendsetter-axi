@@ -66,7 +66,7 @@ class TextRenderer(RendererBase):
     def _leg(self, t=None):  # plotnine draws legends straight into the figure: no "legend" group, just figure-level artists
         g = self.groups
         return self._in("legend") or "axes" not in g and (g[-1:] in (["line2d"], ["patch"], ["collection"]) or t is not None and g[-1:] == ["text"] and t.get_position() == (0, 0))
-    def _flip(self, pts): pts = np.asarray(pts, float).copy(); pts[:, 1] = self.h - pts[:, 1]; return pts
+    def _flip(self, pts): pts = np.asarray(pts, float).reshape(-1, 2).copy(); pts[:, 1] = self.h - pts[:, 1]; return pts
     def _clip(self, gc):
         cr = gc.get_clip_rectangle()
         if cr is None: return None
@@ -599,11 +599,9 @@ def _compact(axis, lo, hi):
 
 
 def _samples(x, y, n=10):
-    """About n points to stand for a long line: its first and last point and nice x positions between, y interpolated there (nearest point if x is not sorted)."""
+    """About n observed points to stand for a long line: its first and last point and the points nearest nice x positions between, in the line's order. Never interpolated, so a gap stays a gap."""
     xs = [v for v in mticker.MaxNLocator(nbins=n, steps=[1, 2, 2.5, 5, 10]).tick_values(x.min(), x.max()) if x.min() < v < x.max()]
-    xs = sorted({x[0], *xs, x[-1]}) if x[0] <= x[-1] else [x[0], *xs[::-1], x[-1]]
-    if np.all(np.diff(x) > 0): return np.array(xs), np.interp(xs, x, y)
-    i = [int(np.abs(x - v).argmin()) for v in xs]
+    i = np.unique([0, *(np.abs(x - v).argmin() for v in xs), len(x) - 1])
     return x[i], y[i]
 
 
@@ -625,7 +623,14 @@ def _scale(ax, k):
     return d
 
 
-def _data_axes(fig): return [ax for ax in fig.axes if not hasattr(ax, "_colorbar")]
+def _data_axes(fig): return [ax for ax in fig.axes if not hasattr(ax, "_colorbar") and ax.get_visible()]
+
+
+def _valid(xy):
+    """The rows of an artist's (x, y) data a reader can see, and how many are masked or non-finite."""
+    xy = np.ma.filled(np.ma.asarray(xy, float), np.nan).reshape(-1, 2)
+    ok = np.isfinite(xy).all(1)
+    return xy[ok], int((~ok).sum())
 
 
 def _name(a, bars):
@@ -637,13 +642,12 @@ def _name(a, bars):
 def _points(a, bars):
     """Display coordinates of an artist's finite data points (bar ends for bars), or None when it has no point data."""
     if isinstance(a, Line2D): xy, tr = a.get_xydata(), a.get_transform()
-    elif isinstance(a, PathCollection): xy, tr = np.asarray(a.get_offsets(), float), a.get_offset_transform()
+    elif isinstance(a, PathCollection): xy, tr = a.get_offsets(), a.get_offset_transform()
     elif id(a) in bars and a.get_width() and a.get_height():
         h = bars[id(a)].orientation == "horizontal"
         xy, tr = np.array([[a.get_x() + a.get_width(), a.get_y() + a.get_height() / 2] if h else [a.get_x() + a.get_width() / 2, a.get_y() + a.get_height()]]), a.axes.transData
     else: return None
-    xy = np.asarray(xy, float).reshape(-1, 2)
-    xy = xy[np.isfinite(xy).all(1)]
+    xy = _valid(xy)[0]
     return tr.transform(xy) if len(xy) else xy
 
 
@@ -663,6 +667,7 @@ def describe(fig, meta):
     keys = {tuple(s["rgb"]): s["key"] for s in meta["series"]}
     key = lambda c: keys.get(tuple(round(float(v), 2) for v in to_rgb(c)))
     scales, series = [], []
+    hidden = sum(not ax.get_visible() for ax in fig.axes if not hasattr(ax, "_colorbar"))   # hidden axes and artists: not drawn, so not described
     for j, ax in enumerate(_data_axes(fig)):
         scales.append(dict(axes=j, title=ax.get_title(), x=_scale(ax, "x"), y=_scale(ax, "y")))
         fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
@@ -670,49 +675,56 @@ def describe(fig, meta):
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
         for c in ax.containers:
             if not isinstance(c, BarContainer) or not len(c): continue
+            bs = [b for b in c if b.get_visible()]; hidden += len(c) - len(bs)
+            if not bs: continue
             h = c.orientation == "horizontal"
-            pos, val = ([b.get_y() + b.get_height() / 2 for b in c], [b.get_width() for b in c]) if h else ([b.get_x() + b.get_width() / 2 for b in c], [b.get_height() for b in c])
+            pos, val = ([b.get_y() + b.get_height() / 2 for b in bs], [b.get_width() for b in bs]) if h else ([b.get_x() + b.get_width() / 2 for b in bs], [b.get_height() for b in bs])
             fp, fv = (fy, fx) if h else (fx, fy)
-            wid = np.array([b.get_height() if h else b.get_width() for b in c], float); edge = np.array([b.get_y() if h else b.get_x() for b in c], float)
-            hist = len(c) > 6 and np.allclose(wid, wid[0]) and np.allclose(np.diff(edge), wid[0]) and not isinstance((ax.yaxis if h else ax.xaxis).units, UnitData)
+            wid = np.array([b.get_height() if h else b.get_width() for b in bs], float); edge = np.array([b.get_y() if h else b.get_x() for b in bs], float)
+            hist = len(bs) > 6 and np.allclose(wid, wid[0]) and np.allclose(np.diff(edge), wid[0]) and not isinstance((ax.yaxis if h else ax.xaxis).units, UnitData)
             if hist:   # equal-width, edge-to-edge bars: one header and the counts, cheaper than a label per bar
                 fe, fc = _compact(ax.yaxis if h else ax.xaxis, edge[0], edge[-1] + wid[0]), _compact(ax.xaxis if h else ax.yaxis, 0, np.nanmax(val))
                 k = int(np.nanargmax(val))
-                series.append(dict(name=_name(c, {}), kind="histogram", axes=j, key=key(c[0].get_facecolor()), color=to_hex(c[0].get_facecolor()), n=len(c),
-                                   bins=f"{len(c)} bins of {fe(wid[0])} from {fe(edge[0])} to {fe(edge[-1] + wid[0])}",
+                series.append(dict(name=_name(c, {}), kind="histogram", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs),
+                                   bins=f"{len(bs)} bins of {fe(wid[0])} from {fe(edge[0])} to {fe(edge[-1] + wid[0])}",
                                    peak=f"{fe(edge[k])}-{fe(edge[k] + wid[0])}={fc(val[k])}", values=[fc(v) for v in val]))
                 continue
             fv = _compact(ax.xaxis if h else ax.yaxis, min(0, np.nanmin(val)), np.nanmax(val)) if len(val) and np.isfinite(val).any() else fv
             pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
             if len(pairs) > 40: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
-            series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(c[0].get_facecolor()), color=to_hex(c[0].get_facecolor()), n=len(c), values=pairs))
+            series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs), values=pairs))
         for a in ax.lines:
-            xy = a.get_xydata(); xy = data(a.get_transform(), xy[np.isfinite(xy).all(1)])
-            if not len(xy): continue
+            if not a.get_visible(): hidden += 1; continue
+            xy, miss = _valid(a.get_xydata()); xy = data(a.get_transform(), xy)
+            if not len(xy):   # no data at all (a legend proxy): nothing to say; all of it missing: say so
+                if miss: series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=0, missing=miss, points=xy, values=[]))
+                continue
             cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
             sampled = len(xy) > 16
             px, py = _samples(xy[:, 0], xy[:, 1]) if sampled else (xy[:, 0], xy[:, 1])
             at, ys = [cx(v) for v in px], [cy(v) for v in py]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
-            series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
+            series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), missing=miss, points=xy, x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
                                at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext))
         for a in ax.collections:
             if isinstance(a, QuadMesh): continue
+            if not a.get_visible(): hidden += 1; continue
             fc = a.get_facecolor(); c = fc[0] if len(fc) else (a.get_edgecolor()[0] if len(a.get_edgecolor()) else "k")
             if isinstance(a, PathCollection):
-                xy = np.asarray(a.get_offsets(), float); xy = data(a.get_offset_transform(), xy[np.isfinite(xy).all(1)])
+                xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
                 cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
                 out = _outliers(xy) if len(xy) else []
                 rest = np.delete(xy, out, 0)
                 stats = dict(mean=f"{cx(xy[:, 0].mean())},{cy(xy[:, 1].mean())}") if len(xy) else {}
                 if len(xy) > 2 and np.ptp(xy[:, 0]) and np.ptp(xy[:, 1]): stats["r"] = f"{np.corrcoef(xy.T)[0, 1]:.2f}"
                 if out: stats.update(outliers=" ".join(f"({cx(xy[i, 0])},{cy(xy[i, 1])})" for i in out), rest=f"x={cx(rest[:, 0].min())}..{cx(rest[:, 0].max())} y={cy(rest[:, 1].min())}..{cy(rest[:, 1].max())}")
-                series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))
+                series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), missing=miss, points=xy, x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
                 v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
         for a in [*ax.images, *(c for c in ax.collections if isinstance(c, QuadMesh))]:
+            if not a.get_visible(): hidden += 1; continue
             z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float)) if a.get_array() is not None else None
             if z is None or z.ndim != 2: continue
             cb = getattr(a, "colorbar", None)
@@ -730,6 +742,7 @@ def describe(fig, meta):
                     if z.shape[1] <= 12: cells["col_means"] = " ".join(f"{k}={cz(m)}" for k, m in zip(cl, z.mean(0)))
             series.append(dict(name=label or _name(a, {}), kind="heatmap", axes=j, key=None, color=None, n=int(z.count()), shape=f"{z.shape[0]}x{z.shape[1]}",
                                missing=int(z.mask.sum()) if np.ma.is_masked(z) else 0, values=v, **cells))
+    meta["hidden"] = hidden
     return series, scales
 
 
