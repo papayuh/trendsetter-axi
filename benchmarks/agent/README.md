@@ -19,11 +19,14 @@ Numbers: [RESULTS.md](RESULTS.md). Raw replies, token counts and timings: `resul
 ```sh
 uv pip install -e '.[dev]' tiktoken mpl_ascii==1.0.1 plotext==6.1.0
 PYTHONPATH=src python benchmarks/agent/run.py --no-ask                     # rebuild dev fixtures, regrade results.jsonl, rewrite RESULTS.md
-PYTHONPATH=src python benchmarks/agent/run.py --tag after                  # also make dev calls missing for that tag
+PYTHONPATH=src python benchmarks/agent/run.py --tag after                  # also make dev calls missing for that tag, every format
 PYTHONPATH=src python benchmarks/agent/run.py --tag after --split heldout  # the same for the held-out charts
+PYTHONPATH=src python benchmarks/agent/run.py --tag after --replicate 2    # every dev call again, as tag after#2, nothing reused
 ```
 
 Model calls use the locally logged-in `claude -p` (Claude Code CLI): no API key, no tools, no MCP servers, no settings files, one short system prompt. Every row in `results.jsonl` records its tag, the questions it asked, a hash of the chart it showed and the CLI, matplotlib and Python versions it ran under (the environment line in RESULTS.md comes from these). A call is re-made when the questions or the chart changed; a call whose chart and questions are identical to an earlier one is reused under the new tag (marked `reused_from`), so the image, mpl_ascii, plotext and no-chart calls were made once. `--formats` limits a run to some formats; `--model` picks another model.
+
+`manifests/<tag>.json` maps each chart and format a tag asked about to the hash of the chart it showed; a run writes it before asking. A row is graded only when its hash matches its tag's manifest, and RESULTS.md counts the rows left out that way. The `after` manifest was taken from the committed fixtures (the PNG hashes from the rows, since the PNGs are not committed). `before` and `iter1` are historical: their manifests are rebuilt from their own rows' hashes (`"reconstructed": true`), so they are self-attested, not checked against a fixture. Numbers are graded strictly: a JSON number, or a string that is one after dropping whitespace, a leading currency sign, thousands commas or a trailing `%`; anything else (`"1/0"`, `"10 or 11"`, `[10]`) is wrong. A chart missing any format under a tag is left out of every table and listed as incomplete.
 
 ## Method
 
