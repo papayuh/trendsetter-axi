@@ -145,27 +145,18 @@ def test_line_summary_samples_follow_drawstyle(style, descending, count):
     ax.plot(x, y, drawstyle=style)
     series = render(ax.figure).series[0]
     assert series['sampled'] == (count > 16)
-    for at, value in zip(series['at'], series['ys']):
-        target = float(at)
-        if target in x:
-            expected = y[x.index(target)]
-        else:
-            i = next(i for i in range(len(x) - 1) if min(x[i:i+2]) < target < max(x[i:i+2]))
-            fraction = (target - x[i]) / (x[i+1] - x[i])
-            if style == 'steps-post':
-                expected = y[i]
-            elif style == 'steps-pre':
-                expected = y[i+1]
-            elif style == 'steps-mid':
-                expected = y[i] if fraction < .5 else y[i+1]
-            else:
-                expected = y[i] + fraction * (y[i+1] - y[i])
-        assert float(value) == pytest.approx(expected, abs=.51)
-    if count == 18 and not descending:
-        at_twenty = dict(zip(series['at'], series['ys']))['20']
-        assert at_twenty == {'steps-post': '0', 'steps-pre': '100', 'steps-mid': '100', 'default': '67'}[style]
-    if descending and style == 'default':
-        assert all(float(at) in x for at in series['at'])
+    # T1: samples are source observations for every style, not interpolated step lookups.
+    pairs = list(zip(map(float, series['at']), map(float, series['ys'])))
+    assert all(pair in list(zip(x, y)) for pair in pairs)
+    assert pairs[0] == (x[0], y[0]) and pairs[-1] == (x[-1], y[-1])
+    assert [x.index(at) for at, _ in pairs] == sorted(x.index(at) for at, _ in pairs)
+    if count > 16:
+        assert series['values'][-2:] == [f'min {x[y.index(min(y))]}={min(y)}', f'max {x[y.index(max(y))]}={max(y)}']
+    if style != 'default':
+        assert series['drawstyle'] == style
+        assert style in render(ax.figure).summary()
+    else:
+        assert 'drawstyle' not in series
     if count == 8:
         assert list(map(float, series['at'])) == x
         assert list(map(float, series['ys'])) == y

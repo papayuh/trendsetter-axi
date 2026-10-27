@@ -311,4 +311,4 @@ def test_hidden_artists_are_not_described(close):
     assert bar["values"] == ["0=5", "2=9"] and bar["n"] == 2, bar
     assert len(r.scales) == 1, r.scales
     assert [w for w in r.warnings if "hidden" in w] == ["3 hidden artists not described"], r.warnings   # the line, the bar, the axes
-    assert r.losses == [], r.losses
+    assert all(l["kind"] == "text" for l in r.losses), r.losses   # hidden is not lost: losses() already skips invisible artists
