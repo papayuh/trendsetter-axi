@@ -1,0 +1,15 @@
+                                  Height vs weight
+       ┌─────────────────────────────────────────────────────────────────────┐
+       │                                       o    o     o  o o          o  │
+    80 │                                   o        o        o               │
+       │                                   o        oo o                     │
+       │             o            o o o  ooo  oo  o   o                      │
+       │                    oo  o    ooooo  o o      o                       │
+    60 │                ooo oooo o oo  oo   o o                              │
+       │       oo o o  o     o   o    o                                      │
+       │  o oo          o   oo          o                                    │
+    40 │      o                                                              │
+       └─────────────────────────────────────────────────────────────────────┘
+         150          160          170           180          190          200
+                                     Height (cm)
+y: Weight (kg)

@@ -1,0 +1,7 @@
+title: Monthly units sold
+x: Month
+y: Units
+lines at x: 1 2 5 8 10 12 15 18 20 22 24
+  'Alpha' ● n=24: 52 56 62 69 75 81 88 94 100 106 110 (min 1=52 max 24=110)
+  'Beta' × n=24: 121 122 116 105 99 101 103 97 87 81 81 (min 23=80 max 2=122)
+losses: none

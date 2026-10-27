@@ -1,0 +1,552 @@
+{
+ "ho_unemployment": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 577,
+   "summary": 97,
+   "ascii": 163,
+   "ascii_tall": 346,
+   "hybrid": 218,
+   "plotext": 391,
+   "mpl_ascii": 352
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "What is the highest rate?",
+    "type": "number",
+    "answer": 5.8193,
+    "tol": 0.102
+   },
+   "q2": {
+    "q": "In which month is the rate lowest?",
+    "type": "number",
+    "answer": 20.0,
+    "tol": 1.75
+   },
+   "q3": {
+    "q": "What is the rate in month 30?",
+    "type": "number",
+    "answer": 4.357,
+    "tol": 0.102
+   },
+   "q4": {
+    "q": "Is the rate in month 36 higher or lower than in month 1?",
+    "type": "label",
+    "answer": "lower",
+    "options": [
+     "higher",
+     "lower"
+    ]
+   }
+  }
+ },
+ "ho_sensor": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 878,
+   "summary": 110,
+   "ascii": 198,
+   "ascii_tall": 389,
+   "hybrid": 242,
+   "plotext": 565,
+   "mpl_ascii": 344
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "What is the maximum temperature?",
+    "type": "number",
+    "answer": 27.4406,
+    "tol": 0.7256
+   },
+   "q2": {
+    "q": "At about what time is the first maximum?",
+    "type": "number",
+    "answer": 35.589,
+    "tol": 10.0
+   },
+   "q3": {
+    "q": "What is the minimum temperature?",
+    "type": "number",
+    "answer": 12.928,
+    "tol": 0.7256
+   }
+  }
+ },
+ "ho_bacteria_log": {
+  "kind": "line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 397,
+   "summary": 94,
+   "ascii": 170,
+   "ascii_tall": 265,
+   "hybrid": 246,
+   "plotext": 333,
+   "mpl_ascii": 17
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "How many cells at hour 6?",
+    "type": "number",
+    "answer": 15445.7888,
+    "tol": 2316.9
+   },
+   "q2": {
+    "q": "How many cells at hour 10?",
+    "type": "number",
+    "answer": 705835.4783,
+    "tol": 105875.3
+   },
+   "q3": {
+    "q": "Is the growth faster than linear?",
+    "type": "label",
+    "answer": "yes",
+    "options": [
+     "yes",
+     "no"
+    ]
+   }
+  }
+ },
+ "ho_revenue_lines": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 779,
+   "summary": 109,
+   "ascii": 207,
+   "ascii_tall": 361,
+   "hybrid": 254,
+   "plotext": 498,
+   "mpl_ascii": 344
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which segment is highest in quarter 8?",
+    "type": "label",
+    "answer": "Cloud",
+    "options": [
+     "Cloud",
+     "Devices",
+     "Ads"
+    ]
+   },
+   "q2": {
+    "q": "Which segment grew the most from quarter 1 to quarter 8?",
+    "type": "label",
+    "answer": "Cloud",
+    "options": [
+     "Cloud",
+     "Devices",
+     "Ads"
+    ]
+   },
+   "q3": {
+    "q": "What is Ads revenue in quarter 4?",
+    "type": "number",
+    "answer": 28.0,
+    "tol": 2.1
+   },
+   "q4": {
+    "q": "Which segment is highest in quarter 1?",
+    "type": "label",
+    "answer": "Devices",
+    "options": [
+     "Cloud",
+     "Devices",
+     "Ads"
+    ]
+   }
+  }
+ },
+ "ho_two_sites": {
+  "kind": "multi-line",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 844,
+   "summary": 110,
+   "ascii": 222,
+   "ascii_tall": 425,
+   "hybrid": 252,
+   "plotext": 625,
+   "mpl_ascii": 396
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which site is warmer in week 27?",
+    "type": "label",
+    "answer": "Inland",
+    "options": [
+     "Inland",
+     "Coastal"
+    ]
+   },
+   "q2": {
+    "q": "Which site is warmer in week 2?",
+    "type": "label",
+    "answer": "Coastal",
+    "options": [
+     "Inland",
+     "Coastal"
+    ]
+   },
+   "q3": {
+    "q": "What is Coastal's highest weekly temperature?",
+    "type": "number",
+    "answer": 23.2785,
+    "tol": 1.1353
+   }
+  }
+ },
+ "ho_countries": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 677,
+   "summary": 49,
+   "ascii": 254,
+   "ascii_tall": 479,
+   "hybrid": 270,
+   "plotext": 790,
+   "mpl_ascii": 761
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which country has the second-highest share?",
+    "type": "label",
+    "answer": "Japan",
+    "options": [
+     "Norway",
+     "Chile",
+     "Kenya",
+     "Japan",
+     "Peru",
+     "Spain",
+     "India",
+     "Ghana",
+     "Chad",
+     "Laos"
+    ]
+   },
+   "q2": {
+    "q": "How many countries are above 45%?",
+    "type": "int",
+    "answer": 5
+   },
+   "q3": {
+    "q": "What is Peru's share?",
+    "type": "number",
+    "answer": 42.0,
+    "tol": 3.55
+   }
+  }
+ },
+ "ho_survey_barh": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 405,
+   "summary": 84,
+   "ascii": 267,
+   "ascii_tall": 267,
+   "hybrid": 343,
+   "plotext": 591,
+   "mpl_ascii": 348
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which area scores lowest?",
+    "type": "label",
+    "answer": "Mobile",
+    "options": [
+     "Price",
+     "Speed",
+     "Support",
+     "Docs",
+     "Design",
+     "Security",
+     "Uptime",
+     "API",
+     "Mobile",
+     "Search",
+     "Export",
+     "Billing"
+    ]
+   },
+   "q2": {
+    "q": "How many areas score below 3.0?",
+    "type": "int",
+    "answer": 3
+   },
+   "q3": {
+    "q": "What is the score for Support?",
+    "type": "number",
+    "answer": 3.1,
+    "tol": 0.225
+   }
+  }
+ },
+ "ho_grouped_three": {
+  "kind": "bar",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 1189,
+   "summary": 110,
+   "ascii": 277,
+   "ascii_tall": 566,
+   "hybrid": 290,
+   "plotext": 769,
+   "mpl_ascii": 854
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "In 2024, which region opened the most stores?",
+    "type": "label",
+    "answer": "South",
+    "options": [
+     "North",
+     "South",
+     "West"
+    ]
+   },
+   "q2": {
+    "q": "In 2022, which region opened the most stores?",
+    "type": "label",
+    "answer": "West",
+    "options": [
+     "North",
+     "South",
+     "West"
+    ]
+   },
+   "q3": {
+    "q": "How many stores did West open in 2023?",
+    "type": "number",
+    "answer": 16.0,
+    "tol": 1.15
+   }
+  }
+ },
+ "ho_ads": {
+  "kind": "scatter",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 284,
+   "summary": 48,
+   "ascii": 172,
+   "ascii_tall": 276,
+   "hybrid": 167,
+   "plotext": 282,
+   "mpl_ascii": 348
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Is the relationship positive or negative?",
+    "type": "label",
+    "answer": "positive",
+    "options": [
+     "positive",
+     "negative"
+    ]
+   },
+   "q2": {
+    "q": "What is the largest sales value?",
+    "type": "number",
+    "answer": 112.9793,
+    "tol": 3.82
+   },
+   "q3": {
+    "q": "What is the smallest spend value?",
+    "type": "number",
+    "answer": 1.1145,
+    "tol": 0.9437
+   }
+  }
+ },
+ "ho_region_month": {
+  "kind": "heatmap",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 357,
+   "summary": 110,
+   "ascii": 128,
+   "ascii_tall": 128,
+   "hybrid": 231,
+   "plotext": 269,
+   "mpl_ascii": 273
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which region has the highest cell?",
+    "type": "label",
+    "answer": "East",
+    "options": [
+     "North",
+     "South",
+     "East",
+     "West"
+    ]
+   },
+   "q2": {
+    "q": "Which month is the highest cell in?",
+    "type": "label",
+    "answer": "May",
+    "options": [
+     "Jan",
+     "Feb",
+     "Mar",
+     "Apr",
+     "May",
+     "Jun"
+    ]
+   },
+   "q3": {
+    "q": "What is the value for South in Feb?",
+    "type": "number",
+    "answer": 26.8,
+    "tol": 3.31
+   },
+   "q4": {
+    "q": "Which region has the lowest total?",
+    "type": "label",
+    "answer": "North",
+    "options": [
+     "North",
+     "South",
+     "East",
+     "West"
+    ]
+   }
+  }
+ },
+ "ho_corr_six": {
+  "kind": "heatmap",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 403,
+   "summary": 198,
+   "ascii": 149,
+   "ascii_tall": 147,
+   "hybrid": 342,
+   "plotext": 272,
+   "mpl_ascii": 315
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Which variable is most negatively correlated with score?",
+    "type": "label",
+    "answer": "debt",
+    "options": [
+     "age",
+     "income",
+     "debt",
+     "tenure",
+     "churn"
+    ]
+   },
+   "q2": {
+    "q": "What is the correlation between income and churn?",
+    "type": "number",
+    "answer": -0.52,
+    "tol": 0.1
+   },
+   "q3": {
+    "q": "Which variable is most positively correlated with age (excluding itself)?",
+    "type": "label",
+    "answer": "tenure",
+    "options": [
+     "income",
+     "debt",
+     "score",
+     "tenure",
+     "churn"
+    ]
+   }
+  }
+ },
+ "ho_wait_times": {
+  "kind": "histogram",
+  "png": [
+   640,
+   480
+  ],
+  "o200k": {
+   "text": 413,
+   "summary": 82,
+   "ascii": 137,
+   "ascii_tall": 255,
+   "hybrid": 176,
+   "plotext": 395,
+   "mpl_ascii": 500
+  },
+  "losses": [],
+  "questions": {
+   "q1": {
+    "q": "Is the distribution skewed left or right?",
+    "type": "label",
+    "answer": "right",
+    "options": [
+     "left",
+     "right"
+    ]
+   },
+   "q2": {
+    "q": "How many tickets are in the tallest bin?",
+    "type": "number",
+    "answer": 391.0,
+    "tol": 19.55
+   },
+   "q3": {
+    "q": "How many bins have more than 100 tickets?",
+    "type": "int",
+    "answer": 5
+   }
+  }
+ }
+}

@@ -1,0 +1,18 @@
+                      Monthly profit / loss
+    50 ┌──────────────────────────────────────────────────┐
+       │                                              30  │
+       │                                      ==      ##  │
+       │                      ##  ==          ##      ##  │
+       │  ##  ==          __  ##  ##      ==  ##      ##  │
+     0 ├──────────────────────────────────────────────────┤
+       │              ""                                  │
+       └──────────────────────────────────────────────────┘
+          Jan    Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+y: $k
+
+title: Monthly profit / loss
+y: $k
+bar n=12 Jan=12 Feb=8 Mar=-5 Apr=-14 May=3 Jun=21 Jul=17 Aug=-9 Sep=6 Oct=25 Nov=-2 Dec=30
+lines at x: -0.99 11.99
+  y: 0 0
+losses: text tick 'Feb': dropped (overlap)

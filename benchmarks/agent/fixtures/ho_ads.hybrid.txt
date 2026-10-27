@@ -1,0 +1,18 @@
+                         Ad spend vs sales
+        ┌─────────────────────────────────────────────────┐
+        │                                        oooo ooo │
+    100 │                               o o ooooo         │
+        │                   o o   oo o o o                │
+        │         oo  ooooo   o  o                        │
+     50 │ o    ooo oo o                                   │
+        │  o o                                            │
+        └─────────────────────────────────────────────────┘
+                   5           10          15          20
+                            Spend ($k)
+y: Sales ($k)
+
+title: Ad spend vs sales
+x: Spend ($k)
+y: Sales ($k)
+scatter n=60 x=1..20 y=37..113 mean=11,77 r=0.97
+losses: none

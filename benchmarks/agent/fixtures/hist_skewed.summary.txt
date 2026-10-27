@@ -1,0 +1,5 @@
+title: Order values
+x: Order value ($)
+y: Orders
+histogram 30 bins of 4 from 2 to 112 peak 13-17=309 counts: 43 181 266 309 241 203 182 114 115 73 75 41 36 27 19 13 11 11 7 6 6 4 2 1 4 0 2 1 1 2
+losses: none

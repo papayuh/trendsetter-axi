@@ -1,0 +1,19 @@
+                     Latency vs payload size
+    50 ┌─────────────────────────────────────────────────┐
+       │               o                                 │
+       │                                                 │
+    25 │                                               o │
+       │                      o o o   oo oooooo oo   o   │
+       │ o o  o o ooo  o o oo ooo     o                  │
+     0 │ o    o                                          │
+       └─────────────────────────────────────────────────┘
+       0.0         2.5         5.0         7.5        10.0
+                          Payload (MB)
+y: Latency (ms)
+
+title: Latency vs payload size
+x: Payload (MB)
+y: Latency (ms)
+scatter n=50 x=0.1..9.7 y=-2..45 mean=5.2,11 r=0.64
+  outliers (3,45); others x=0.1..9.7 y=-2..22
+losses: none

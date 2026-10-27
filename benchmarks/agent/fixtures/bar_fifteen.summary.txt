@@ -1,0 +1,4 @@
+title: Defects per product line
+y: Defects
+bar n=15 P01=91 P02=89 P03=85 P04=88 P05=25 P06=84 P07=95 P08=40 P09=33 P10=26 P11=83 P12=95 P13=68 P14=69 P15=83
+losses: none

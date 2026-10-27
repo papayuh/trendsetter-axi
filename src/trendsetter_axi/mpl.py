@@ -453,11 +453,11 @@ def _ramp(fig, cols=80):
             return
 
 
-def prepare(fig, cols):
-    """Resize the figure to the cell grid. Returns (w_px, h_px)."""
+def prepare(fig, cols, rows=None):
+    """Resize the figure to the cell grid (`rows` lines high, else from the figure's aspect). Returns (w_px, h_px)."""
     _ramp(fig, cols); _collapse(fig); fig._tc_ytop = False
     w_in, h_in = fig.get_size_inches()
-    rows = max(10, min(36, round(cols * (h_in / w_in) * CW / CH)))
+    rows = max(8, rows) if rows else max(10, min(36, round(cols * (h_in / w_in) * CW / CH)))
     fig.set_dpi(72)
     fig.set_size_inches(cols * CW / 72, rows * CH / 72)
     fig._wrapped = {}
@@ -540,8 +540,8 @@ def _clipped(fig):
     return ""
 
 
-def render(fig, cols=80, color=False):
-    w, h = prepare(fig, cols)
+def render(fig, cols=80, color=False, rows=None):
+    w, h = prepare(fig, cols, rows)
     cap = _clipped(fig)
     rend = TextRenderer(w, h, cols); rend.wrapped = fig._wrapped
     fig._get_renderer = lambda: rend         # layout engines measure text in cells
@@ -588,6 +588,34 @@ def _fmt(axis, v):
     return f"{v:.4g}"
 
 
+def _compact(axis, lo, hi):
+    """Data values on one axis (None: a colour scale), on a step near 1/60 of their span (3 significant digits on a log axis): within ~2.5% of the span, few tokens."""
+    if axis is not None and (isinstance(axis.units, UnitData) or "Date" in type(axis.get_converter()).__name__): return lambda v: _fmt(axis, v)
+    if axis is not None and axis.get_scale() == "log":
+        return lambda v: (s if "e" not in (s := f"{v:.3g}") or abs(v) >= 1e15 or abs(v) < 1e-3 else f"{float(s):.0f}" if abs(v) >= 1 else s)
+    span = abs(hi - lo) or abs(hi) or 1
+    d = max(0, -int(np.round(np.log10(span / 60))))
+    return lambda v: (t if (t := f"{v:.{d}f}".rstrip("0").rstrip(".") if d else f"{v:.0f}") not in ("-0", "") else "0")
+
+
+def _samples(x, y, n=10):
+    """About n points to stand for a long line: its first and last point and nice x positions between, y interpolated there (nearest point if x is not sorted)."""
+    xs = [v for v in mticker.MaxNLocator(nbins=n, steps=[1, 2, 2.5, 5, 10]).tick_values(x.min(), x.max()) if x.min() < v < x.max()]
+    xs = sorted({x[0], *xs, x[-1]}) if x[0] <= x[-1] else [x[0], *xs[::-1], x[-1]]
+    if np.all(np.diff(x) > 0): return np.array(xs), np.interp(xs, x, y)
+    i = [int(np.abs(x - v).argmin()) for v in xs]
+    return x[i], y[i]
+
+
+def _outliers(xy):
+    """Points far off the least-squares line: residual over 5 robust sigmas (at most 3, largest first)."""
+    if len(xy) < 8 or np.ptp(xy[:, 0]) == 0: return []
+    res = xy[:, 1] - np.polyval(np.polyfit(xy[:, 0], xy[:, 1], 1), xy[:, 0])
+    sig = 1.4826 * np.median(np.abs(res - np.median(res)))
+    far = np.flatnonzero(np.abs(res) > 5 * sig) if sig > 0 else []
+    return [int(i) for i in sorted(far, key=lambda i: -abs(res[i]))[:3]]
+
+
 def _scale(ax, k):
     axis = getattr(ax, k + "axis")
     kind = "category" if isinstance(axis.units, UnitData) else "date" if "Date" in type(axis.get_converter()).__name__ else axis.get_scale()
@@ -620,14 +648,14 @@ def _points(a, bars):
 
 
 def _heat_at(ax, a, z, k):
-    """Row, column labels of flat heat cell k: the tick label at the cell centre, else the centre value."""
+    """(row, column) labels of flat heat cell k: the tick label at the cell centre, else the centre value."""
     i, j = divmod(int(k), z.shape[1])
     if isinstance(a, QuadMesh): x, y = a.get_coordinates()[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
     else:
         l, r, b, t = a.get_extent(); n, m = z.shape
         x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
     tick = lambda axis, v: next((lab.get_text() for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if abs(tv - v) < .5 and lab.get_text()), None) or _fmt(axis, v)
-    return f"{tick(ax.yaxis, y)}/{tick(ax.xaxis, x)}"
+    return tick(ax.yaxis, y), tick(ax.xaxis, x)
 
 
 def describe(fig, meta):
@@ -645,23 +673,42 @@ def describe(fig, meta):
             h = c.orientation == "horizontal"
             pos, val = ([b.get_y() + b.get_height() / 2 for b in c], [b.get_width() for b in c]) if h else ([b.get_x() + b.get_width() / 2 for b in c], [b.get_height() for b in c])
             fp, fv = (fy, fx) if h else (fx, fy)
+            wid = np.array([b.get_height() if h else b.get_width() for b in c], float); edge = np.array([b.get_y() if h else b.get_x() for b in c], float)
+            hist = len(c) > 6 and np.allclose(wid, wid[0]) and np.allclose(np.diff(edge), wid[0]) and not isinstance((ax.yaxis if h else ax.xaxis).units, UnitData)
+            if hist:   # equal-width, edge-to-edge bars: one header and the counts, cheaper than a label per bar
+                fe, fc = _compact(ax.yaxis if h else ax.xaxis, edge[0], edge[-1] + wid[0]), _compact(ax.xaxis if h else ax.yaxis, 0, np.nanmax(val))
+                k = int(np.nanargmax(val))
+                series.append(dict(name=_name(c, {}), kind="histogram", axes=j, key=key(c[0].get_facecolor()), color=to_hex(c[0].get_facecolor()), n=len(c),
+                                   bins=f"{len(c)} bins of {fe(wid[0])} from {fe(edge[0])} to {fe(edge[-1] + wid[0])}",
+                                   peak=f"{fe(edge[k])}-{fe(edge[k] + wid[0])}={fc(val[k])}", values=[fc(v) for v in val]))
+                continue
+            fv = _compact(ax.xaxis if h else ax.yaxis, min(0, np.nanmin(val)), np.nanmax(val)) if len(val) and np.isfinite(val).any() else fv
             pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
-            if len(pairs) > 12: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
+            if len(pairs) > 40: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
             series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(c[0].get_facecolor()), color=to_hex(c[0].get_facecolor()), n=len(c), values=pairs))
         for a in ax.lines:
             xy = a.get_xydata(); xy = data(a.get_transform(), xy[np.isfinite(xy).all(1)])
             if not len(xy): continue
-            if len(xy) <= 8: v = [f"{fx(x)}={fy(y)}" for x, y in xy]
-            else:
-                lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
-                v = [f"first {fx(xy[0, 0])}={fy(xy[0, 1])}", f"last {fx(xy[-1, 0])}={fy(xy[-1, 1])}", f"min {fx(lo[0])}={fy(lo[1])}", f"max {fx(hi[0])}={fy(hi[1])}"]
-            series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]), values=v))
+            cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
+            sampled = len(xy) > 16
+            px, py = _samples(xy[:, 0], xy[:, 1]) if sampled else (xy[:, 0], xy[:, 1])
+            at, ys = [cx(v) for v in px], [cy(v) for v in py]
+            lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
+            ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
+            series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
+                               at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext))
         for a in ax.collections:
             if isinstance(a, QuadMesh): continue
             fc = a.get_facecolor(); c = fc[0] if len(fc) else (a.get_edgecolor()[0] if len(a.get_edgecolor()) else "k")
             if isinstance(a, PathCollection):
                 xy = np.asarray(a.get_offsets(), float); xy = data(a.get_offset_transform(), xy[np.isfinite(xy).all(1)])
-                series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]), values=[]))
+                cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
+                out = _outliers(xy) if len(xy) else []
+                rest = np.delete(xy, out, 0)
+                stats = dict(mean=f"{cx(xy[:, 0].mean())},{cy(xy[:, 1].mean())}") if len(xy) else {}
+                if len(xy) > 2 and np.ptp(xy[:, 0]) and np.ptp(xy[:, 1]): stats["r"] = f"{np.corrcoef(xy.T)[0, 1]:.2f}"
+                if out: stats.update(outliers=" ".join(f"({cx(xy[i, 0])},{cy(xy[i, 1])})" for i in out), rest=f"x={cx(rest[:, 0].min())}..{cx(rest[:, 0].max())} y={cy(rest[:, 1].min())}..{cy(rest[:, 1].max())}")
+                series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
                 v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
@@ -670,9 +717,19 @@ def describe(fig, meta):
             if z is None or z.ndim != 2: continue
             cb = getattr(a, "colorbar", None)
             label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
-            v = [f"min {_heat_at(ax, a, z, z.argmin())}={z.min():.4g}", f"max {_heat_at(ax, a, z, z.argmax())}={z.max():.4g}"] if z.count() else []
+            cz = _compact(None, float(z.min()), float(z.max())) if z.count() else None
+            v = [f"min {'/'.join(_heat_at(ax, a, z, z.argmin()))}={cz(z.min())}", f"max {'/'.join(_heat_at(ax, a, z, z.argmax()))}={cz(z.max())}"] if z.count() else []
+            cells = {}
+            if z.count():   # small grids in full, else the mean of every row and column (when there are few enough)
+                rl = [_heat_at(ax, a, z, i * z.shape[1])[0] for i in range(z.shape[0])]
+                cl = [_heat_at(ax, a, z, k)[1] for k in range(z.shape[1])]
+                fmt = lambda row: " ".join("." if m else cz(x) for x, m in zip(row.data, np.ma.getmaskarray(row)))  # noqa: E731
+                if z.size <= 36: cells = dict(cols=" ".join(cl), grid=[f"{r}: {fmt(z[i])}" for i, r in enumerate(rl)])
+                else:
+                    if z.shape[0] <= 12: cells["row_means"] = " ".join(f"{r}={cz(m)}" for r, m in zip(rl, z.mean(1)))
+                    if z.shape[1] <= 12: cells["col_means"] = " ".join(f"{k}={cz(m)}" for k, m in zip(cl, z.mean(0)))
             series.append(dict(name=label or _name(a, {}), kind="heatmap", axes=j, key=None, color=None, n=int(z.count()), shape=f"{z.shape[0]}x{z.shape[1]}",
-                               missing=int(z.mask.sum()) if np.ma.is_masked(z) else 0, values=v))
+                               missing=int(z.mask.sum()) if np.ma.is_masked(z) else 0, values=v, **cells))
     return series, scales
 
 

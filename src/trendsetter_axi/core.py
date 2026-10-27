@@ -37,6 +37,28 @@ BOX = {U | D: "│", L | R: "─", D | R: "┌", D | L: "┐", U | R: "└", U |
        U | D | L: "┤", L | R | D: "┬", L | R | U: "┴", U | D | L | R: "┼", U: "│", D: "│", L: "─", R: "─"}
 
 
+def _braille_ascii(bits):
+    """One ASCII glyph for a 2x4 braille dot pattern: its rough shape and height in the cell."""
+    dots = [(r, c) for r in range(4) for c in range(2) if bits & int(BITS[r, c])]
+    if not dots: return " "
+    if len(dots) >= 6: return "#"
+    rows = sorted({r for r, _ in dots})
+    if len(rows) >= 3:
+        top, bot = [c for r, c in dots if r == rows[0]], [c for r, c in dots if r == rows[-1]]
+        lean = sum(top) / len(top) - sum(bot) / len(bot)
+        return "/" if lean > 0.4 else "\\" if lean < -0.4 else "|"
+    m = sum(rows) / len(rows)
+    return "'" if m < 1 else "-" if m < 2.5 else "_"
+
+
+# ascii=True: the same cells in glyphs that cost one token or less (braille and shade blocks cost 1-3 o200k tokens each)
+ASCII = str.maketrans({**{chr(0x2800 + b): _braille_ascii(b) for b in range(256)},
+                       "▁": "_", "▂": "_", "▃": "=", "▄": "=", "▅": "=", "▆": "#", "▇": "#", "█": "#", "▀": '"',
+                       "▏": "|", "▎": "|", "▍": "|", "▌": "#", "▋": "#", "▊": "#", "▉": "#", "▐": "#",
+                       "░": ".", "▒": ":", "▓": "=", "▚": "%", "▞": "&", "·": ".", "•": "o",
+                       "●": "o", "×": "x", "▲": "^", "◆": "*", "■": "%", "○": "@", "△": "v", "∙": ".", "▯": "|"})
+
+
 def lum(c): return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
 def neutral(c): return max(c[:3]) - min(c[:3]) < 0.12 or max(c[:3]) < 0.15
 def background(c): return neutral(c) and lum(c) > 0.8

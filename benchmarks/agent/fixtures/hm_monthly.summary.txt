@@ -1,0 +1,5 @@
+title: Gas price by year and month
+heatmap '$/gal' shape=6x12 min 2021/Sep=2.3 max 2022/Jun=5.2
+  row means: 2019=3 2020=3 2021=3 2022=3.2 2023=3.1 2024=3
+  col means: Jan=2.9 Feb=3.1 Mar=3.3 Apr=3.4 May=3.4 Jun=3.5 Jul=3 Aug=2.9 Sep=2.7 Oct=2.6 Nov=2.7 Dec=2.8
+losses: none

@@ -28,23 +28,46 @@ class RenderResult:
     def __str__(self): return self.text
 
     def summary(self):
-        """Compact text for an agent: scales, series values from the source data, losses. Far fewer tokens than the chart."""
+        """Compact text for an agent: scales, series values from the source data, losses. Far fewer tokens than the chart.
+
+        Lines list every point up to 16, else about 10 evenly spaced samples plus the exact min and max; lines that share
+        their x positions share one `at x:` row. Bars list every bar up to 40; equal-width edge-to-edge bars read as a
+        histogram (bins, counts, peak). Heatmaps up to 36 cells come in full, larger ones as row and column means.
+        Scatters give the mean, Pearson r and points far off the trend line. Numbers keep about 1/60 of the axis span."""
         multi = len(self.scales) > 1
-        lines = []
+        lines, shared = [], {}
         for sc in self.scales:
             p = f"axes {sc['axes']} " if multi else ""
             if sc["title"]: lines.append(f"{p}title: {sc['title']}")
             for k in "xy":
                 a = sc.get(k)
-                if a: lines.append(f"{p}{k}: " + ", ".join(v for v in (a["label"], a["scale"], a.get("range") or f"{a.get('categories')} categories") if v))
+                if a and (a["label"] or a["scale"] not in ("linear", "category")):   # linear and category axes: the label alone; the values say the rest
+                    lines.append(f"{p}{k}: " + ", ".join(v for v in (a["label"], a["scale"] != "linear" and a["scale"], a["scale"] not in ("linear", "category") and a.get("range")) if v))
         if not self.supported_features["source_values"]: lines.append("values unavailable: SVG input carries shapes, not data")
         for s in self.series:
             head = " ".join(v for v in (s["kind"], s["name"] and repr(s["name"]), multi and f"axes {s['axes']}", s["key"] and f"key {s['key']}", s["values"] is None and s["color"]) if v)
-            parts = [f"{k}={s[k]}" for k in ("n", "shape", "x", "y", "z", "missing") if s.get(k) not in (None, "")]
+            if s["kind"] == "line" and "at" in s:   # lines sharing x positions share one row of them
+                at = (s["axes"], tuple(s["at"]))
+                if at not in shared:
+                    shared[at] = [f"{'axes ' + str(s['axes']) + ' ' if multi else ''}lines at x: " + " ".join(s["at"])]
+                    lines.append(shared[at])
+                ext = " ".join(v for v in s["values"] if v.startswith(("min ", "max ")))
+                name = " ".join(v for v in (s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}") if v)
+                shared[at].append(f"  {name or 'y'}: " + " ".join(s["ys"]) + (f" ({ext})" if ext else ""))
+                continue
+            parts = [f"{k}={s[k]}" for k in ("n", "shape", "x", "y", "z", "missing", "mean", "r") if s.get(k) not in (None, "")
+                     and not (k == "missing" and s[k] == 0) and not (k == "n" and s["kind"] == "heatmap")]
+            if s["kind"] == "histogram":
+                lines.append(" ".join([head, s["bins"], f"peak {s['peak']}", "counts:", *s["values"]]))
+                continue
             lines.append(" ".join([head, *parts, *(s["values"] or [])]))
+            if s.get("outliers"): lines.append(f"  outliers {s['outliers']}; others {s['rest']}")
+            if s.get("grid"): lines += [f"  cols: {s['cols']}", *(f"  {g}" for g in s["grid"])]
+            for k in ("row_means", "col_means"):
+                if s.get(k): lines.append(f"  {k.replace('_', ' ')}: {s[k]}")
         lines.append("losses: " + ("; ".join(f"{l['kind']} {l['what']}: {l['detail']}" for l in self.losses) or "none"))
         lines += [f"warning: {w}" for w in self.warnings]
-        return "\n".join(lines)
+        return "\n".join(l for x in lines for l in (x if isinstance(x, list) else [x]))
 
 
 def build(text, meta, cols, series, scales, losses, features):

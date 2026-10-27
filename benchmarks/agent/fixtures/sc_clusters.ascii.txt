@@ -1,0 +1,15 @@
+                                Two customer segments
+      ┌───────────────────────────────────────────────────────────────────────┐
+    8 │ o  Group A                              x  x      xx  x  x            │
+      │ x  Group B                 x   xx x x x x x   xx      x x x        x  │
+      │                                   xxx   x x  xx  x xx xx              │
+    6 │                                                    x                  │
+      │        o                                                              │
+    4 │    o   o ooo o oo o                                                   │
+      │  o  o  o oo  oo oo    o                                               │
+    2 │  oo o   o oo oo                                                       │
+      │             o                                                         │
+      └───────────────────────────────────────────────────────────────────────┘
+                   2                 4                 6                 8
+                                   Visits / month
+y: Spend ($100)

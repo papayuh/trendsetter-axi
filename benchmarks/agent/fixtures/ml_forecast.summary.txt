@@ -1,0 +1,7 @@
+title: Orders: actual vs forecast
+x: Day
+y: Orders
+lines at x: 0 5 10 15 20 25 29
+  'actual' ● n=30: 190 216 233 224 251 285 285 (min 1=187 max 25=285)
+  'forecast' × n=30: 205 216 227 238 249 260 269 (min 0=205 max 29=269)
+losses: none

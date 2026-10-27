@@ -1,0 +1,4 @@
+title: Renewable share of electricity
+y: %
+bar n=10 Norway=71 Chile=54 Kenya=38 Japan=66 Peru=42 Spain=59 India=47 Ghana=33 Chad=21 Laos=29
+losses: none
