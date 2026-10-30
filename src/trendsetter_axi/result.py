@@ -3,13 +3,13 @@ from dataclasses import dataclass
 
 from .cells import width
 
-MATERIAL = ("lost_artist", "lost_series", "series_label")   # the text misrepresents the chart: strict=True refuses these
+MATERIAL = ("lost_artist", "lost_series", "series_label")   # strict=True refuses these: no visible cell, or a dropped or cut legend entry
 FIGURE = dict(color=True, artist_roles=True, source_values=True, artist_losses=True)
 SVG = dict(color=True, artist_roles=False, source_values=False, artist_losses=False)   # SVG has shapes, not artists or data
 
 
 class RenderLossError(ValueError):
-    """Raised by render(..., strict=True) when the text would misrepresent the chart. `.result` is the full RenderResult."""
+    """Raised by render(..., strict=True) on a material loss (see MATERIAL). `.result` is the full RenderResult."""
     def __init__(self, result):
         self.result = result
         super().__init__("render loses data: " + "; ".join(f"{l['kind']} {l['what']}: {l['detail']}" for l in result.losses if l["material"]))
@@ -30,10 +30,13 @@ class RenderResult:
     def summary(self):
         """Compact text for an agent: scales, series values from the source data, losses. Far fewer tokens than the chart.
 
-        Lines list every point up to 16, else about 10 evenly spaced samples plus the exact min and max; lines that share
-        their x positions share one `at x:` row. Bars list every bar up to 40; equal-width edge-to-edge bars read as a
-        histogram (bins, counts, peak). Heatmaps up to 36 cells come in full, larger ones as row and column means.
-        Scatters give the mean, Pearson r and points far off the trend line. Numbers keep about 1/60 of the axis span."""
+        Lines list every point up to 16, else about 10 samples interpolated at nice x positions plus the exact min and
+        max; lines that share their x positions share one `at x:` row. Bars list every bar up to 40; equal-width
+        edge-to-edge bars read as a histogram (bins, counts, peak). Heatmaps up to 36 cells come in full, larger ones as
+        row and column means.
+        Scatters give the mean, Pearson r and points far off the trend line. Numbers keep about 1/60 of the axis span
+        and are rounded presentation strings. NaN gaps, masked points and hidden artists are not yet excluded. `losses:`
+        lists render losses only; errorbars, pies, contours and other undescribed artists are left out without notice."""
         multi = len(self.scales) > 1
         lines, shared = [], {}
         for sc in self.scales:

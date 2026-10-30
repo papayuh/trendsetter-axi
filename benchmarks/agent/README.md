@@ -54,9 +54,11 @@ On dev, `before`:
 ## What changed
 
 - `summary()` now carries the data: every line point up to 16, else the first and last point, ~10 evenly spaced points between and the exact extremes. Lines that share x positions share one `lines at x:` row. It also gives every bar up to 40, histograms as bins plus counts plus the peak bin, heatmaps up to 36 cells in full (larger ones as row and column means), and scatter mean, r and outliers. Numbers are rounded to a step near 1/60 of the axis span, and linear axes drop their view range. That paid for the added data.
-- `render(..., ascii=True)` translates braille, block and shade glyphs to ASCII after layout, so every line keeps its width and frame. `render(..., rows=N)` sets the height.
+- `render(..., ascii=True)` translates braille, block and shade glyphs to ASCII after layout, so every line keeps its width and frame. `render(..., rows=N)` sets the preferred height.
 
 ## Results
+
+A single-model pilot, measured at commit 9288d2b: `claude-sonnet-5-5`, one run per tag, no repeats, 25 dev and 12 held-out charts, and no baseline that hands the model the data directly. The tables round to whole percents.
 
 | format | dev before | dev after | held-out before | held-out after | tokens dev before → after | tokens held-out before → after |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -72,7 +74,7 @@ On dev, `before`:
 
 Tokens are the median per chart. The default text chart is unchanged, so its rows are reused.
 
-- **Summary target (≥ 95% at ≤ ~120 tokens): met on both splits.** 98% at 102 tokens on dev, 95% at 114 on held-out. The model also stopped working it out the hard way: median output fell from 133 to 38 tokens (held-out 142 to 33), and output tokens cost more than input. Its remaining misses are counting slips with the numbers in front of it (months where one city is colder than another, areas under 3.0, bins over 100) and one interpolation on a sampled line.
+- **Summary target (≥ 95% at ≤ ~120 tokens): met on dev, one question short on held-out.** 79/81 (97.5%) at 102 tokens on dev; 37/39 (94.9%) at 114 on held-out, one question under the 95% target. The model also stopped working it out the hard way: median output fell from 133 to 38 tokens (held-out 142 to 33), and output tokens cost more than input. Its remaining misses are counting slips with the numbers in front of it (months where one city is colder than another, areas under 3.0, bins over 100) and one interpolation on a sampled line.
 - **Hybrid** is the best text input: 96% and 100% at ~320 tokens and ~35 output tokens. That is fewer input tokens than the PNG at about the same accuracy.
 - **Text chart target (accuracy up, tokens at least halved): not met.**
   - `ascii` at 16 rows cuts the tokens 59% (639 → 263). It scored 83% against 81% on dev but only 67% against 90% on held-out: 16 rows of ASCII hold about 16 levels where braille at 30 rows holds 120, and it lost values on lines, a log axis and heatmaps.

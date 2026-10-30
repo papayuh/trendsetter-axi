@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Documentation: strict mode, `rows`, summary rounding and the benchmark threshold now state exactly what is checked and measured.
 - `render(source, cols=80, *, color=False, strict=False)` returns a `RenderResult`: `text`, `dimensions`, `series`, `scales`, `warnings`, `losses` and `supported_features`. `render_figure` and `render_svg` still return the same string.
 - Losses count data artists that drew nothing or ended with no visible cell, data points outside the axes view, cut legend entries and dropped or cut text.
 - `strict=True` raises `RenderLossError` on a material loss: a lost data artist or series, or a cut legend entry. Points outside the axes view are reported but not material, since matplotlib hides them too.
@@ -9,7 +10,7 @@
 - `RenderResult.summary()`: compact scales, series values and losses read from the figure's data; SVG input says values are unavailable.
 - `color=True` on `render_figure` and `render_svg` adds 24-bit ANSI colour.
 - `summary()` carries enough to answer from: every point of a line up to 16 (else first, last, ~10 evenly spaced points and the exact extremes) with one shared x row for lines that share x, every bar up to 40, histograms as bins and counts, small heatmaps in full and larger ones as row and column means, scatter mean, r and outliers. Numbers round to ~1/60 of the axis span; linear axes no longer print their view range. On the agent benchmark: 98% (dev) and 95% (held-out) at a median 102 and 114 tokens, from 86% and 90%.
-- `render(..., ascii=True)` draws the same cells in ASCII glyphs, and `render(..., rows=N)` sets a figure's height in lines.
+- `render(..., ascii=True)` draws the same cells in ASCII glyphs, and `render(..., rows=N)` sets a figure's preferred height in lines (heatmaps and bar charts take more so each row or bar keeps a line).
 - `benchmarks/agent`: the same 81 questions about 25 charts answered from the 80-column text, `summary()`, a PNG, mpl_ascii and plotext text, and no chart, with accuracy, tokens and latency per format. README gains a "Why" section with the integration path and those numbers.
 
 ## 0.1.0
