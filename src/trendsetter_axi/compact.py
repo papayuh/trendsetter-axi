@@ -1,6 +1,7 @@
 """Opt-in bounded displays. Rankings use source values, never rasterized labels."""
 from dataclasses import dataclass
 import math
+from numbers import Integral
 
 from .cells import DisplayCapacityError, SGR, width, wrap
 
@@ -27,6 +28,10 @@ def _plain(value):
     if any(ord(c) < 32 or 127 <= ord(c) < 160 for c in text):
         raise ValueError('display labels must not contain control characters')
     return text
+
+
+def _magnitude(value):
+    return abs(int(value) if isinstance(value, Integral) else value)
 
 
 def _result(lines, cols, records, omitted, reason, mode):
@@ -79,11 +84,11 @@ def render_ranking(labels, values, *, cols=80, max_rows=12, title='', unit='', n
     bar_width = min(12, cols - label_width - value_width - 2)
     mode = 'ranking' if bar_width >= 3 else 'table'
     blocks = []
-    maximum = max((abs(r['value']) for r in records), default=0)
+    maximum = max((_magnitude(r['value']) for r in records), default=0)
     for record in selected:
         label, exact = record['label'], record['exact']
         if mode == 'ranking':
-            size = round(abs(record['value']) / maximum * bar_width) if maximum else 0
+            size = round(_magnitude(record['value']) / maximum * bar_width) if maximum else 0
             bar = ('#' if ascii else '█') * size
             blocks.append([label + ' ' * (label_width - width(label) + 1)
                            + exact.rjust(value_width) + ' ' + bar])

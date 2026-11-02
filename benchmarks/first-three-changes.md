@@ -81,6 +81,21 @@ Regressions exercise complete ranking/table/wrapped-table blocks, headings, ASCI
 
 Historical benchmark provenance, the initial chart captures and niche example below are unchanged. No full suite, lint, core-only installation, benchmark, live-host or Glyph checks were run in this follow-up review phase.
 
+### Overflow-safe ranking geometry (starting `6e90882`)
+
+Pre-fix executable reproductions with signed integer minima in NumPy int8, int16, int32 and int64 produced bar lengths `[0, 12]`, versus `[12, 6]` for equivalent Python integers. Both absolute-value operations overflowed on the fixed-width minimum.
+
+Ranking geometry now promotes integral operands to Python integers before computing magnitudes. Original stored values, exact signed strings, input order and explicit top-k ordering are unchanged; native rankings still import neither NumPy nor Matplotlib.
+
+```sh
+PYTHONPATH=src MPLBACKEND=Agg python -m pytest -q tests/test_compact.py tests/test_import_routes.py
+# 250 passed in 10.21s
+```
+
+Regressions compare the reported int8 `[-128, 64]` case and the corresponding int16/int32/int64 minima with Python-integer controls, treating numeric overflow as an error. They assert full/half shared-scale bars, original exact values and types, input/top-k order, ASCII/Unicode output, cell/row budgets and matching table/explanation fallbacks. Fresh-process checks cover native integer rankings without NumPy/Matplotlib imports.
+
+No full suite, lint, benchmarks, installation checks or live-host/Glyph checks were run in this review phase. All prior scope decisions, chart captures, niche evidence and pre-review benchmark provenance remain unchanged.
+
 ## Before/after: ten-team ranking
 
 These preserved chart captures and byte/row counts are pre-review-fix evidence, not new captures of the review-fixed code.

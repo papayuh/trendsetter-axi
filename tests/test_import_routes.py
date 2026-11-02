@@ -15,6 +15,7 @@ def probe(code):
 @pytest.mark.parametrize('route, numpy, matplotlib', [
     ('pass', False, False),
     ("a.render_ranking(['one'], [1])", False, False),
+    ("a.render_ranking(['loss', 'gain'], [-2**63, 2**62])", False, False),
     ("a.present(a.Scalar(95, '%'))", False, False),
     ("a.render_svg('<svg width=\"10\" height=\"10\"/>')", True, False),
     ("from matplotlib.figure import Figure; a.render(Figure())", True, True),

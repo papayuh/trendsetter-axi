@@ -50,6 +50,53 @@ def test_shared_scale_and_explicit_signs_do_not_confuse_magnitudes():
     assert lines[2].count('█') == 6 and '█' not in lines[3]
 
 
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('ascii', [False, True])
+@pytest.mark.parametrize('top_k', [None, 1, 2])
+def test_fixed_width_integer_minima_share_python_integer_scale(dtype, ascii, top_k):
+    import numpy as np
+    from wcwidth import wcswidth
+
+    minimum = int(np.iinfo(dtype).min)
+    values = np.array([minimum, -minimum // 2], dtype=dtype)
+    labels = ['loss', 'gain']
+    kwargs = dict(cols=80, max_rows=2, ascii=ascii, color=False, top_k=top_k)
+    expected = render_ranking(labels, [int(v) for v in values], **kwargs)
+    with np.errstate(over='raise', invalid='raise'):
+        result = render_ranking(labels, values, **kwargs)
+    assert result.text == expected.text
+    assert result.dimensions == expected.dimensions
+    assert result.mode == 'ranking' and result.omitted == (1 if top_k == 1 else 0)
+    bounded(result, 80, 2)
+    assert all(0 <= wcswidth(line) <= 80 for line in result.text.splitlines())
+    assert [r['label'] for r in result.records] == labels
+    assert [r['exact'] for r in result.records] == [str(minimum), '+' + str(-minimum // 2)]
+    assert all(type(r['value']) is type(v) and r['value'] == v for r, v in zip(result.records, values))
+    shown = labels if top_k is None else ['gain', 'loss'][:top_k]
+    lines = result.text.splitlines()
+    assert [line.split()[0] for line in lines[:len(shown)]] == shown
+    for label, count in [('loss', 12), ('gain', 6)]:
+        if label in shown:
+            line = next(line for line in lines if line.startswith(label + ' '))
+            assert line.count('#' if ascii else '█') == count
+
+
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('cols,rows', [(80, 1), (12, 6), (3, 1)])
+def test_fixed_width_integer_minima_keep_python_integer_budget_fallbacks(dtype, cols, rows):
+    import numpy as np
+
+    minimum = int(np.iinfo(dtype).min)
+    values = np.array([minimum, -minimum // 2], dtype=dtype)
+    expected = render_ranking(['loss', 'gain'], [int(v) for v in values], cols=cols, max_rows=rows)
+    with np.errstate(over='raise', invalid='raise'):
+        result = render_ranking(['loss', 'gain'], values, cols=cols, max_rows=rows)
+    bounded(result, cols, rows)
+    assert result.text == expected.text and result.dimensions == expected.dimensions
+    assert (result.mode, result.omitted, result.reason) == (expected.mode, expected.omitted, expected.reason)
+    assert [r['exact'] for r in result.records] == [str(minimum), '+' + str(-minimum // 2)]
+
+
 @pytest.mark.parametrize('values', [[0, 0, 0], [3, 3, 3], [-2, -2, -2]])
 def test_zeros_and_ties_keep_input_order(values):
     r = render_ranking(['c', 'a', 'b'], values)
