@@ -1,5 +1,6 @@
 {
   "baseline_sha": "7fbc29d9173b2ce22a15ea1989b5e260f0d1bd35",
+  "evidence_scope": "Original pre-review-fix implementation; not measurements of review-fixed code",
   "core_installs": {
     "after": {
       "packages": {

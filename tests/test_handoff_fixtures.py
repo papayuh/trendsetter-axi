@@ -130,3 +130,58 @@ def test_survival_risk_requires_records_even_when_drawing_is_identical(cols):
     assert outputs[0].text != outputs[1].text
     assert outputs[0].text == outputs[2].text  # geometry cannot establish absolute counts
     assert 'steps-post' in outputs[0].summary()
+
+
+@pytest.mark.parametrize('style', ['steps-pre', 'steps-post', 'steps-mid', 'default'])
+@pytest.mark.parametrize('descending', [False, True])
+@pytest.mark.parametrize('count', [8, 18])
+def test_line_summary_samples_follow_drawstyle(style, descending, count):
+    x = list(range(0, count * 3, 3))
+    split = 7 if count == 18 else 3
+    y = [0] * split + [100] * (count - split)
+    if descending:
+        x, y = x[::-1], y[::-1]
+    ax = Figure().subplots()
+    ax.plot(x, y, drawstyle=style)
+    series = render(ax.figure).series[0]
+    assert series['sampled'] == (count > 16)
+    for at, value in zip(series['at'], series['ys']):
+        target = float(at)
+        if target in x:
+            expected = y[x.index(target)]
+        else:
+            i = next(i for i in range(len(x) - 1) if min(x[i:i+2]) < target < max(x[i:i+2]))
+            fraction = (target - x[i]) / (x[i+1] - x[i])
+            if style == 'steps-post':
+                expected = y[i]
+            elif style == 'steps-pre':
+                expected = y[i+1]
+            elif style == 'steps-mid':
+                expected = y[i] if fraction < .5 else y[i+1]
+            else:
+                expected = y[i] + fraction * (y[i+1] - y[i])
+        assert float(value) == pytest.approx(expected, abs=.51)
+    if count == 18 and not descending:
+        at_twenty = dict(zip(series['at'], series['ys']))['20']
+        assert at_twenty == {'steps-post': '0', 'steps-pre': '100', 'steps-mid': '100', 'default': '67'}[style]
+    if descending and style == 'default':
+        assert all(float(at) in x for at in series['at'])
+    if count == 8:
+        assert list(map(float, series['at'])) == x
+        assert list(map(float, series['ys'])) == y
+
+
+@pytest.mark.parametrize('style', ['steps-pre', 'steps-post', 'steps-mid'])
+@pytest.mark.parametrize('ordering', ['unsorted', 'repeated'])
+def test_nonmonotonic_step_summary_retains_source_knots(style, ordering):
+    x = list(range(0, 54, 3))
+    y = [0] * 7 + [100] * 11
+    if ordering == 'unsorted':
+        x[5], x[10] = x[10], x[5]
+    else:
+        x[5] = x[4]
+    ax = Figure().subplots()
+    ax.plot(x, y, drawstyle=style)
+    series = render(ax.figure).series[0]
+    assert series['sampled']
+    assert all((float(at), float(value)) in list(zip(x, y)) for at, value in zip(series['at'], series['ys']))

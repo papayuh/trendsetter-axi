@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import math
 
-from .cells import SGR, width, wrap
+from .cells import DisplayCapacityError, SGR, width, wrap
 
 
 @dataclass
@@ -70,7 +70,7 @@ def render_ranking(labels, values, *, cols=80, max_rows=12, title='', unit='', n
         heading += (' ' if heading else '') + '[' + _plain(unit) + ']'
     try:
         header = wrap(heading, cols) if heading else []
-    except ValueError:
+    except DisplayCapacityError:
         return _unavailable(cols, max_rows, records, 'heading cannot fit')
     if len(header) > max_rows or len(header) == max_rows and records:
         return _unavailable(cols, max_rows, records, 'heading exceeds row budget')
@@ -94,7 +94,7 @@ def render_ranking(labels, values, *, cols=80, max_rows=12, title='', unit='', n
                 return _unavailable(cols, max_rows, records, 'exact value and label cannot fit')
             try:
                 pieces = wrap(label, available)
-            except ValueError:
+            except DisplayCapacityError:
                 return _unavailable(cols, max_rows, records, 'label character cannot fit')
             blocks.append([pieces[0] + ' ' * (available - width(pieces[0]) + 1) + exact.rjust(value_width),
                            *pieces[1:]])
@@ -125,14 +125,20 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
     _budget(cols, max_rows)
     if not isinstance(source, (str, bytes)):
         from matplotlib.container import BarContainer
+        from matplotlib.legend import Legend
         axes = [ax for ax in source.axes if ax.get_visible()]
         if len(axes) == 1:
             ax = axes[0]
             containers = [c for c in ax.containers if isinstance(c, BarContainer)]
             others = [a for a in [*ax.lines, *ax.collections, *ax.images, *ax.texts, *ax.artists,
-                                   *source.texts] if a.get_visible()]
+                                   *source.texts, *source.legends, *source.lines, *source.patches,
+                                   *source.images, *source.artists,
+                                   *(a for a in ax.get_children() if isinstance(a, Legend))]
+                      if a.get_visible()]
             if (len(containers) == 1 and containers[0].orientation == 'horizontal'
-                    and not others and ax.get_xscale() == ax.get_yscale() == 'linear'
+                    and not others and not source.subfigs and not ax.child_axes and not ax.get_ylabel()
+                    and not any(ax.get_title(loc=loc) for loc in ('left', 'right'))
+                    and ax.get_xscale() == ax.get_yscale() == 'linear'
                     and ax.xaxis.units is None):
                 bars = [b for b in containers[0] if b.get_visible()]
                 extra_patches = [p for p in ax.patches if p.get_visible() and p not in bars]
@@ -158,7 +164,10 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
                             import matplotlib.pyplot as plt
                             plt.close(work)
     from . import render
-    result = render(source, cols=cols, rows=max_rows, ascii=ascii, color=color)
+    try:
+        result = render(source, cols=cols, rows=max_rows, ascii=ascii, color=color)
+    except DisplayCapacityError:
+        return _unavailable(cols, max_rows, None, 'full chart cannot fit display width; request more columns')
     if result.dimensions['height'] <= max_rows:
         return _result(result.text.split('\n'), cols, [], 0, None, 'figure')
     return _unavailable(cols, max_rows, None, 'full chart exceeds row budget; request more rows')

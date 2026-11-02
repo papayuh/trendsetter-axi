@@ -598,11 +598,23 @@ def _compact(axis, lo, hi):
     return lambda v: (t if (t := f"{v:.{d}f}".rstrip("0").rstrip(".") if d else f"{v:.0f}") not in ("-0", "") else "0")
 
 
-def _samples(x, y, n=10):
-    """About n points to stand for a long line: its first and last point and nice x positions between, y interpolated there (nearest point if x is not sorted)."""
+def _samples(x, y, n=10, drawstyle='default'):
+    """About n points: endpoints and nice x positions, respecting step drawstyles.
+
+    Unsorted paths use source knots; non-step sampling retains legacy behavior.
+    """
     xs = [v for v in mticker.MaxNLocator(nbins=n, steps=[1, 2, 2.5, 5, 10]).tick_values(x.min(), x.max()) if x.min() < v < x.max()]
     xs = sorted({x[0], *xs, x[-1]}) if x[0] <= x[-1] else [x[0], *xs[::-1], x[-1]]
-    if np.all(np.diff(x) > 0): return np.array(xs), np.interp(xs, x, y)
+    if drawstyle.startswith('steps') and (np.all(np.diff(x) > 0) or np.all(np.diff(x) < 0)):
+        ordered, targets = (x, np.array(xs)) if x[0] < x[-1] else (-x, -np.array(xs))
+        if drawstyle == 'steps-post':
+            i = np.searchsorted(ordered, targets, side='right') - 1
+        elif drawstyle == 'steps-mid':
+            i = np.searchsorted((ordered[:-1] + ordered[1:]) / 2, targets, side='right')
+        else:
+            i = np.searchsorted(ordered, targets, side='left')
+        return np.array(xs), y[np.clip(i, 0, len(y) - 1)]
+    if np.all(np.diff(x) > 0) and not drawstyle.startswith('steps'): return np.array(xs), np.interp(xs, x, y)
     i = [int(np.abs(x - v).argmin()) for v in xs]
     return x[i], y[i]
 
@@ -694,7 +706,7 @@ def describe(fig, meta):
             if not len(xy): continue
             cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
             sampled = len(xy) > 16
-            px, py = _samples(xy[:, 0], xy[:, 1]) if sampled else (xy[:, 0], xy[:, 1])
+            px, py = _samples(xy[:, 0], xy[:, 1], drawstyle=a.get_drawstyle()) if sampled else (xy[:, 0], xy[:, 1])
             at, ys = [cx(v) for v in px], [cy(v) for v in py]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []

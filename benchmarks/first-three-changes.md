@@ -8,13 +8,14 @@ Branch: `fm/ts-handoff-c123`.
 - Deferred format-specific imports, keeping existing functions, exceptions, return types and figure-copy behavior. No dependency split.
 - Opt-in `render_ranking` / `render_compact`: hard cell/row budgets including headings, units, series identity and omission notices. Exact signed values, shared magnitude scale, input order unless top-k explicitly requests ranking, wrapped exact-table fallback, structured omissions and bounded explanations. Figure tick-label lookup happens on a copy, too.
 - Thin `present` adapter: explicit > session > saved > automatic, intersected with surface rows/color and an explicitly supplied user-visible image route. Scalar bypass, one-shot text overrides, no TERM inference, globals or persistence side effects. The harness owns saving/reset/scope and image delivery; this is not an installed Claude Code or Pi extension.
-- Small supported summary patch: step drawstyles and separate omissions for unrepresented errorbar endpoints/filled-area paired bounds and sample support. No inferred denominators, risk sets or generic polygon interval extraction; `losses` and strict-mode materiality are unchanged.
+- Small supported summary patch: step drawstyles and separate omissions for unrepresented errorbar endpoints/filled-area paired bounds and sample support. Long-line samples respect pre/post/mid step conventions in either direction; unsorted paths retain source knots and non-step sampling keeps legacy behavior. No inferred denominators, risk sets or generic polygon interval extraction; `losses` and strict-mode materiality are unchanged.
+- Review fixes: reject ranking conversion when legends, side titles, category-axis labels, child axes or extra visible figure artists would lose identity/context. Use the complete-render/bounded-explanation fallback instead. Translate only typed insufficient-display-capacity errors into bounded omissions, including `present` fallback; malformed sources still raise.
 
-Inspected the eligibility branch at `fabf6221423c57f9952777f6f67bd13e3aa7fb71` before implementation. No broad T1 port was needed for these paths: direct ranking records reject nonfinite inputs; the figure ranking recognizes only visible bars in a conservative single-series case. Main's more precise legacy summary/gap/mask limitations remain documented rather than claiming that entire separate fix shipped.
+Inspected the eligibility branch at `fabf6221423c57f9952777f6f67bd13e3aa7fb71` before implementation. Per Firstmate's scope decision, this delivery fixes step-summary sampling only. Hidden axes/artists, gap accounting, masked scatter/clipping and missing counts belong to the separate [T1 task / PR #10](https://github.com/papayuh/trendsetter-axi/pull/10), not this delivery. Main's precise legacy summary/gap/mask limitations remain documented; no claim that the entire separate fix shipped.
 
 ## Exact checks and results
 
-Existing development environment: Python 3.14.7, dev extra available.
+The commands/results below are historical **pre-review-fix evidence**, recorded for the original implementation (starting review HEAD `4e46d1523f3a9cbde8f20cc9414f20b4df136b2a`), not fresh validation of the review-fixed code. Existing development environment for those checks: Python 3.14.7, dev extra available.
 
 ```sh
 .venv/bin/python -m pytest -q
@@ -44,7 +45,26 @@ The suite retains `test_render_figure_leaves_figure_unchanged`. Fresh-process `s
 
 Targeted fixtures cover unequal calibration support/Wilson whiskers, masked versus zero-filled cohorts, exchanged forecast widths, straight versus post-step ECDFs, moved survival censor marks and duplicated subjects. Direct record calculations establish the exact answers; the renderer does not fabricate interval endpoints or risk counts. Compact tests cover every line's display cells and total rows, mixed signs, ties/zeros, CJK/combining labels, ASCII/color-off, small windows, exact tables, top-k omissions, source geometry and existing Tick state. Preference tests cover scalar/image sentinels, one text fallback, explicit/session/saved precedence, false/auto resets, caller-owned scope isolation, concurrent independent actual text renders and local redraws without saving overrides.
 
+## Review-fix focused verification
+
+Linux review worktree, `/usr/bin/python`: Python **3.14.6**, pytest **9.1.1**, Matplotlib **3.11.2**, NumPy **2.4.4**, wcwidth **0.8.2**. The checkout has no `.venv`; the available interpreter supplies the test dependencies. No packages or host settings were changed.
+
+Before fixes, executable reproductions confirmed the relabelled legend became an anonymous ranking; the one-column `東` SVG and three-column heatmap color key raised capacity `ValueError`s; both long pre/post-step summaries reported `20=67` instead of their respective values `100` and `0`.
+
+After all fixes:
+
+```sh
+PYTHONPATH=src MPLBACKEND=Agg python -m pytest -q tests/test_compact.py tests/test_display.py tests/test_handoff_fixtures.py tests/test_cells.py tests/test_import_routes.py tests/test_render.py::test_render_figure_leaves_figure_unchanged
+# 232 passed in 13.88s
+```
+
+Executable regressions cover axes/figure legend labels and titles, both side titles, category-axis labels, inset/subfigure context, figure-level text/artists, complete-render and bounded `present` fallbacks, narrow figure/SVG/bytes/color-key capacity, and malformed-source error propagation. Step tests cover the reported 18-point fixture, pre/post/mid conventions, both directions, short and long lines, unsorted/repeated x and the legacy straight-line control. Source-immutability and lazy-import regressions remain passing in this focused check.
+
+The full suite, lint, core-only installation checks and later delivery gates belong to the outer pipeline; they were not rerun in this review-fix phase. No timing/size benchmarks or live-host checks were rerun.
+
 ## Before/after: ten-team ranking
+
+These preserved chart captures and byte/row counts are pre-review-fix evidence, not new captures of the review-fixed code.
 
 Exact commands (UTF-8 byte counts exclude the final saved-file newline):
 
@@ -166,6 +186,8 @@ At 300 ms the source counts give A=95/100, B=90/100. Straight segments through t
 
 ## Timing and size
 
+All timing, output-size and installed-size numbers in this section and `first-three-changes.json` are **pre-review-fix evidence** for the original implementation, not measurements of the review-fixed code. They have not been rerun after the eligibility, capacity-error and step-sampling corrections.
+
 Linux, CPython **3.14.7** (GCC 13.3.0), Axi **0.1.0**, NumPy **2.5.4**, Matplotlib **3.11.2**, wcwidth **0.9.3**. Complete dependency versions and byte accounting are in `first-three-changes.json`.
 
 Seven fresh processes per route/variant, one warm-up per variant, interleaved with alternating order. Interpreter launch excluded. **Cold Python, warm OS/font caches**: not a disk-cache-cold claim. `warm-*` initializes fonts and routes, then times one repeated operation; fixture construction/import excluded. Figure routes retain copying. Output is monochrome. PNG measures encoding only, not user-visible delivery.
@@ -218,6 +240,8 @@ uv pip install --python .scratch/core-after/bin/python .scratch/after-wheel/*.wh
 - `.scratch/niche-before.txt`
 - `.scratch/niche-after.txt`
 
-The resulting charts were printed through the Linux command-output channel and saved as plain text, not merely mounted in a headless UI. Still **unverified in a human's live terminal**: Linux terminal glyph/font behavior, actual Claude Code user-visible image plugin/client delivery, Pi human-facing image delivery versus model-facing content, cross-session saved harness settings, and the Windows text fallback. Callback/snapshot tests establish the adapter contract, not those integrations or human-visible latency. No broad preference or performance claim is warranted yet.
+The resulting charts were printed through the Linux command-output channel and saved as plain text, not merely mounted in a headless UI. Still **unverified in a human's live terminal**: Linux terminal glyph/font behavior, actual Claude Code user-visible image plugin/client delivery, Pi human-facing image delivery versus model-facing content, cross-session saved harness settings, and the Windows text fallback. Callback/snapshot tests establish the adapter contract, not those integrations or human-visible latency. Firstmate approved leaving both live Linux terminal verification and Windows text fallback unverified for this delivery: Firstmate shows Linux output to the captain; the Windows check is follow-up. No broad preference or performance claim is warranted yet.
 
-Follow-up, deliberately out of scope: multi-harness agent trial (steps 3–5), randomized/blind held-out head-to-heads, Glyph comparison in a separate environment pinned to plotext==5.3.2 if run, new chart families, generic figure auditing, full separate eligibility fixes, and an optional-dependency split only if measured install size becomes an obstacle.
+Firstmate approved moving the pinned Glyph comparison to the follow-up agent-trial task. No Glyph comparison has run and no Glyph/trial dependencies are added. That task owns the separate environment and pinned Glyph `ccb45c7` / `plotext==5.3.2` baseline.
+
+Other follow-up, deliberately out of scope: multi-harness agent trial (steps 3–5), randomized/blind held-out head-to-heads, new chart families, generic figure auditing, the separate [T1 eligibility task](https://github.com/papayuh/trendsetter-axi/pull/10), and an optional-dependency split only if measured install size becomes an obstacle.

@@ -3,7 +3,7 @@ import copy
 from matplotlib.figure import Figure
 import pytest
 
-from trendsetter_axi import render, render_compact, render_ranking
+from trendsetter_axi import DisplayPreferences, Surface, present, render, render_compact, render_ranking
 from trendsetter_axi.cells import width
 
 NAMES = ['Retail servicing', 'Direct lending', 'Partner channel', 'Branch operations',
@@ -152,3 +152,94 @@ def test_invalid_budgets(kwargs):
 def test_nonfinite_is_not_silently_filled_with_zero(value):
     with pytest.raises(ValueError):
         render_ranking(['a'], [value])
+
+
+@pytest.mark.parametrize('context', ['axes_legend', 'axes_legend_title', 'figure_legend',
+                                     'figure_legend_title', 'left_title', 'right_title',
+                                     'ylabel', 'child_axes', 'figure_artist', 'subfigure',
+                                     'suptitle', 'supxlabel', 'supylabel'])
+def test_figure_context_refuses_lossy_ranking_conversion(context):
+    fig = Figure()
+    if context == 'subfigure':
+        subfigure = fig.subfigures()
+        subfigure.suptitle('2026 forecast')
+        ax = subfigure.subplots()
+    else:
+        ax = fig.subplots()
+    ax.barh(['A'], [10])
+    if context == 'axes_legend':
+        ax.legend(['2026 forecast'])
+    elif context == 'axes_legend_title':
+        ax.legend(['Series A'], title='2026 forecast')
+    elif context == 'figure_legend':
+        ax.figure.legend(['2026 forecast'])
+    elif context == 'figure_legend_title':
+        ax.figure.legend(['Series A'], title='2026 forecast')
+    elif context in ('left_title', 'right_title'):
+        ax.set_title('2026 forecast', loc=context.split('_')[0])
+    elif context == 'ylabel':
+        ax.set_ylabel('2026 forecast')
+    elif context == 'child_axes':
+        inset = ax.inset_axes([.5, .5, .4, .4])
+        inset.plot([0, 1], [0, 1])
+        inset.set_title('2026 forecast')
+    elif context.startswith('sup'):
+        getattr(fig, context)('2026 forecast')
+    elif context == 'figure_artist':
+        from matplotlib.text import Text
+        fig.add_artist(Text(.5, .9, '2026 forecast', transform=fig.transFigure))
+    complete = render(fig, cols=80, rows=60)
+    result = render_compact(fig, cols=80, max_rows=60)
+    bounded(result, 80, 60)
+    assert result.mode == 'figure' and result.omitted == 0
+    assert result.text == complete.text
+    assert '2026 forecast' in result.text
+    fallback = present(fig, saved=DisplayPreferences(mode='image'), surface=Surface(cols=40, rows=2))
+    assert fallback.mode == 'text' and fallback.fallback_reason
+    assert fallback.result.mode == 'explanation' and fallback.result.omitted is None
+    assert fallback.result.reason
+    bounded(fallback.result, 40, 2)
+
+
+@pytest.mark.parametrize('kind', ['svg', 'svg_bytes', 'figure_text', 'heatmap'])
+@pytest.mark.parametrize('via_present', [False, True])
+def test_valid_narrow_display_returns_bounded_capacity_omission(kind, via_present):
+    cols = 3 if kind == 'heatmap' else 1
+    if kind.startswith('svg'):
+        source = '<svg width="200" height="100"><text x="100" y="20" class="title">東</text></svg>'
+        if kind == 'svg_bytes':
+            source = source.encode()
+    else:
+        ax = Figure().subplots()
+        if kind == 'heatmap':
+            image = ax.imshow([[0, 1], [2, 3]])
+            ax.figure.colorbar(image, ax=ax)
+        else:
+            ax.plot([0, 1])
+            ax.set_title('東')
+        source = ax.figure
+    with pytest.raises(ValueError):
+        render(source, cols=cols, rows=3)
+    if via_present:
+        delivery = present(source, saved=DisplayPreferences(mode='image'), surface=Surface(cols=cols, rows=3))
+        assert delivery.mode == 'text' and delivery.fallback_reason
+        result = delivery.result
+        assert delivery.text == result.text
+    else:
+        result = render_compact(source, cols=cols, max_rows=3)
+    bounded(result, cols, 3)
+    assert result.mode == 'explanation' and result.omitted is None
+    assert result.reason and result.records == []
+
+
+@pytest.mark.parametrize('cols', [1, 80])
+@pytest.mark.parametrize('via_present', [False, True])
+def test_malformed_source_errors_are_not_capacity_omissions(cols, via_present):
+    from xml.etree.ElementTree import ParseError
+    for source, error in [('<svg', ParseError),
+                          ('<svg width="200" height="100"><text x="invalid">East</text></svg>', ValueError)]:
+        with pytest.raises(error):
+            if via_present:
+                present(source, surface=Surface(cols=cols, rows=3))
+            else:
+                render_compact(source, cols=cols, max_rows=3)

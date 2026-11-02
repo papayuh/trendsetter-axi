@@ -11,6 +11,10 @@ SGR = re.compile(r"\x1b\[[0-9;:]*m")
 RESET = "\x1b[0m"
 
 
+class DisplayCapacityError(ValueError):
+    """A valid display cannot fit an indivisible character or key entry."""
+
+
 def width(text):
     """Display cells in a single line, ignoring ANSI SGR styling."""
     return sum(size for _, size in clusters(str(text)))
@@ -89,7 +93,7 @@ def wrap(text, cols):
             if cut < 1:
                 cut = width(head)
             if cut < 1:
-                raise ValueError("a character is wider than cols")
+                raise DisplayCapacityError("a character is wider than cols")
             lines.append(slice_cells(paragraph, 0, cut).rstrip())
             paragraph = slice_cells(paragraph, cut).lstrip()
     return lines
@@ -101,7 +105,7 @@ def pack_entries(label, entries, cols):
     current = lines.pop() if lines else ""
     for entry in entries:
         if width(entry) > cols:
-            raise ValueError(f"color-key entry needs {width(entry)} cells, cols={cols}")
+            raise DisplayCapacityError(f"color-key entry needs {width(entry)} cells, cols={cols}")
         candidate = current + ("  " if current else "") + entry
         if width(candidate) > cols:
             lines.append(current)
