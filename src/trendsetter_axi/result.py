@@ -1,5 +1,5 @@
 """What a render produced and what it lost."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .cells import width
 
@@ -24,19 +24,15 @@ class RenderResult:
     warnings: list             # notes about how the input was read
     losses: list               # dicts kind/what/detail/material: everything the text does not show
     supported_features: dict   # what this kind of input lets the renderer know
+    summary_omissions: list = field(default_factory=list)  # source facts not represented, separate from render losses
 
     def __str__(self): return self.text
 
     def summary(self):
-        """Compact text for an agent: scales, series values from the source data, losses. Far fewer tokens than the chart.
+        """Compact scales, source values, render losses and summary omissions for an agent.
 
-        Lines list every point up to 16, else about 10 samples interpolated at nice x positions plus the exact min and
-        max; lines that share their x positions share one `at x:` row. Bars list every bar up to 40; equal-width
-        edge-to-edge bars read as a histogram (bins, counts, peak). Heatmaps up to 36 cells come in full, larger ones as
-        row and column means.
-        Scatters give the mean, Pearson r and points far off the trend line. Numbers keep about 1/60 of the axis span
-        and are rounded presentation strings. NaN gaps, masked points and hidden artists are not yet excluded. `losses:`
-        lists render losses only; errorbars, pies, contours and other undescribed artists are left out without notice."""
+        See README.md, "What the text lost: render", for sampling, rounding and known limits.
+        """
         multi = len(self.scales) > 1
         lines, shared = [], {}
         for sc in self.scales:
@@ -55,7 +51,7 @@ class RenderResult:
                     shared[at] = [f"{'axes ' + str(s['axes']) + ' ' if multi else ''}lines at x: " + " ".join(s["at"])]
                     lines.append(shared[at])
                 ext = " ".join(v for v in s["values"] if v.startswith(("min ", "max ")))
-                name = " ".join(v for v in (s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}") if v)
+                name = " ".join(v for v in (s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}", s.get('drawstyle')) if v)
                 shared[at].append(f"  {name or 'y'}: " + " ".join(s["ys"]) + (f" ({ext})" if ext else ""))
                 continue
             parts = [f"{k}={s[k]}" for k in ("n", "shape", "x", "y", "z", "missing", "mean", "r") if s.get(k) not in (None, "")
@@ -69,6 +65,7 @@ class RenderResult:
             for k in ("row_means", "col_means"):
                 if s.get(k): lines.append(f"  {k.replace('_', ' ')}: {s[k]}")
         lines.append("losses: " + ("; ".join(f"{l['kind']} {l['what']}: {l['detail']}" for l in self.losses) or "none"))
+        lines += [f"summary omission {o['what']}: {o['detail']}" for o in self.summary_omissions]
         lines += [f"warning: {w}" for w in self.warnings]
         return "\n".join(l for x in lines for l in (x if isinstance(x, list) else [x]))
 
@@ -85,7 +82,8 @@ def build(text, meta, cols, series, scales, losses, features):
     for l in losses: l["material"] = l["kind"] in MATERIAL
     warnings = [f"{meta['guessed']} axis-aligned light strokes taken for gridlines by colour, not drawn"] if meta["guessed"] else []
     rows = text.split("\n")
-    return RenderResult(text, dict(cols=cols, width=max(map(width, rows)), height=len(rows)), series, scales, warnings, losses, features)
+    return RenderResult(text, dict(cols=cols, width=max(map(width, rows)), height=len(rows)), series, scales, warnings, losses, features,
+                        list(meta.get('summary_omissions', [])))
 
 
 def svg_series(meta):

@@ -1,16 +1,19 @@
 """Render matplotlib figures and SVG as unicode text for the terminal."""
 import copy, dataclasses, itertools
 
-from matplotlib.category import UnitData
-
-from . import core as _core, mpl as _mpl, result as _result, svg as _svg
+from . import result as _result
 from .result import RenderLossError as RenderLossError, RenderResult as RenderResult   # public API
+from .compact import CompactResult as CompactResult, render_compact as render_compact, render_ranking as render_ranking
+from .display import (DisplayPreferences as DisplayPreferences, Surface as Surface, Scalar as Scalar,
+                      Presentation as Presentation, present as present, resolve_preferences as resolve_preferences)
 
 __version__ = "0.1.0"
 
 
 def _copy(fig):
     """Deep copy of a figure. plotnine's __deepcopy__ methods keep links to the original figure's artists, so objects holding them are copied plainly."""
+    from matplotlib.category import UnitData
+
     memo = {id(a.units._counter): itertools.count(len(a.units._mapping))
             for ax in fig.axes for a in (ax.xaxis, ax.yaxis) if isinstance(a.units, UnitData)}
     artists = {id(a) for a in fig.findobj()}
@@ -37,6 +40,8 @@ def _copy(fig):
 
 
 def _figure(fig, cols, color, result, rows=None):
+    from . import mpl as _mpl
+
     work = _copy(fig)
     try:
         text, meta = _mpl.render(work, cols, color, rows)
@@ -56,6 +61,8 @@ def render_figure(fig, cols=80, color=False):
 
 def render_svg(svg_text, cols=80, color=False):
     """Render SVG source (plain text, e.g. from matplotlib with svg.fonttype='none') as text."""
+    from . import svg as _svg
+
     return _svg.render(svg_text, cols, ansi=color)[0]
 
 
@@ -71,12 +78,16 @@ def render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None
     rows is the preferred height in lines (at least 8; a heatmap or bar chart takes more so each row or bar keeps a line);
     by default it follows the figure's aspect. SVG input ignores it."""
     if isinstance(source, (str, bytes)):
+        from . import svg as _svg
+
         text, meta = _svg.render(source, cols, ansi=color)
         series, scales, lost = _result.svg_series(meta)
         res = _result.build(text, meta, cols, series, scales, lost, _result.SVG)
     else:
         res = _figure(source, cols, color, True, rows)
     if ascii:
+        from . import core as _core
+
         tr = lambda t: t.translate(_core.ASCII) if t else t  # noqa: E731
         res = dataclasses.replace(res, text=tr(res.text), series=[dict(s, key=tr(s["key"])) for s in res.series])
     if strict and any(l["material"] for l in res.losses): raise RenderLossError(res)

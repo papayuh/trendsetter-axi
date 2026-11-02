@@ -12,7 +12,7 @@ from matplotlib.category import UnitData
 from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh
 from matplotlib.colors import to_hex, to_rgb
 from matplotlib.lines import Line2D
-from matplotlib.container import BarContainer
+from matplotlib.container import BarContainer, ErrorbarContainer
 from matplotlib.image import _ImageBase
 from .core import Canvas
 from .cells import truncate, width, wrap
@@ -598,11 +598,23 @@ def _compact(axis, lo, hi):
     return lambda v: (t if (t := f"{v:.{d}f}".rstrip("0").rstrip(".") if d else f"{v:.0f}") not in ("-0", "") else "0")
 
 
-def _samples(x, y, n=10):
-    """About n points to stand for a long line: its first and last point and nice x positions between, y interpolated there (nearest point if x is not sorted)."""
+def _samples(x, y, n=10, drawstyle='default'):
+    """About n points: endpoints and nice x positions, respecting step drawstyles.
+
+    Unsorted paths use source knots; non-step sampling retains legacy behavior.
+    """
     xs = [v for v in mticker.MaxNLocator(nbins=n, steps=[1, 2, 2.5, 5, 10]).tick_values(x.min(), x.max()) if x.min() < v < x.max()]
     xs = sorted({x[0], *xs, x[-1]}) if x[0] <= x[-1] else [x[0], *xs[::-1], x[-1]]
-    if np.all(np.diff(x) > 0): return np.array(xs), np.interp(xs, x, y)
+    if drawstyle.startswith('steps') and (np.all(np.diff(x) > 0) or np.all(np.diff(x) < 0)):
+        ordered, targets = (x, np.array(xs)) if x[0] < x[-1] else (-x, -np.array(xs))
+        if drawstyle == 'steps-post':
+            i = np.searchsorted(ordered, targets, side='right') - 1
+        elif drawstyle == 'steps-mid':
+            i = np.searchsorted((ordered[:-1] + ordered[1:]) / 2, targets, side='right')
+        else:
+            i = np.searchsorted(ordered, targets, side='left')
+        return np.array(xs), y[np.clip(i, 0, len(y) - 1)]
+    if np.all(np.diff(x) > 0) and not drawstyle.startswith('steps'): return np.array(xs), np.interp(xs, x, y)
     i = [int(np.abs(x - v).argmin()) for v in xs]
     return x[i], y[i]
 
@@ -669,6 +681,9 @@ def describe(fig, meta):
         data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
         for c in ax.containers:
+            if isinstance(c, ErrorbarContainer) and any(a.get_visible() for a in c.lines[2]):
+                meta.setdefault('summary_omissions', []).append(dict(
+                    what='errorbar', detail='interval endpoints and sample support unavailable in summary; use source arrays'))
             if not isinstance(c, BarContainer) or not len(c): continue
             h = c.orientation == "horizontal"
             pos, val = ([b.get_y() + b.get_height() / 2 for b in c], [b.get_width() for b in c]) if h else ([b.get_x() + b.get_width() / 2 for b in c], [b.get_height() for b in c])
@@ -691,12 +706,13 @@ def describe(fig, meta):
             if not len(xy): continue
             cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
             sampled = len(xy) > 16
-            px, py = _samples(xy[:, 0], xy[:, 1]) if sampled else (xy[:, 0], xy[:, 1])
+            px, py = _samples(xy[:, 0], xy[:, 1], drawstyle=a.get_drawstyle()) if sampled else (xy[:, 0], xy[:, 1])
             at, ys = [cx(v) for v in px], [cy(v) for v in py]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
             series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
-                               at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext))
+                               at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext,
+                               **({'drawstyle': a.get_drawstyle()} if a.get_drawstyle() != 'default' else {})))
         for a in ax.collections:
             if isinstance(a, QuadMesh): continue
             fc = a.get_facecolor(); c = fc[0] if len(fc) else (a.get_edgecolor()[0] if len(a.get_edgecolor()) else "k")
@@ -712,6 +728,9 @@ def describe(fig, meta):
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
                 v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
+                meta.setdefault('summary_omissions', []).append(dict(
+                    what=_name(a, {}) or 'area',
+                    detail='paired bounds and sample support unavailable in summary; filled geometry is not explicit interval data'))
         for a in [*ax.images, *(c for c in ax.collections if isinstance(c, QuadMesh))]:
             z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float)) if a.get_array() is not None else None
             if z is None or z.ndim != 2: continue
