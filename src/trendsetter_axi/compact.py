@@ -98,6 +98,8 @@ def render_ranking(labels, values, *, cols=80, max_rows=12, title='', unit='', n
                 return _unavailable(cols, max_rows, records, 'label character cannot fit')
             blocks.append([pieces[0] + ' ' * (available - width(pieces[0]) + 1) + exact.rjust(value_width),
                            *pieces[1:]])
+    if len(selected) == len(records) and len(header) + sum(map(len, blocks)) <= max_rows:
+        return _result([*header, *(line for block in blocks for line in block)], cols, records, 0, None, mode)
     # Reserve the omission line before accepting whole rows, not after clipping.
     lines, shown = list(header), 0
     for i, block in enumerate(blocks):
@@ -126,6 +128,7 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
     if not isinstance(source, (str, bytes)):
         from matplotlib.container import BarContainer
         from matplotlib.legend import Legend
+        from matplotlib.ticker import NullFormatter, ScalarFormatter
         axes = [ax for ax in source.axes if ax.get_visible()]
         if len(axes) == 1:
             ax = axes[0]
@@ -139,7 +142,9 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
                     and not others and not source.subfigs and not ax.child_axes and not ax.get_ylabel()
                     and not any(ax.get_title(loc=loc) for loc in ('left', 'right'))
                     and ax.get_xscale() == ax.get_yscale() == 'linear'
-                    and ax.xaxis.units is None):
+                    and ax.xaxis.units is None
+                    and type(ax.xaxis.get_major_formatter()) is ScalarFormatter
+                    and all(type(axis.get_minor_formatter()) is NullFormatter for axis in (ax.xaxis, ax.yaxis))):
                 bars = [b for b in containers[0] if b.get_visible()]
                 extra_patches = [p for p in ax.patches if p.get_visible() and p not in bars]
                 if bars and not extra_patches and all(b.get_x() == 0 for b in bars):
@@ -153,12 +158,19 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
                         bars = [b for b in container if b.get_visible()]
                         ticks = dict(zip(ax.get_yticks(), [t.get_text() for t in ax.get_yticklabels()]))
                         positions = [b.get_y() + b.get_height() / 2 for b in bars]
-                        if all(p in ticks for p in positions):
+                        values = [b.get_width() for b in bars]
+                        if (all(p in ticks for p in positions) and all(math.isfinite(v) for v in values)
+                                and not ax.yaxis.get_major_formatter().get_offset()):
                             label = container.get_label()
-                            return render_ranking([ticks[p] for p in positions], [b.get_width() for b in bars],
-                                                  cols=cols, max_rows=max_rows, title=ax.get_title(),
-                                                  unit=ax.get_xlabel(), name='' if not label or label.startswith('_') else label,
-                                                  ascii=ascii, color=color)
+                            name = '' if not label or label.startswith('_') else label
+                            try:
+                                labels = [_plain(ticks[p]) for p in positions]
+                                title, unit, name = map(_plain, (ax.get_title(), ax.get_xlabel(), name))
+                            except ValueError:
+                                pass
+                            else:
+                                return render_ranking(labels, values, cols=cols, max_rows=max_rows,
+                                                      title=title, unit=unit, name=name, ascii=ascii, color=color)
                     finally:
                         if work.canvas.manager is not None:
                             import matplotlib.pyplot as plt

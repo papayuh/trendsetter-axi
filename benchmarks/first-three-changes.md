@@ -9,7 +9,7 @@ Branch: `fm/ts-handoff-c123`.
 - Opt-in `render_ranking` / `render_compact`: hard cell/row budgets including headings, units, series identity and omission notices. Exact signed values, shared magnitude scale, input order unless top-k explicitly requests ranking, wrapped exact-table fallback, structured omissions and bounded explanations. Figure tick-label lookup happens on a copy, too.
 - Thin `present` adapter: explicit > session > saved > automatic, intersected with surface rows/color and an explicitly supplied user-visible image route. Scalar bypass, one-shot text overrides, no TERM inference, globals or persistence side effects. The harness owns saving/reset/scope and image delivery; this is not an installed Claude Code or Pi extension.
 - Small supported summary patch: step drawstyles and separate omissions for unrepresented errorbar endpoints/filled-area paired bounds and sample support. Long-line samples respect pre/post/mid step conventions in either direction; unsorted paths retain source knots and non-step sampling keeps legacy behavior. No inferred denominators, risk sets or generic polygon interval extraction; `losses` and strict-mode materiality are unchanged.
-- Review fixes: reject ranking conversion when legends, side titles, category-axis labels, child axes or extra visible figure artists would lose identity/context. Use the complete-render/bounded-explanation fallback instead. Translate only typed insufficient-display-capacity errors into bounded omissions, including `present` fallback; malformed sources still raise.
+- Review fixes: show complete ranking/table blocks without reserving an unnecessary omission notice. Reject ranking conversion when legends, side titles, category-axis labels, child axes, extra visible figure artists, unsupported text, missing widths or formatter semantics would lose identity/context. Conversion accepts only the standard numeric x formatter, no labelled minor ticks and no y formatter offset. Use the complete-render/bounded-explanation fallback instead. Translate only typed insufficient-display-capacity errors into bounded omissions, including `present` fallback; direct ranking validation and malformed-source errors still raise.
 
 Inspected the eligibility branch at `fabf6221423c57f9952777f6f67bd13e3aa7fb71` before implementation. Per Firstmate's scope decision, this delivery fixes step-summary sampling only. Hidden axes/artists, gap accounting, masked scatter/clipping and missing counts belong to the separate [T1 task / PR #10](https://github.com/papayuh/trendsetter-axi/pull/10), not this delivery. Main's precise legacy summary/gap/mask limitations remain documented; no claim that the entire separate fix shipped.
 
@@ -47,6 +47,8 @@ Targeted fixtures cover unequal calibration support/Wilson whiskers, masked vers
 
 ## Review-fix focused verification
 
+### Initial review fixes (`72f3517`)
+
 Linux review worktree, `/usr/bin/python`: Python **3.14.6**, pytest **9.1.1**, Matplotlib **3.11.2**, NumPy **2.4.4**, wcwidth **0.8.2**. The checkout has no `.venv`; the available interpreter supplies the test dependencies. No packages or host settings were changed.
 
 Before fixes, executable reproductions confirmed the relabelled legend became an anonymous ranking; the one-column `東` SVG and three-column heatmap color key raised capacity `ValueError`s; both long pre/post-step summaries reported `20=67` instead of their respective values `100` and `0`.
@@ -61,6 +63,23 @@ PYTHONPATH=src MPLBACKEND=Agg python -m pytest -q tests/test_compact.py tests/te
 Executable regressions cover axes/figure legend labels and titles, both side titles, category-axis labels, inset/subfigure context, figure-level text/artists, complete-render and bounded `present` fallbacks, narrow figure/SVG/bytes/color-key capacity, and malformed-source error propagation. Step tests cover the reported 18-point fixture, pre/post/mid conventions, both directions, short and long lines, unsorted/repeated x and the legacy straight-line control. Source-immutability and lazy-import regressions remain passing in this focused check.
 
 The full suite, lint, core-only installation checks and later delivery gates belong to the outer pipeline; they were not rerun in this review-fix phase. No timing/size benchmarks or live-host checks were rerun.
+
+### Complete-display and eligibility follow-up (starting `72f3517`)
+
+Executable pre-fix reproductions confirmed that two complete rows at 8×2 were replaced with an explanation; a multiline title and NaN width raised ranking-validation errors; and a percent-formatted figure silently became a unitless raw-value ranking.
+
+The same available review interpreter was used. After the fixes:
+
+```sh
+PYTHONPATH=src MPLBACKEND=Agg python -m pytest -q tests/test_compact.py tests/test_display.py tests/test_import_routes.py tests/test_render.py::test_render_figure_leaves_figure_unchanged
+# 233 passed in 14.71s
+```
+
+The first focused run had 231 passes and two failed new assertions requiring the NaN category label in legacy output. Those assertions exceeded the approved legacy fallback contract: the existing renderer omits that tick. The regression now checks exact legacy output and unchanged source NaN instead; no T1 renderer behavior was changed.
+
+Regressions exercise complete ranking/table/wrapped-table blocks, headings, ASCII, top-k selecting all records, genuinely required omission notices, narrow figure conversion and `present`. Eligibility regressions cover multiline/control-character category labels, titles, units and series names, missing widths, percent/currency/custom scalar formatters, both axes' labelled minor ticks and y offsets. Both complete-render and bounded-explanation routes are exercised directly and through `present`; direct ranking validation, malformed-source errors, source immutability and lazy-import checks remain passing.
+
+Historical benchmark provenance, the initial chart captures and niche example below are unchanged. No full suite, lint, core-only installation, benchmark, live-host or Glyph checks were run in this follow-up review phase.
 
 ## Before/after: ten-team ranking
 

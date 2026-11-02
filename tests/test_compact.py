@@ -1,4 +1,5 @@
 import copy
+import math
 
 from matplotlib.figure import Figure
 import pytest
@@ -243,3 +244,150 @@ def test_malformed_source_errors_are_not_capacity_omissions(cols, via_present):
                 present(source, surface=Surface(cols=cols, rows=3))
             else:
                 render_compact(source, cols=cols, max_rows=3)
+
+
+@pytest.mark.parametrize('labels,cols,body_rows,mode', [(['A', 'B'], 8, 2, 'ranking'),
+                                                       (['A', 'B'], 4, 2, 'table'),
+                                                       (['ABCD', 'EFGH'], 5, 4, 'table')])
+@pytest.mark.parametrize('title', ['', 'T'])
+@pytest.mark.parametrize('top_k', [None, 2, 3])
+@pytest.mark.parametrize('ascii', [False, True])
+def test_complete_blocks_fit_without_an_omission_notice(labels, cols, body_rows, mode, title, top_k, ascii):
+    rows = body_rows + bool(title)
+    result = render_ranking(labels, [1, 2], cols=cols, max_rows=rows, title=title, top_k=top_k, ascii=ascii)
+    bounded(result, cols, rows)
+    assert result.mode == mode and result.omitted == 0 and result.reason is None
+    assert result.dimensions['height'] == rows
+    assert 'omitted' not in result.text
+    expected_labels = labels if top_k is None else labels[::-1]
+    body = result.text.splitlines()[bool(title):]
+    block_size = body_rows // 2
+    for i, label in enumerate(expected_labels):
+        block = body[i * block_size:(i + 1) * block_size]
+        value = [1, 2][labels.index(label)]
+        assert f'+{value}' in block[0]
+        assert ''.join(line.split()[0] for line in block) == label
+
+
+@pytest.mark.parametrize('cols', [4, 8])
+@pytest.mark.parametrize('top_k,rows', [(None, 1), (1, 2)])
+def test_required_omission_notice_is_not_skipped(cols, top_k, rows):
+    result = render_ranking(['A', 'B'], [1, 2], cols=cols, max_rows=rows, top_k=top_k)
+    bounded(result, cols, rows)
+    assert result.mode == 'explanation' and result.omitted == 2 and result.reason
+
+
+@pytest.mark.parametrize('via_present', [False, True])
+def test_complete_narrow_figure_ranking_needs_no_footer(via_present):
+    ax = Figure().subplots()
+    ax.barh(['A', 'B'], [1, 2])
+    if via_present:
+        delivery = present(ax.figure, saved=DisplayPreferences(mode='image'), surface=Surface(cols=8, rows=2))
+        assert delivery.mode == 'text' and delivery.fallback_reason
+        result = delivery.result
+    else:
+        result = render_compact(ax.figure, cols=8, max_rows=2)
+    bounded(result, 8, 2)
+    assert result.mode in ('ranking', 'table') and result.omitted == 0 and result.reason is None
+    assert [record['label'] for record in result.records] == ['A', 'B']
+    assert [record['value'] for record in result.records] == [1, 2]
+    assert all(name in result.text for name in ('A', 'B'))
+
+
+@pytest.mark.parametrize('field', ['label', 'title', 'unit', 'name'])
+@pytest.mark.parametrize('separator', ['\n', '\t'])
+def test_direct_ranking_keeps_rejecting_control_characters(field, separator):
+    text = 'Team' + separator + '2026'
+    kwargs = dict(labels=['A'], values=[1])
+    if field == 'label':
+        kwargs['labels'] = [text]
+    else:
+        kwargs[field] = text
+    with pytest.raises(ValueError, match='control characters'):
+        render_ranking(**kwargs)
+
+
+@pytest.mark.parametrize('field', ['label', 'title', 'unit', 'name'])
+@pytest.mark.parametrize('separator', ['\n', '\t'])
+@pytest.mark.parametrize('via_present', [False, True])
+def test_unsupported_figure_text_uses_complete_or_bounded_fallback(field, separator, via_present):
+    text = 'Team' + separator + '2026'
+    ax = Figure().subplots()
+    ax.barh([text if field == 'label' else 'A'], [1], label=text if field == 'name' else None)
+    if field == 'title':
+        ax.set_title(text)
+    elif field == 'unit':
+        ax.set_xlabel(text)
+    for rows in (60, 2):
+        if via_present:
+            delivery = present(ax.figure, saved=DisplayPreferences(mode='image'), surface=Surface(cols=80, rows=rows))
+            assert delivery.mode == 'text' and delivery.fallback_reason
+            result = delivery.result
+        else:
+            result = render_compact(ax.figure, cols=80, max_rows=rows)
+        bounded(result, 80, rows)
+        if rows == 60:
+            assert result.mode == 'figure' and result.omitted == 0
+            assert result.text == render(ax.figure, cols=80, rows=rows).text
+        else:
+            assert result.mode == 'explanation' and result.omitted is None and result.reason
+
+
+@pytest.mark.parametrize('via_present', [False, True])
+def test_missing_bar_width_uses_complete_or_bounded_fallback(via_present):
+    ax = Figure().subplots()
+    ax.barh(['A', 'B'], [1, float('nan')])
+    for rows in (60, 2):
+        if via_present:
+            delivery = present(ax.figure, saved=DisplayPreferences(mode='image'), surface=Surface(cols=80, rows=rows))
+            assert delivery.mode == 'text' and delivery.fallback_reason
+            result = delivery.result
+        else:
+            result = render_compact(ax.figure, cols=80, max_rows=rows)
+        bounded(result, 80, rows)
+        if rows == 60:
+            assert result.mode == 'figure' and result.omitted == 0
+            assert result.text == render(ax.figure, cols=80, rows=rows).text
+            assert 'A' in result.text
+        else:
+            assert result.mode == 'explanation' and result.omitted is None and result.reason
+        assert ax.containers[0][0].get_width() == 1
+        assert math.isnan(ax.containers[0][1].get_width())
+
+
+@pytest.mark.parametrize('formatter_case', ['percent', 'currency', 'custom_scalar', 'x_minor', 'y_minor', 'y_offset'])
+@pytest.mark.parametrize('via_present', [False, True])
+def test_unsupported_formatter_semantics_use_complete_or_bounded_fallback(formatter_case, via_present):
+    from matplotlib.ticker import FixedLocator, PercentFormatter, ScalarFormatter, StrMethodFormatter
+
+    class UnitFormatter(ScalarFormatter):
+        def __call__(self, value, pos=None):
+            return f'{value:g} kg'
+
+    ax = Figure().subplots()
+    ax.barh([1_000_000, 1_000_001] if formatter_case == 'y_offset' else ['A', 'B'], [.25, .5])
+    if formatter_case == 'percent':
+        ax.xaxis.set_major_formatter(PercentFormatter(1))
+    elif formatter_case == 'currency':
+        ax.xaxis.set_major_formatter(StrMethodFormatter('${x:.2f}'))
+    elif formatter_case == 'custom_scalar':
+        ax.xaxis.set_major_formatter(UnitFormatter())
+    elif formatter_case in ('x_minor', 'y_minor'):
+        axis = ax.xaxis if formatter_case == 'x_minor' else ax.yaxis
+        axis.set_minor_locator(FixedLocator([.125, .375]))
+        axis.set_minor_formatter(PercentFormatter(1))
+    for rows in (60, 2):
+        if via_present:
+            delivery = present(ax.figure, saved=DisplayPreferences(mode='image'), surface=Surface(cols=80, rows=rows))
+            assert delivery.mode == 'text' and delivery.fallback_reason
+            result = delivery.result
+        else:
+            result = render_compact(ax.figure, cols=80, max_rows=rows)
+        bounded(result, 80, rows)
+        if rows == 60:
+            assert result.mode == 'figure' and result.omitted == 0
+            assert result.text == render(ax.figure, cols=80, rows=rows).text
+            if formatter_case == 'percent':
+                assert '%' in result.text
+        else:
+            assert result.mode == 'explanation' and result.omitted is None and result.reason
