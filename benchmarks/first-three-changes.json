@@ -1,0 +1,276 @@
+{
+  "baseline_sha": "7fbc29d9173b2ce22a15ea1989b5e260f0d1bd35",
+  "core_installs": {
+    "after": {
+      "packages": {
+        "contourpy": {
+          "bytes": 1128478,
+          "version": "1.4.0"
+        },
+        "cycler": {
+          "bytes": 22790,
+          "version": "0.12.1"
+        },
+        "fonttools": {
+          "bytes": 22796421,
+          "version": "4.68.0"
+        },
+        "kiwisolver": {
+          "bytes": 5755558,
+          "version": "1.5.1"
+        },
+        "matplotlib": {
+          "bytes": 27541664,
+          "version": "3.11.2"
+        },
+        "numpy": {
+          "bytes": 56387504,
+          "version": "2.5.4"
+        },
+        "packaging": {
+          "bytes": 499357,
+          "version": "26.3"
+        },
+        "pillow": {
+          "bytes": 20414037,
+          "version": "13.0.0"
+        },
+        "pyparsing": {
+          "bytes": 489173,
+          "version": "3.3.3"
+        },
+        "python-dateutil": {
+          "bytes": 324489,
+          "version": "4.0.0"
+        },
+        "trendsetter-axi": {
+          "bytes": 348010,
+          "version": "0.1.0"
+        },
+        "tzdata": {
+          "bytes": 582614,
+          "version": "2026.6"
+        },
+        "wcwidth": {
+          "bytes": 3550131,
+          "version": "0.9.3"
+        }
+      },
+      "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [GCC 13.3.0]",
+      "total_bytes": 139840226
+    },
+    "before": {
+      "packages": {
+        "contourpy": {
+          "bytes": 1128478,
+          "version": "1.4.0"
+        },
+        "cycler": {
+          "bytes": 22790,
+          "version": "0.12.1"
+        },
+        "fonttools": {
+          "bytes": 22796425,
+          "version": "4.68.0"
+        },
+        "kiwisolver": {
+          "bytes": 5755558,
+          "version": "1.5.1"
+        },
+        "matplotlib": {
+          "bytes": 27541664,
+          "version": "3.11.2"
+        },
+        "numpy": {
+          "bytes": 56387506,
+          "version": "2.5.4"
+        },
+        "packaging": {
+          "bytes": 499357,
+          "version": "26.3"
+        },
+        "pillow": {
+          "bytes": 20414037,
+          "version": "13.0.0"
+        },
+        "pyparsing": {
+          "bytes": 489173,
+          "version": "3.3.3"
+        },
+        "python-dateutil": {
+          "bytes": 324489,
+          "version": "4.0.0"
+        },
+        "trendsetter-axi": {
+          "bytes": 329217,
+          "version": "0.1.0"
+        },
+        "tzdata": {
+          "bytes": 582614,
+          "version": "2026.6"
+        },
+        "wcwidth": {
+          "bytes": 3550131,
+          "version": "0.9.3"
+        }
+      },
+      "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [GCC 13.3.0]",
+      "total_bytes": 139821439
+    }
+  },
+  "installed_bytes": {
+    "matplotlib": 27541664,
+    "numpy": 56387504,
+    "trendsetter-axi": 348010,
+    "wcwidth": 3550131
+  },
+  "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [GCC 13.3.0]",
+  "repeat_import": {
+    "after": {
+      "median_ms": 11.226790025830269,
+      "output_bytes": 0,
+      "range_ms": [
+        10.956124984659255,
+        17.0991980121471
+      ]
+    },
+    "before": {
+      "median_ms": 213.48704595584422,
+      "output_bytes": 0,
+      "range_ms": [
+        209.67711001867428,
+        217.5460880389437
+      ]
+    }
+  },
+  "routes": {
+    "after": {
+      "figure": {
+        "median_ms": 500.70053001400083,
+        "output_bytes": 2422,
+        "range_ms": [
+          366.797115013469,
+          516.4579930133186
+        ]
+      },
+      "import": {
+        "median_ms": 11.385223013348877,
+        "output_bytes": 0,
+        "range_ms": [
+          11.273620009887964,
+          14.619502006098628
+        ]
+      },
+      "svg": {
+        "median_ms": 97.1836349926889,
+        "output_bytes": 444,
+        "range_ms": [
+          75.3375090425834,
+          124.25058899680153
+        ]
+      },
+      "warm-compact": {
+        "median_ms": 10.978730977512896,
+        "output_bytes": 436,
+        "range_ms": [
+          7.64826696831733,
+          11.931715009268373
+        ]
+      },
+      "warm-compact-ascii": {
+        "median_ms": 7.78601597994566,
+        "output_bytes": 316,
+        "range_ms": [
+          7.57805397734046,
+          12.198360986076295
+        ]
+      },
+      "warm-png": {
+        "median_ms": 46.505986945703626,
+        "output_bytes": 20835,
+        "range_ms": [
+          34.86506501212716,
+          53.91397199127823
+        ]
+      },
+      "warm-structured": {
+        "median_ms": 71.7587560066022,
+        "output_bytes": 2422,
+        "range_ms": [
+          70.45591197675094,
+          123.14730900106952
+        ]
+      },
+      "warm-text": {
+        "median_ms": 90.63903003698215,
+        "output_bytes": 2422,
+        "range_ms": [
+          70.4178879968822,
+          108.24500402668491
+        ]
+      }
+    },
+    "before": {
+      "figure": {
+        "median_ms": 504.3999989866279,
+        "output_bytes": 2422,
+        "range_ms": [
+          342.99726999597624,
+          516.2860209820792
+        ]
+      },
+      "import": {
+        "median_ms": 219.36222398653626,
+        "output_bytes": 0,
+        "range_ms": [
+          203.93229299224913,
+          261.4901830093004
+        ]
+      },
+      "svg": {
+        "median_ms": 223.42710598604754,
+        "output_bytes": 444,
+        "range_ms": [
+          217.6043670042418,
+          293.0183529970236
+        ]
+      },
+      "warm-png": {
+        "median_ms": 50.87942100362852,
+        "output_bytes": 20835,
+        "range_ms": [
+          34.800183959305286,
+          53.44804999185726
+        ]
+      },
+      "warm-structured": {
+        "median_ms": 101.39526700368151,
+        "output_bytes": 2422,
+        "range_ms": [
+          69.23825398553163,
+          105.15736497472972
+        ]
+      },
+      "warm-text": {
+        "median_ms": 97.30664599919692,
+        "output_bytes": 2422,
+        "range_ms": [
+          67.97085999278352,
+          168.55604498414323
+        ]
+      }
+    }
+  },
+  "samples": 7,
+  "source_bytes": {
+    "after": 315887,
+    "before": 301881
+  },
+  "state": "fresh Python / warm OS and font caches; alternating interleaved variants; warm-* excludes import and fixture",
+  "versions": {
+    "matplotlib": "3.11.2",
+    "numpy": "2.5.4",
+    "trendsetter-axi": "0.1.0",
+    "wcwidth": "0.9.3"
+  }
+}

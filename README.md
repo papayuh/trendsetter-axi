@@ -17,7 +17,7 @@ lean = render(fig, cols=60, rows=12, ascii=True)
 hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also see the shape: a small ASCII chart, then the numbers
 ```
 
-- Output size: `cols` bounds every line, titles and keys included, and is the only hard budget; `rows` is the preferred height, which heatmaps and bar charts exceed so each data row or bar keeps a line; `ascii=True` draws the same cells in glyphs that cost a fraction of the tokens; `r.dimensions` reports the width and height used.
+- Output size: `render` bounds every line with `cols`; its `rows` remains a preferred height, which heatmaps and bar charts can exceed. The opt-in [`render_compact`](#bounded-displays-and-preferences) also enforces a hard `max_rows`, titles and omissions included. `ascii=True` uses cheaper drawing glyphs; `dimensions` reports cells and lines used.
 - Diagnostics: `r.losses` lists what the renderer detects the text does not show, and `strict=True` raises when a data artist or series left no visible cell or a legend entry was cut or dropped. It does not catch everything: see [known limits of `strict`](#known-limits-of-strict).
 
 What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
@@ -67,6 +67,38 @@ print(render_figure(fig, cols=80))
 
 Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
 
+### Bounded displays and preferences
+
+```python
+from trendsetter_axi import render_compact, render_ranking
+
+small = render_compact(fig, cols=40, max_rows=8)  # single horizontal bar series
+print(small.text)
+# Or use original records directly, without importing NumPy or Matplotlib:
+small = render_ranking(["North", "South"], [-9, 3], unit="pp", cols=40, max_rows=8)
+```
+
+Rankings retain input order, show aligned exact signed values and bars on one shared magnitude scale. `top_k=N` on `render_ranking` explicitly requests stable descending ranking. The hard row budget includes wrapped title/unit/series name and the omission line. `records` retains all source rows; `omitted` counts undisplayed rows, not missing data. Long names fall back to a wrapped exact table rather than ambiguous abbreviations. If that cannot fit, `mode="explanation"` and `reason` explain the omission within the same budgets. `ascii=True` changes bars to `#`, not caller-supplied labels; this view never needs color. For other figures/SVG, the existing complete rendering is returned only if it fits; otherwise a bounded explanation reports that the chart was omitted (`omitted=None`: unknown row count). No chart is cropped.
+
+`render_compact` recognizes only one zero-based horizontal bar series on one visible axes, without other data marks. It does not flatten multi-series/stacked charts into a ranking. Run `python examples/compact_demo.py` for the ten-team before/after and saved plain-text outputs in `.scratch/`.
+
+```python
+from trendsetter_axi import DisplayPreferences, Scalar, Surface, present
+
+surface = Surface(cols=60, rows=11)  # unknown/text-only host: no image route
+saved = DisplayPreferences(mode="image", ascii=True)  # loaded by your harness
+answer = present(fig, surface=surface, saved=saved,
+                 explicit=DisplayPreferences(mode="text", color=False))
+print(answer.text)
+number = present(Scalar(95, "%"), surface=surface, saved=saved)  # no rendering or encoding
+```
+
+The thin adapter resolves each field **explicit request → session override → saved default → automatic**, then caps rows and color to `Surface`. Preferences are only `mode` (`auto/image/text`), `rows`, `color`, `ascii`. No globals, environment inference, disk writes or implicit persistence: the harness supplies immutable snapshots and owns saving/reset at the user's chosen user/project/session scope. One-turn overrides do not change the next call. To redraw, call again with the same source and new explicit settings.
+
+For images, pass `Surface(image_route=send_visible_figure)` only when the host has an installed **user-visible** route. That callback receives the original figure exactly once and owns encoding/delivery; the text renderer is not called. Neither inherited `TERM` nor the model's ability to read PNGs establishes this capability. Withhold the route for pipes/transcripts. An image preference without it falls back once to bounded text and exposes `fallback_reason`. In Pi keep model-facing tool content separate from the human-facing tool renderer; in Claude Code confirm a visible image plugin/client route. This library does not install either harness integration or persist harness settings.
+
+Short guide: use a line or difference from a meaningful reference for evolution/crossings; use an age-by-cohort grid for follow-up; compute an exact threshold from source values and answer directly. A requested picture still wins over this guide.
+
 ### What the text lost: `render`
 
 `render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard budget.
@@ -102,7 +134,7 @@ Fields:
 - `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour.
 - `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
 
-`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line lists render losses only: errorbars, pies, contours and other artists the summary does not describe are currently left out of it without notice (until T3).
+`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line still lists render losses only. Step lines now carry `drawstyle` (e.g. `steps-post`, right-continuous) so straight and step controls differ. Separate `summary_omissions` disclose unavailable interval endpoints/sample support for standard errorbars and paired bounds/sample support for filled areas; global extrema are not per-x bounds. These notes do not extract intervals, sample denominators or risk sets from geometry. Counts such as line `n` count plotted points, not subjects. Pies, contours and other undescribed artists may still be left out without notice; this is not a general figure audit.
 
 `strict=True` raises `RenderLossError` when a loss is material. Two checks make a loss material: a data artist or series that left no visible cell, or a legend entry that was cut or dropped. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
 
@@ -139,6 +171,21 @@ uv pip install -e '.[gallery]'
 ```
 
 That installs pandas, seaborn, plotly, altair and plotnine.
+
+Polars is optional and its columns can be passed directly to Matplotlib, without converting through pandas:
+
+```python
+import polars as pl  # install separately if needed
+from matplotlib.figure import Figure
+from trendsetter_axi import render_figure
+
+frame = pl.DataFrame({"week": [1, 2, 3], "units": [10, 14, 12]})
+ax = Figure().subplots()
+ax.plot(frame["week"], frame["units"])
+print(render_figure(ax.figure, cols=60))
+```
+
+Importing `trendsetter_axi` itself now loads neither NumPy nor Matplotlib. SVG rendering loads NumPy but not Matplotlib; figure rendering loads its normal plotting dependencies. The default install is unchanged. See [startup/compact measurements](benchmarks/first-three-changes.md).
 
 ## Examples
 
