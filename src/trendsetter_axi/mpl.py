@@ -617,7 +617,7 @@ def _compact(axis, lo, hi, v=None):
     span = abs(hi - lo) or abs(hi) or 1
     if v is not None and len(v): span = min(span, np.ptp(v))
     if span == 0: return lambda v: (t if (t := f"{v:.4g}") != "-0" else "0")
-    d = max(0, -int(np.round(np.log10(span / 60))))
+    d = max(0, -int(np.round(np.log10(span) - np.log10(60))))
     return lambda v: (t if (t := f"{v:.{d}f}".rstrip("0").rstrip(".") if d else f"{v:.0f}") not in ("-0", "") else "0")
 
 

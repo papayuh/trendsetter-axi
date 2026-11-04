@@ -571,6 +571,28 @@ def test_small_values_keep_their_magnitude(close, y, view):
     assert all(abs(float(v) - t) <= np.ptp(y) / 60 for v, t in zip(ys, y)), ys
 
 
+@pytest.mark.parametrize("kind", ["line", "scatter"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("tiny", [[1e-323, 2e-323], [-2e-323, -1e-323, -0.0]])
+def test_subnormal_values_keep_their_magnitude(close, kind, axis, tiny):
+    other = np.zeros(len(tiny))
+    x, y = (tiny, other) if axis == "x" else (other, tiny)
+    def build(ax):
+        ax.plot(x, y) if kind == "line" else ax.scatter(x, y)
+        ax.set_xlim(-1, 1); ax.set_ylim(-1, 1)
+    s = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == kind)
+    assert s["n"] == len(tiny) and s["missing"] == 0
+    assert np.array_equal(s["points"], np.column_stack([x, y]))
+    assert [float(v) for v in s[axis].split("..")] == [min(tiny), max(tiny)]
+    if kind == "line":
+        values = s["at" if axis == "x" else "ys"]
+        assert [float(v) for v in values] == tiny
+        if tiny[-1] == 0:
+            assert values[-1] == "0"
+    else:
+        assert float(s["mean"].split(",")[0 if axis == "x" else 1]) == np.mean(tiny)
+
+
 def test_constant_series_print_their_value(close):
     def build(ax):
         ax.plot([0, 1, 2], [5, 5, 5]); ax.plot([0, 1, 2], [-0.0, -0.0, -0.0]); ax.set_ylim(0, 100)
