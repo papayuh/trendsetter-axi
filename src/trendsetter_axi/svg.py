@@ -13,8 +13,8 @@ NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, 
          "darkgray": (.66, .66, .66), "lightgray": (.83, .83, .83), "currentcolor": (0, 0, 0)}
 INHERIT = ("fill", "stroke", "fill-opacity", "stroke-opacity", "stroke-width", "stroke-dasharray",
            "font-size", "text-anchor", "visibility", "dominant-baseline")
-# Work budgets: elements visited per render (each <use> expansion counts again), nesting depth (also stops <use> cycles)
-# and pixels per embedded PNG. Past any of them render raises ValueError instead of running away.
+# ponytail: fixed ceilings, no limits API: elements visited per walk (each <use> expansion counts again), nesting depth
+# (also stops <use> cycles) and pixels per embedded PNG. Past any of them render raises ValueError.
 MAX_ELEMENTS = 100_000
 MAX_DEPTH = 256
 MAX_PIXELS = 16_000_000
@@ -199,7 +199,7 @@ def render(svg, cols=80, ansi=False, shift=0):
             return
         st = styles(el, st)
         if st.get("display") == "none" or st.get("visibility") == "hidden" or st["opacity"] == 0: return
-        for k in ("mask", "filter"):   # not rendered: drawn without, and the output says so
+        for k in ("mask", "filter"):   # ponytail: effects are reported, not rendered; draw without them
             if ref := URL.search(st.get(k) or ""): cv.meta.setdefault("unsupported", []).append(f"{k} #{ref.group(1)}")
         if el.get("transform"): M = M @ parse_transform(el.get("transform"))
         r = clip_rect(st, M)
@@ -237,7 +237,7 @@ def render(svg, cols=80, ansi=False, shift=0):
         ref = URL.match((v or "").strip())
         if not ref: return color(v)
         el = ids.get(ref.group(1))
-        kind = "pattern" if el is not None and NS.sub("", el.tag) == "pattern" else "gradient"
+        kind = "pattern" if el is not None and NS.sub("", el.tag) == "pattern" else "gradient"   # ponytail: paint servers are flat, never real gradients/patterns
         cv.meta.setdefault("unsupported", []).append(f"{kind} #{ref.group(1)}")
         stop = next((s for s in (el.iter() if el is not None and kind == "gradient" else ()) if NS.sub("", s.tag) == "stop"), None)
         return (color(styles(stop, {}).get("stop-color")) if stop is not None else None) or (.5, .5, .5)
@@ -266,6 +266,7 @@ def render(svg, cols=80, ansi=False, shift=0):
             cv.stroke(closed, stroke[:3], dashes, clip, role=role)
 
     def draw_text(el, M, st, classes, clip=None):
+        if st["opacity"] * float(st.get("fill-opacity", 1) or 1) <= 0.05: return
         ts = [t for t in el.iter() if NS.sub("", t.tag) in ("text", "tspan") and t.text and t.text.strip()]
         fsz = lambda t: float(m.group(1)) if (m := re.search(r"font-size:\s*([\d.]+)", t.get("style") or "")) else 0
         if len(ts) > 1 and all(t.get("y") for t in ts[1:]) and fsz(ts[1]):  # matplotlib mathtext: one tspan per glyph run

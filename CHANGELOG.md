@@ -4,6 +4,8 @@
 
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
+- Bound SVG traversal to 100,000 visited elements and 256 nesting levels, reject non-finite/non-positive root sizes before canvas allocation, and check embedded PNGs against a 16,000,000-pixel limit before decoding. Non-PNG images and unresolved `<use>` references produce warnings.
+- Report approximated SVG masks, gradients, patterns and filters as material unsupported effects (`strict=True` raises); gradients use a flat first-stop colour or mid-grey and patterns use mid-grey. Non-rectangular clips remain reported, drawn unclipped and non-material. Group opacity now multiplies into child shape/text opacity.
 
 - Defer format-specific imports: package import, native rankings and scalar responses load neither NumPy nor Matplotlib; vector SVG does not load Matplotlib. Default dependencies are unchanged.
 - Opt-in `render_ranking` and `render_compact` enforce hard row and cell budgets, with exact signed values, wrapped table fallback and structured display omissions; legacy `render(rows=...)` remains a preference.
