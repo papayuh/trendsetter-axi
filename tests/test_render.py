@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import pytest
 
 import trendsetter_axi as tsa
-from trendsetter_axi.gallery import CHARTS
+from examples.gallery import CHARTS
 from trendsetter_axi.cells import width
 
 BY_ID = {c["id"]: c for c in CHARTS}

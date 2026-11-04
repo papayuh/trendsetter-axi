@@ -30,7 +30,7 @@ jobs:
       - name: Install dependency floors
         if: matrix.dependencies == 'floors'
         run: python -m pip install -e '.[dev]' 'matplotlib==3.10.0' 'numpy==1.23.0'
-      # also collects the self-checks embedded in mpl.py and the fake-renderer sensitivity check
+      # Includes the renderer regression fixtures and fake-renderer sensitivity check.
       - run: python -m pytest -q
 
   wheel:
@@ -45,19 +45,33 @@ jobs:
         run: |
           uv build
           uv venv --python "$(command -v python)" .wheel-venv
-          # Embedded self-checks exercise the optional pandas-backed gallery fixtures.
-          uv pip install --python .wheel-venv/bin/python dist/*.whl pandas
+          uv pip install --python .wheel-venv/bin/python dist/*.whl
+      - name: Verify wheel excludes development fixtures
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel, = Path("dist").glob("*.whl")
+          with ZipFile(wheel) as archive:
+              names = archive.namelist()
+          assert not any(Path(name).name == "gallery.py" or name.endswith(".csv") or
+                         name.startswith(("examples/", "tests/")) for name in names), names
+          PY
       - name: Exercise installed package outside the checkout
         run: |
           python="$GITHUB_WORKSPACE/.wheel-venv/bin/python"
           cd "$(mktemp -d)"
           "$python" - <<'PY'
+          import importlib.util
           from pathlib import Path
           import sys
           import trendsetter_axi
           from matplotlib.figure import Figure
 
           assert Path(trendsetter_axi.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
+          assert importlib.util.find_spec("pandas") is None
+          assert importlib.util.find_spec("trendsetter_axi.gallery") is None
           fig = Figure()
           ax = fig.subplots()
           ax.plot([0, 1, 2], [0, 2, 1])
@@ -65,4 +79,12 @@ jobs:
           svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><path d="M10 60 L60 10 L110 40" fill="none" stroke="black"/></svg>'
           assert trendsetter_axi.render_svg(svg, cols=60).strip()
           PY
-          "$python" -m trendsetter_axi.mpl --test
+          "$python" "$GITHUB_WORKSPACE/benchmarks/core_smoke.py"
+      - name: Run renderer regression fixtures against the installed wheel
+        run: |
+          python="$GITHUB_WORKSPACE/.wheel-venv/bin/python"
+          uv pip install --python "$python" pytest pandas
+          fixtures="$(mktemp -d)"
+          cp tests/test_selfchecks.py "$fixtures/"
+          cd "$fixtures"
+          "$python" -m pytest -q test_selfchecks.py
