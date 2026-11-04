@@ -13,7 +13,7 @@ SVG = dict(color=True, artist_roles=False, source_values=False, artist_losses=Fa
 
 
 class RenderLossError(ValueError):
-    """Raised by render(..., strict=True) on a material loss (see MATERIAL). `.result` is the full RenderResult."""
+    """Raised by render(..., strict=True) when a result has material losses. `.result` is the full RenderResult."""
     def __init__(self, result):
         self.result = result
         super().__init__("render loses data: " + "; ".join(f"{l['kind']} {l['what']}: {l['detail']}" for l in result.losses if l["material"]))

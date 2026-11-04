@@ -18,7 +18,7 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 ```
 
 - Output size: `render` bounds every line with `cols`; its `rows` remains a preferred height, which heatmaps and bar charts can exceed. The opt-in [`render_compact`](#bounded-displays-and-preferences) also enforces a hard `max_rows`, titles and omissions included. `ascii=True` uses cheaper drawing glyphs; `dimensions` reports cells and lines used.
-- Diagnostics: `r.losses` lists what the renderer detects the text does not show, and `strict=True` raises when a data artist or series left no visible cell, a heatmap extreme level was lost to sampling, or a legend entry was cut or dropped. It does not catch everything: see [known limits of `strict`](#known-limits-of-strict).
+- Diagnostics: `r.losses` lists what the renderer detects the text does not show. See [loss reporting and strict mode](#what-the-text-lost-render) for materiality and known limits.
 
 What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
 
@@ -63,7 +63,7 @@ ax.set(title="Example", xlabel="x", ylabel="y")
 print(render_figure(fig, cols=80))
 ```
 
-`render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text. A `clip-path` that is one axis-aligned rectangle is honoured; any other clip is drawn unclipped and the output ends with an `unsupported: ...` line saying so.
+`render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text. See [SVG limits](#svg-limits) for work and image-decode limits, clipping and unsupported effects.
 
 Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
 
@@ -101,7 +101,7 @@ Short guide: use a line or difference from a meaningful reference for evolution/
 
 ### What the text lost: `render`
 
-`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard budget.
+`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard output-size budget; SVG also has fixed [work and image-decode limits](#svg-limits).
 
 ```python
 from trendsetter_axi import render
@@ -136,7 +136,7 @@ Fields:
 
 `summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line still lists render losses only. Step lines now carry `drawstyle` (e.g. `steps-post`, right-continuous) so straight and step controls differ. Separate `summary_omissions` disclose unavailable sample support for errorbars (and midpoint-inferred centers without a data line), unsupported one-sided limits and paired bounds/sample support for filled areas; global extrema are not per-x bounds. Sample denominators and risk sets are not inferred from geometry. Counts such as line `n` count plotted points, not subjects. See `series` above for errorbar bounds and unsupported-artist coverage.
 
-`strict=True` raises `RenderLossError` when a loss is material. A loss is material for a data artist or series that left no visible cell, a legend entry that was cut or dropped, a heatmap extreme level lost to sampling (`lost_extreme`), or an SVG mask, gradient, pattern or filter that was approximated. Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
+`strict=True` raises `RenderLossError` when a loss is material. Material losses include a data artist or series with no visible cell, a cut or dropped legend entry, a heatmap extreme level lost to sampling (`lost_extreme`), and the unsupported SVG effects marked material in [SVG limits](#svg-limits). Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
 
 #### Known limits of `strict`
 
@@ -145,7 +145,7 @@ Fields:
 - Lost artists are found by series colour: same-colour series that fully overlap count as drawn (T9).
 - A line under an opaque fill at a higher zorder still shows through the fill in the text (T9).
 - A heatmap larger than the text grid uses centre sampling (`heat_sampled`). `lost_extreme` checks min/max levels only: skipped non-extreme cells, spatial patterns and the positions of tied extrema can still be lost without a material diagnostic.
-- SVG non-rectangular clips are reported as `unsupported` and drawn unclipped, but are not material. Masks, gradients, patterns and filters are also approximated, but are material and fail strict mode (see [SVG limits](#svg-limits)).
+- SVG clipping approximations do not fail strict mode; see the [SVG effects table](#svg-limits).
 
 ### What a mark means
 
@@ -155,12 +155,14 @@ SVG carries no artist information. The supported subset:
 
 - shapes: `path` (all commands, curves and arcs flattened), `rect`, `line`, `polyline`, `polygon`, `circle`, `ellipse`, `use`, `text`/`tspan`, and base64 PNG `image`
 - presentation attributes and inline `style`: fill, stroke, their opacities, `stroke-width`, `stroke-dasharray`, `font-size`, `text-anchor`, `dominant-baseline`, `display`, `visibility`, inherited through groups; `transform` with translate, scale, rotate and matrix (skew is ignored)
-- `clip-path` as described above; masks, gradients, patterns and filters are approximated and reported (see below); markers and `<style>` sheets are skipped
+- clipping and effect approximations as described in [SVG limits](#svg-limits); markers and `<style>` sheets are skipped
 - meaning from classes and ids: `legend` marks legend keys; plotly `gridlayer`/`minor-gridlayer` and vega `role-axis-grid` are gridlines (not drawn); plotly axis and zero-line layers and vega `role-axis` are the frame; vega `background` is background; shapes inside matplotlib text, tick and annotation groups are skipped
 
 #### SVG limits
 
 SVG traversal has a fixed work budget of 100,000 element visits, counting ID indexing, each `<use>` expansion, text descendants, paint-server scans and clip-child collection. Repeated inspections count again. The maximum nesting depth is 256 (the root is depth 0), including expanded text and effect references, so cycles stop at the depth limit. Exceeding either raises `ValueError` naming the limit; the work-budget error also gives the visited count. Root width and height, taken from `viewBox` when present or otherwise `width`/`height`, must be finite and positive, checked before canvas allocation. Embedded PNGs are limited to 16,000,000 pixels per image: dimensions are checked in the PNG header before decoding; larger images raise `ValueError`. Duplicate or noninitial PNG IHDR chunks and truncated chunks are rejected before decoding. Non-PNG base64 images and unresolved `<use>` references are skipped with `warnings`. No external resources are fetched. Group opacity multiplies into child opacity; shapes and text with effective opacity at or below 0.05 are not drawn.
+
+A clip containing one axis-aligned rectangle in user space is honoured outside tspans; text is kept or dropped whole by its anchor.
 
 | SVG effect | Approximation (reported as `unsupported` in losses and the text) | Material (`strict=True` raises) |
 | --- | --- | --- |
@@ -168,9 +170,9 @@ SVG traversal has a fixed work budget of 100,000 element visits, counting ID ind
 | Gradient | Flat first stop colour, or mid-grey when absent; unknown paint references also use this fallback | Yes |
 | Pattern | Flat mid-grey | Yes |
 | Filter | Drawn unfiltered | Yes |
-| Clip other than one axis-aligned rectangle, or any tspan-local clip | Drawn unclipped | No |
+| Clip other than one axis-aligned user-space rectangle, or any tspan-local clip | Drawn unclipped | No |
 
-Both presentation attributes and inline `style` effects are reported for shapes, text and consumed tspans. Fill and stroke paint references are resolved and reported only for enabled, geometrically applicable channels on shapes and nonempty text runs, including inherited paints, not on non-painting containers whose descendants override them. Enabled URL strokes are reported even when the renderer's filled-shape shortcut omits outline ink; disabled strokes are not. Collinear contours do not consume fill paints. Text visibility is checked per run using its effective fill and stroke opacities. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
+Mask, filter and unsupported clip-path references in presentation attributes or inline `style` are reported on traversed shapes, containers, text and tspans, independently of paint-channel consumption. Fill and stroke paint references in either form are resolved and reported only for enabled, geometrically applicable channels on shapes and nonempty text runs, including inherited paints, not on non-painting containers whose descendants override them. Enabled URL strokes are reported even when the renderer's filled-shape shortcut omits outline ink; disabled strokes are not. Collinear contours do not consume fill paints. Text visibility is checked per run using its effective fill and stroke opacities. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
 
 Everything else is unknown and judged by appearance: its strokes are all kept, short segments included, except that a light gray axis-aligned stroke is taken for a gridline; a big neutral fill is taken for the page or panel; a shape the colour of the page is dropped.
 

@@ -13,8 +13,8 @@ NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, 
          "darkgray": (.66, .66, .66), "lightgray": (.83, .83, .83), "currentcolor": (0, 0, 0)}
 INHERIT = ("fill", "stroke", "fill-opacity", "stroke-opacity", "stroke-width", "stroke-dasharray",
            "font-size", "text-anchor", "visibility", "dominant-baseline")
-# ponytail: fixed ceilings, no limits API: elements visited per walk (each <use> expansion counts again), nesting depth
-# (also stops <use> cycles) and pixels per embedded PNG. Past any of them render raises ValueError.
+# ponytail: fixed ceilings, no limits API: element inspections share one budget (each <use> expansion counts again),
+# nesting depth also stops <use> cycles, and pixels per embedded PNG are checked before decoding. Exceeding raises ValueError.
 MAX_ELEMENTS = 100_000
 MAX_DEPTH = 256
 MAX_PIXELS = 16_000_000
@@ -373,7 +373,7 @@ def render(svg, cols=80, ansi=False, shift=0):
         if t[6] == "other" and any(abs(t[1] - m[1]) < 1.5 * cv.ch and 0 <= t[0] - m[0] < 12 * cv.cw for m, *_ in cv.legend_marks):
             cv.texts[i] = t[:6] + ("legend",)
     text = cv.render(color=ansi)
-    if cv.meta.get("unsupported"):   # one note per effect kind: "clip-path #a, clip-path #b (drawn unclipped); mask #m (drawn unmasked)"
+    if cv.meta.get("unsupported"):   # group by approximation: gradients and patterns share "drawn flat"
         groups = {}
         for u in dict.fromkeys(cv.meta["unsupported"]): groups.setdefault(UNSUPPORTED[u.split(" ")[0]][0], []).append(u)
         text += "\n" + "\n".join(wrap("unsupported: " + "; ".join(f"{', '.join(us)} ({d})" for d, us in groups.items()), cols))
