@@ -38,6 +38,11 @@ Other ways to get a matplotlib figure into a terminal, checked in the same bench
 
 ## Install
 
+Requires Python >=3.10, Matplotlib >=3.10.0 and NumPy >=1.23.0 (no upper
+version bounds). CI tests Python 3.10, 3.12 and 3.14 with the latest compatible
+dependencies, plus Python 3.10 with those exact Matplotlib/NumPy floors. Newer
+Python versions need newer NumPy releases; the installer selects compatible wheels.
+
 ```
 uv pip install trendsetter-axi
 ```
