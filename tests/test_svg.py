@@ -9,6 +9,8 @@ from trendsetter_axi import svg as tsvg
 
 HEAD = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="400" height="100" viewBox="0 0 400 100">'
 RECT = '<rect x="150" y="20" width="100" height="60" fill="#d62728"{}/>'
+# 400 user units / 80 columns = 5 units/cell, 10 units/row. The fixture occupies x=30..49, y=2..7.
+RECT_TEXT = "\n".join([" " * 30 + "█" * 20] * 6)
 
 
 def doc(body, head=HEAD):
@@ -42,13 +44,13 @@ def test_use_fanout_hits_the_work_budget():
     assert p.returncode == 0, (p.returncode, p.stderr[-2000:])   # never a signal exit
     elapsed, msg = p.stdout.split("\n", 1)
     assert float(elapsed) < 2, elapsed
-    assert f"{tsvg.MAX_ELEMENTS:,}" in msg and "elements" in msg, msg
+    assert "100,000" in msg and "100,001 visited" in msg and "work budget" in msg, msg
 
 
 def test_use_cycle_and_depth_are_rejected():
-    with pytest.raises(ValueError, match=f"deeper than {tsvg.MAX_DEPTH}"):
+    with pytest.raises(ValueError, match="deeper than 256"):
         tsa.render_svg(doc('<g id="a"><use href="#a"/></g>'), 80)
-    with pytest.raises(ValueError, match=f"deeper than {tsvg.MAX_DEPTH}"):
+    with pytest.raises(ValueError, match="deeper than 256"):
         tsa.render_svg(doc("<g>" * 2000 + RECT.format("") + "</g>" * 2000), 80)
 
 
@@ -75,10 +77,10 @@ def image(data):
 def test_image_decode_is_bounded(monkeypatch):
     import matplotlib.image as mimg
     big = png(5000, 5000)
-    assert len(big) < 64_000 and 5000 * 5000 > tsvg.MAX_PIXELS
+    assert len(big) < 64_000 and 5000 * 5000 > 16_000_000
     real = mimg.imread
     monkeypatch.setattr(mimg, "imread", lambda *a, **k: pytest.fail("imread called before the pixel cap"))
-    with pytest.raises(ValueError, match=f"{tsvg.MAX_PIXELS:,}"):
+    with pytest.raises(ValueError, match="16,000,000"):
         tsa.render_svg(image(big), 80)
     monkeypatch.setattr(mimg, "imread", real)
     assert tsa.render(image(png(40, 10)), 80).warnings == []   # under the cap: decoded as before
@@ -98,27 +100,31 @@ def test_mask_and_gradient_are_material_unsupported():
         tsa.render(masked, 80, strict=True)
     assert tsa.render(doc(RECT.format(' style="mask: url(#m)"')), 80).losses[0]["what"] == "mask #m"
 
-    plain = tsa.render_svg(doc(RECT.format("")), 80)
     grad = doc('<defs><linearGradient id="g"><stop offset="0" stop-color="#d62728"/><stop offset="1" stop-color="#1f77b4"/></linearGradient></defs>'
                + RECT.format("").replace('fill="#d62728"', 'fill="url(#g)"'))
     r = tsa.render(grad, 80)
     assert unsupported(r)["gradient #g"]["material"] is True, r.losses
-    assert r.text.rsplit("\n", 1)[0] == plain, r.text            # drawn flat in its first stop colour, then the caption
-    assert r.series == tsa.render(doc(RECT.format("")), 80).series, r.series
+    assert r.text.rsplit("\n", 1)[0] == RECT_TEXT, r.text       # drawn flat, then the caption
+    # Canvas colour keys round channels to two decimal places; the expected key comes from the fixture's stop bytes.
+    rgb = tuple(round(round(int("d62728"[i:i + 2], 16) / 255, 2) * 255) for i in (0, 2, 4))
+    assert r.series[0]["color"] == "#%02x%02x%02x" % rgb, r.series
     with pytest.raises(tsa.RenderLossError):
         tsa.render(grad, 80, strict=True)
     pat = tsa.render(doc('<defs><pattern id="p"/></defs>' + RECT.format("").replace('fill="#d62728"', 'fill="url(#p)"')), 80)
-    grey = tsa.render(doc(RECT.format("").replace("#d62728", "#808080")), 80)
-    assert unsupported(pat)["pattern #p"]["material"] is True and pat.series == grey.series, (pat.losses, pat.series)   # mid-grey
+    assert unsupported(pat)["pattern #p"]["material"] is True and pat.series[0]["color"] == "#808080", (pat.losses, pat.series)
+    filtered = doc('<defs><filter id="f"/></defs>' + RECT.format(' style="filter: url(#f)"'))
+    assert unsupported(tsa.render(filtered, 80))["filter #f"]["material"] is True
+    with pytest.raises(tsa.RenderLossError):
+        tsa.render(filtered, 80, strict=True)
 
     clipped = doc('<defs><clipPath id="c"><circle cx="200" cy="50" r="10"/></clipPath></defs>' + RECT.format(' clip-path="url(#c)"'))
     r = tsa.render(clipped, 80, strict=True)                     # owner decision D2: a clip over-draws and says so
     assert unsupported(r)["clip-path #c"]["material"] is False and "drawn unclipped" in r.text
-    assert r.text.rsplit("\n", 1)[0] == plain, r.text
+    assert r.text.rsplit("\n", 1)[0] == RECT_TEXT, r.text
 
 
 def test_group_opacity_is_inherited():
-    empty = tsa.render_svg(doc(""), 80)
+    empty = ""
     assert tsa.render_svg(doc(RECT.format(' opacity="0.03"')), 80) == empty
     assert tsa.render_svg(doc(f'<g opacity="0.03">{RECT.format("")}</g>'), 80) == empty
     half = RECT.format(' fill-opacity="0.5"')
@@ -130,4 +136,11 @@ def test_group_opacity_is_inherited():
 def test_unresolved_use_is_reported():
     r = tsa.render(doc(RECT.format("") + '<use href="#nope"/>'), 80)
     assert r.losses == [] and any("#nope" in w for w in r.warnings), (r.losses, r.warnings)
-    assert r.text == tsa.render_svg(doc(RECT.format("")), 80)
+    assert r.text == RECT_TEXT
+
+
+def test_text_uses_group_opacity_once():
+    label = '<text x="150" y="50" fill="black">visible</text>'
+    assert tsa.render_svg(doc(f'<g opacity="0.03">{label}</g>'), 80) == ""
+    assert "visible" in tsa.render_svg(doc(f'<g opacity="0.2">{label}</g>'), 80)  # 0.2 > 0.05; not squared
+    assert tsa.render_svg(doc('<g opacity="0.2">' + label.replace('fill="black"', 'fill="black" fill-opacity="0.2"') + '</g>'), 80) == ""
