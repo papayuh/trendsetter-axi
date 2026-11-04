@@ -116,6 +116,51 @@ def test_clipping_preserves_dash_distance():
     assert (x > 0).any()
 
 
+def test_neutral_dense_line_is_one_batched_primitive(monkeypatch):
+    fig = Figure(figsize=(8, 4))
+    x = np.linspace(0, 10, 10000)
+    fig.subplots().plot(x, np.sin(x), color="black")
+    calls, canvases = [], []
+    original_dots, original_render = Canvas._line_dots, Canvas.render
+
+    def line_dots(self, *args, **kwargs):
+        calls.append(len(args[0]))
+        return original_dots(self, *args, **kwargs)
+
+    def render(self, *args, **kwargs):
+        canvases.append(self)
+        return original_render(self, *args, **kwargs)
+
+    monkeypatch.setattr(Canvas, "_line_dots", line_dots)
+    monkeypatch.setattr(Canvas, "render", render)
+    render_figure(fig, 80)
+    assert len(calls) <= 3, len(calls)
+    assert len(canvases) == 1
+    cv = canvases[0]
+    assert len(cv.strokes) <= 8, len(cv.strokes)  # one data primitive plus the frame
+    assert len([s for s in cv.strokes if id(s) in cv.inks]) == 1
+    assert set(cv.inks.values()) <= cv.meta["drawn"]  # surviving dots still count their owner
+
+
+def test_neutral_line_is_not_order_of_magnitude_slower():
+    fig = Figure(figsize=(8, 4))
+    x = np.linspace(0, 10, 10000)
+    line, = fig.subplots().plot(x, np.sin(x))
+    timings = {"tab:blue": [], "black": []}
+    for color in timings:
+        line.set_color(color)
+        render_figure(fig, 80)  # warm both paths in this process before timing
+    for colors in (timings, reversed(timings), timings):
+        for color in colors:
+            line.set_color(color)
+            start = time.perf_counter()
+            render_figure(fig, 80)
+            timings[color].append(time.perf_counter() - start)
+    blue, black = (sorted(timings[color])[1] for color in timings)
+    # Coarse median timing gate; call/primitive counts are the deterministic guard.
+    assert black <= 3 * blue, (blue, black)
+
+
 def test_100k_points_same_output_faster(monkeypatch):
     fig = Figure(figsize=(8, 4))
     x = np.linspace(0, 10, 100000)
