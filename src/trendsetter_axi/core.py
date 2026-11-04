@@ -139,10 +139,14 @@ class Canvas:
         p0 = np.asarray(polylines[0], float)
         if x1 - x0 <= self.cw * 1.2 and y1 - y0 <= self.ch * 0.6 and len(p0) > 3 and np.hypot(*(p0[0] - p0[-1])) < 1e-3:
             return self.marker([pts.mean(0)], rgb, clip, role)   # hollow marker (open circle etc.)
-        if neutral(rgb) or role in ("axis", "annotation"):  # dark gray/black, the frame or an arrow (never a series): axis-aligned -> box drawing, else plain dots
+        if neutral(rgb) or role in ("axis", "annotation"):  # neutral ink has no series id; frames and arrows never introduce a series
             ink = ("ink", self.owner) if data and self.owner is not None else None
             if ink: self.owned.setdefault(self.owner, set()).add(ink)
             put = lambda s: (self.strokes.append(s), ink and self.inks.__setitem__(id(s), ink))
+            # ponytail: batch neutral data strokes over 32 total points across polylines; short rules keep box glyphs.
+            if data and len(pts) > 32:
+                put(("dots", -1, [np.asarray(p, float) for p in polylines], dashes, clip))
+                return
             grid = role is None and (lum(rgb) > 0.6 and not self.dark or self.panel is not None and lum(rgb) > self.panel)   # unknown light gray axis-aligned strokes (or lighter than the panel) are taken for gridlines: skip
             for p in polylines:
                 p = np.asarray(p, float)

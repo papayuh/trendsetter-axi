@@ -69,6 +69,13 @@ def test_dense_curve_survives_color_change(neutral):
     assert render(lambda ax: ax.plot(X, np.sin(X), color=neutral)) == blue
 
 
+def test_neutral_and_colored_dense_lines_render_identically():
+    x = np.linspace(0, 10, 100000)
+    blue = render(lambda ax: ax.plot(x, np.sin(x), color="tab:blue"), cols=80, figsize=(8, 4))
+    assert len(BRAILLE.findall("".join(body(blue)))) > 40, blue
+    assert render(lambda ax: ax.plot(x, np.sin(x), color="black"), cols=80, figsize=(8, 4)) == blue
+
+
 @pytest.mark.parametrize("neutral", ["black", "0.7", "lightgray"])
 @pytest.mark.parametrize("build", [lambda ax, c: ax.plot([0, 10], [5, 5], color=c), lambda ax, c: ax.step(np.arange(8), [1, 3, 1, 4, 2, 5, 1, 3], color=c)], ids=["flat", "step"])
 def test_axis_aligned_curve_survives_color_change(build, neutral):
