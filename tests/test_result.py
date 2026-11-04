@@ -1,11 +1,13 @@
 """render(): the RenderResult says what the text shows, what it lost, and refuses misleading text when strict."""
 import io
+import re
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from wcwidth import wcswidth
 
 import trendsetter_axi as tsa
 from trendsetter_axi import core
@@ -44,6 +46,53 @@ def test_color_option(close):
     r = tsa.render(fig, 60, color=True)
     assert "\x1b[38;2;" in r.text and r.text == tsa.render_figure(fig, 60, color=True)
     assert r.dimensions["width"] <= 60 and "\x1b[" not in tsa.render_figure(fig, 60)
+
+
+@pytest.mark.parametrize("rows", [0, -5, 2.5, True, "12"])
+def test_rows_must_be_a_positive_int(close, rows):
+    with pytest.raises(ValueError, match="rows"):
+        tsa.render(figure(two_lines), 80, rows=rows)
+
+
+@pytest.mark.parametrize("rows", [12, None])
+def test_valid_rows_work(close, rows):
+    result = tsa.render(figure(two_lines), 80, rows=rows)
+    assert result.text and result.dimensions["width"] <= 80
+
+
+def test_controls_are_stripped_from_text_and_summary(close):
+    name = "quoted\nname"
+
+    def build(ax):
+        ax.plot([0, 1, 2], [1, 2, 1], label=name)
+        ax.set(title="T\x1b[31mRED\x1b[0m\nlosses: none\nfake", xlabel="x\x1b]0;evil\x07",
+               ylabel="first\nsecond")
+
+    r = tsa.render(figure(build), 80)
+    summary = r.summary()
+    assert "\x1b" not in r.text and "\x07" not in r.text
+    assert "\x1b" not in summary and "\x07" not in summary
+    assert summary.count("losses:") == 1
+    title = next(line for line in summary.splitlines() if line.startswith("title:"))
+    assert title == "title: TRED / losses: none / fake"
+    assert "x: x" in summary.splitlines() and "evil" not in summary
+    assert "y: first / second" in summary.splitlines()
+    assert repr(name) in summary
+    assert r.scales[0]["title"] == "TRED\nlosses: none\nfake"
+    assert r.scales[0]["x"]["label"] == "x"
+
+
+def test_generated_ansi_is_kept_apart_from_labels(close):
+    def build(ax):
+        two_lines(ax)
+        ax.set(title="T\x1b[31mRED\x1b[0m", xlabel="x\x1b]0;evil\x07")
+
+    r = tsa.render(figure(build), 80, color=True)
+    assert "\x1b[38;2;" in r.text
+    assert "\x1b[31m" not in r.text and "\x1b]" not in r.text and "\x07" not in r.text
+    for line in r.text.split("\n"):
+        plain = re.sub(r"\x1b\[[0-9;:]*m", "", line)
+        assert width(line) == wcswidth(plain) <= 80
 
 
 def test_lost_data_artist_is_counted(close, monkeypatch):
