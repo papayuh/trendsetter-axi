@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from wcwidth import wcswidth
 
-from trendsetter_axi import render_figure, render_svg
+from trendsetter_axi import core, render_figure, render_svg
 from trendsetter_axi.cells import clusters, pack_entries, slice_cells, truncate, width, wrap
 from trendsetter_axi.core import Canvas
 from trendsetter_axi.mpl import render, TextRenderer
@@ -106,11 +106,19 @@ def test_extreme_heat_values_use_compact_atomic_ranges(value):
     assert sum(len(re.findall(r"[░▒▓█] [\d.e+\-]+-[\d.e+\-]+", row)) for row in key_rows) == 4
 
 
-@pytest.mark.parametrize("text", ["✈️", "👩\u200d👩", "🇺🇸", "e\u0301", "界"])
+@pytest.mark.parametrize("text", ["✈️", "👩\u200d👩", "🇺🇸", "e\u0301", "界", "👍🏽", "👩🏽‍💻", "🏳️‍🌈", "é̂",
+                                  "1️⃣", "🏴\U000e0067\U000e0062\U000e007f"])
 def test_complete_clusters_agree_with_terminal_width(text):
     assert width(text) == wcswidth(text)
     assert list(clusters(text)) == [(text, wcswidth(text))]
-    assert wrap(text * 3, wcswidth(text)) == [text] * 3
+    size = wcswidth(text)
+    assert wrap(text * 3, size) == [text] * 3
+    assert truncate(text * 2, size) == "…"
+    assert truncate(text + "!!", size + 1) == text + "…"
+    assert slice_cells(text * 3, size, size * 2) == text
+    for boundary in range(1, size):
+        assert slice_cells(text, 0, boundary) == ""
+        assert slice_cells(text, boundary, size) == ""
 
 
 def test_control_characters_cannot_bypass_footer_budget():
@@ -119,6 +127,17 @@ def test_control_characters_cannot_bypass_footer_budget():
     text = cv.render()
     assert "\t" not in text
     assert_budget(text, 40)
+
+
+@pytest.mark.parametrize("sequence", ["\x1b[31m", "\x1b[0m", "\x1b[2J", "\x1b]0;evil\x07", "\x1b]0;evil\x1b\\",
+                                     "\x9b31m", "\x9d0;evil\x9c"])
+def test_artist_text_strips_terminal_sequences(sequence):
+    assert core.clean_text("before" + sequence + "after") == "beforeafter"
+
+
+def test_artist_text_strips_control_bytes_but_keeps_layout():
+    controls = "".join(chr(c) for c in range(160) if c < 32 or 127 <= c < 160)
+    assert core.clean_text("before" + controls + "after") == "before\t\nafter"
 
 
 def test_renderer_metrics_use_cells():
