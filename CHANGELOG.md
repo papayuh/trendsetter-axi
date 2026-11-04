@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add heatmap sampling diagnostics without changing rendered text; see the [loss contract](README.md#what-the-text-lost-render) for `heat_sampled`, `lost_extreme` and mitigation.
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
 - Fix `summary()` identity and precision for heatmaps, small numeric series, timestamps, scatter means and explicit tick labels; see the [summary contract](README.md#what-the-text-lost-render).
@@ -11,8 +12,7 @@
 - Step lines record drawstyle. Add `summary_omissions` separately from render losses; see the [summary contract](README.md#what-the-text-lost-render).
 - Documentation: strict mode, `rows`, summary rounding and the benchmark threshold now state exactly what is checked and measured.
 - `render(source, cols=80, *, color=False, strict=False)` returns a `RenderResult`: `text`, `dimensions`, `series`, `scales`, `warnings`, `losses` and `supported_features`. `render_figure` and `render_svg` still return the same string.
-- Losses count data artists that drew nothing or ended with no visible cell, data points outside the axes view, cut legend entries and dropped or cut text.
-- `strict=True` raises `RenderLossError` on a material loss: a lost data artist or series, or a cut legend entry. Points outside the axes view are reported but not material, since matplotlib hides them too.
+- Report render losses and support `strict=True`; see the [loss contract](README.md#what-the-text-lost-render) for loss kinds and materiality.
 - `summary()` maps reference lines and shading drawn in axes or blended coordinates (`axhline`, `axvline`) back to data values.
 - `RenderResult.summary()`: compact scales, series values and losses read from the figure's data; SVG input says values are unavailable.
 - `color=True` on `render_figure` and `render_svg` adds 24-bit ANSI colour.

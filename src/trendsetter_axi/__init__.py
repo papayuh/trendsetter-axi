@@ -36,6 +36,8 @@ def _copy(fig):
     work = copy.deepcopy(fig, memo)
     for o in shells:
         memo[id(o)].__dict__.update(copy.deepcopy(o.__dict__, memo))
+    for ax in work.axes:
+        for a in ax._children: a._remove_method = ax._children.remove
     return work
 
 
@@ -69,8 +71,8 @@ def render_svg(svg_text, cols=80, color=False):
 def render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None):
     """Render a matplotlib Figure or SVG source (str or bytes) and report what the text lost, as a RenderResult.
 
-    strict=True raises RenderLossError on two checks only: a data artist or series with no visible cell, or a legend
-    entry dropped or cut. It does not catch every misleading render; README.md lists the known limits. Points outside
+    strict=True raises RenderLossError for a data artist or series with no visible cell, a dropped or cut legend
+    entry, or a heatmap extreme level lost to sampling. README.md lists the remaining known limits. Points outside
     the axes view are reported as losses but matplotlib hides them too, so they never fail strict mode.
 
     ascii=True draws the same cells in ASCII (lines in ' - _ / \\ |, bars in #, heat levels in . : = #, series keys
