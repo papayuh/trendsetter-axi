@@ -599,6 +599,17 @@ def test_constant_series_print_their_value(close):
     assert [s["ys"] for s in line_series(build)] == [["5", "5", "5"], ["0", "0", "0"]]
 
 
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_constant_scatter_precision_uses_observations(close, axis):
+    constant, varying = [0.1] * 3, [1, 2, 3]
+    x, y = (constant, varying) if axis == "x" else (varying, constant)
+    s, _ = scatter_of(lambda ax: ax.scatter(x, y))
+    assert s[axis] == "0.1..0.1"
+    assert s["mean"].split(",")[0 if axis == "x" else 1] == "0.1"
+    assert s["n"] == 3 and s["missing"] == 0
+    assert np.array_equal(s["points"], np.column_stack([x, y]))
+
+
 def test_scatter_values_keep_their_magnitude(close):
     y = np.array([1e-8, 2e-8, 3e-8, 1.5e-8])
     def build(ax):

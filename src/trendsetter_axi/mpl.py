@@ -815,8 +815,8 @@ def describe(fig, meta):
                 handled.add(id(a))
                 xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
                 mean = xy.mean(0) if len(xy) else None
-                displayed = np.vstack([xy, mean]) if len(xy) else xy
-                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[:, 0]), _compact(ax.yaxis, *ax.get_ylim(), displayed[:, 1])
+                displayed = [np.append(xy[:, k], mean[k]) if len(xy) and "Date" in type(axis.get_converter()).__name__ else xy[:, k] for k, axis in enumerate((ax.xaxis, ax.yaxis))]
+                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[0]), _compact(ax.yaxis, *ax.get_ylim(), displayed[1])
                 out = _outliers(xy) if len(xy) else []
                 rest = np.delete(xy, out, 0)
                 stats = dict(mean=f"{cx(mean[0])},{cy(mean[1])}") if len(xy) else {}
