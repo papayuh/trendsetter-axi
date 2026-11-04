@@ -1190,6 +1190,56 @@ def test_heatmap_description_formats_only_requested_coordinates(close, monkeypat
     assert "cols" not in heat and "grid" not in heat
 
 
+@pytest.mark.parametrize("kind", ["image", "flat", "gouraud"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("visibility", ["hidden", "both", "opposite", "partial"])
+@pytest.mark.parametrize("size", [3, 7])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_heatmap_tick_candidates_do_not_depend_on_visible_sides(close, kind, axis, visibility, size, inverted):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    z = np.arange(size * size).reshape(size, size)
+    artist = ax.imshow(z) if kind == "image" else ax.pcolormesh(z, shading=kind)
+    artist.set_label("quoted\nseries")
+    positions = np.arange(size) + (0.5 if kind == "flat" else 0)
+    labels = ["A\x1b[31m", "B\nnote: here", "C", *[f"p{i}" for i in range(3, size)]]
+    expected = ["A", r"B / note\: here", "C", *labels[3:]]
+    cols, rows = [f"c{i}" for i in range(size)], [f"r{i}" for i in range(size)]
+    ax.set_xticks(positions, labels if axis == "x" else cols)
+    ax.set_yticks(positions, labels if axis == "y" else rows)
+    if axis == "x": cols = expected
+    else: rows = expected
+    primary = visibility in ("both", "partial")
+    secondary = visibility in ("both", "opposite")
+    ax.tick_params(axis=axis, **({"labelbottom": primary, "labeltop": secondary} if axis == "x" else {"labelleft": primary, "labelright": secondary}))
+    tick_axis = getattr(ax, axis + "axis")
+    if visibility == "partial": tick_axis.get_major_ticks()[1].label1.set_visible(False)
+    before = [(tick.label1.get_visible(), tick.label2.get_visible()) for tick in tick_axis.get_major_ticks()]
+    if inverted:
+        ax.invert_xaxis(); ax.invert_yaxis()
+    result = tsa.render(fig, 80)
+    heat = next(s for s in result.series if s["kind"] == "heatmap")
+    assert heat["values"] == [f"min {rows[0]}/{cols[0]}=0", f"max {rows[-1]}/{cols[-1]}={size * size - 1}"]
+    if size == 3:
+        assert heat["cols"] == " ".join(cols)
+        assert heat["grid"] == [f"{r}: {3 * i} {3 * i + 1} {3 * i + 2}" for i, r in enumerate(rows)]
+    else:
+        assert heat["row_means"] == " ".join(f"{r}={7 * i + 3}" for i, r in enumerate(rows))
+        assert heat["col_means"] == " ".join(f"{c}={21 + i}" for i, c in enumerate(cols))
+    assert repr("quoted\nseries") in result.summary()
+    assert "\x1b" not in result.text and "\x1b" not in result.summary()
+    assert [(tick.label1.get_visible(), tick.label2.get_visible()) for tick in tick_axis.get_major_ticks()] == before
+    assert np.array_equal(artist.get_array(), z)
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("both", [False, True])
+def test_native_heatmap_tick_visibility_preserves_source_description(close, axis, both):
+    reference = tsa.render(figure(lambda ax: ax.imshow([[1, 2], [3, 4]])), 60)
+    fig = figure(lambda ax: ax.imshow([[1, 2], [3, 4]]))
+    fig.axes[0].tick_params(axis=axis, **({"labelbottom": both, "labeltop": both} if axis == "x" else {"labelleft": both, "labelright": both}))
+    assert tsa.render(fig, 60).series == reference.series
+
+
 def test_explicit_tick_labels_name_positions(close):
     def named(ax):
         ax.bar([0, 1, 2], [3, 4, 5], label="sales"); ax.set_xticks([0, 1, 2], ["north", "south", "east"])

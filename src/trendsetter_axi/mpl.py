@@ -795,7 +795,7 @@ def _heat_labels(ax, a, z, points, dimension):
     coordinates = _coordinates(values)
     fallback = _formatter(axis, values, coordinates=coordinates)
     ticks = axis.get_ticklocs()
-    candidates = _unique_labels(lab.get_text() for lab in axis.get_ticklabels())
+    candidates = _unique_labels(axis.get_major_formatter().format_ticks(ticks))
     if len(ticks):
         nearest = _nearest(ticks, values, candidates)
         completed = [candidates[k] if abs(ticks[k] - v) <= pitch / 2 else fallback(v) for v, pitch, k in zip(values, pitches, nearest)]
