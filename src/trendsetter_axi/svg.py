@@ -183,6 +183,7 @@ def render(svg, cols=80, ansi=False, shift=0):
         for ch in el: yield from scan(ch, depth + 1)
 
     ids = {el.get("id"): el for el in scan(root, 0) if el.get("id")}
+    geometry = {}   # source geometry is immutable across <use>; visits and effective styles are still charged each time
     k = (cols - shift) / cols   # shift > 0: squeeze the drawing right by `shift` columns so left tick labels fit
     base = np.array([[k, 0, shift * cv.cw - x0 * k], [0, 1, -y0], [0, 0, 1]])
 
@@ -235,12 +236,15 @@ def render(svg, cols=80, ansi=False, shift=0):
             return draw_text(el, M, st, classes, depth, clip)
         if tag == "image":
             return draw_image(el, M, clip)
-        shapes = shape(tag, el)
+        if el not in geometry:
+            shapes = shape(tag, el)
+            geometry[el] = shapes, [noncollinear(p) for p, c in shapes] if shapes else []
+        shapes, areas = geometry[el]
         ids_ = [c for c in classes if c] if shapes is not None else []   # only shapes read them: groups and <use> skip the scan
         if shapes is not None and not any(c.startswith(("text_", "xtick_", "ytick_")) or "annotation" in c for c in ids_):  # text bbox, annotation boxes, gridlines: not data
             legend = "legend" in " ".join(classes) or (  # matplotlib/plotnine: figure-level artists outside any axes_N group are legend keys
                 not any(c.startswith("axes_") for c in ids_) and any(c.startswith(("line2d_", "patch_", "PathCollection_")) for c in ids_))
-            draw_shape(shapes, M, st, "legend" if legend else shape_role(ids_), depth, "violin" in " ".join(classes), clip)
+            draw_shape(shapes, areas, M, st, "legend" if legend else shape_role(ids_), depth, "violin" in " ".join(classes), clip)
         for ch in el: walk(ch, M, st, classes, clip, depth + 1)
 
     def tf(M, p):
@@ -265,13 +269,13 @@ def render(svg, cols=80, ansi=False, shift=0):
         stop = next((s for s in (scan(el, depth + 1) if el is not None and kind == "gradient" else ()) if NS.sub("", s.tag) == "stop"), None)
         return (color(styles(stop, {}).get("stop-color")) if stop is not None else None) or (.5, .5, .5)
 
-    def draw_shape(shapes, M, st, role, depth, violin=False, clip=None):
+    def draw_shape(shapes, areas, M, st, role, depth, violin=False, clip=None):
         if not shapes: return
         fo = float(st.get("fill-opacity", 1) or 1) * st["opacity"]
         so = float(st.get("stroke-opacity", 1) or 1) * st["opacity"]
         sw = float(re.sub("[a-z]", "", st.get("stroke-width", "1") or "1") or 1)
         closed = [tf(M, p) for p, c in shapes]
-        fillable = [noncollinear(p) for p, c in shapes] if fo > 0.05 and M[0, 0] * M[1, 1] != M[0, 1] * M[1, 0] else []
+        fillable = areas if fo > 0.05 and M[0, 0] * M[1, 1] != M[0, 1] * M[1, 0] else []
         polygons = [p for p, area in zip(closed, fillable) if area]
         fill = paint(st.get("fill", "black"), depth) if polygons else None
         if fill is not None and len(fill) > 3: fo *= fill[3]
