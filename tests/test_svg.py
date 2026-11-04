@@ -104,11 +104,12 @@ def test_mask_and_gradient_are_material_unsupported():
     r = tsa.render(grad, 80)
     assert unsupported(r)["gradient #g"]["material"] is True, r.losses
     assert r.text.rsplit("\n", 1)[0] == plain, r.text            # drawn flat in its first stop colour, then the caption
-    assert r.series[0]["color"] == "#d62728", r.series
+    assert r.series == tsa.render(doc(RECT.format("")), 80).series, r.series
     with pytest.raises(tsa.RenderLossError):
         tsa.render(grad, 80, strict=True)
     pat = tsa.render(doc('<defs><pattern id="p"/></defs>' + RECT.format("").replace('fill="#d62728"', 'fill="url(#p)"')), 80)
-    assert unsupported(pat)["pattern #p"]["material"] is True and pat.series[0]["color"] == "#808080", (pat.losses, pat.series)
+    grey = tsa.render(doc(RECT.format("").replace("#d62728", "#808080")), 80)
+    assert unsupported(pat)["pattern #p"]["material"] is True and pat.series == grey.series, (pat.losses, pat.series)   # mid-grey
 
     clipped = doc('<defs><clipPath id="c"><circle cx="200" cy="50" r="10"/></clipPath></defs>' + RECT.format(' clip-path="url(#c)"'))
     r = tsa.render(clipped, 80, strict=True)                     # owner decision D2: a clip over-draws and says so
