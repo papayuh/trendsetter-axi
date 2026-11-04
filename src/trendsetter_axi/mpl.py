@@ -418,7 +418,7 @@ def _collapse(fig):
             if np.ndim(a) != 2 or a.shape[0] < 2: continue
             if mesh:   # unit-cell mesh, y axis inverted (row 0 on top) like an upper-origin image
                 lo, hi = ax.get_ylim(); co = im.get_coordinates()
-                if not (lo > hi and np.allclose(co[:, 0, 1], np.arange(a.shape[0] + 1)) and np.allclose(co[0, :, 0], np.arange(a.shape[1] + 1))): continue
+                if not (co.shape[:2] == (a.shape[0] + 1, a.shape[1] + 1) and lo > hi and np.allclose(co[:, 0, 1], np.arange(a.shape[0] + 1)) and np.allclose(co[0, :, 0], np.arange(a.shape[1] + 1))): continue
             elif im.origin != "upper": continue
             keep = np.isfinite(np.ma.filled(np.ma.masked_invalid(a).astype(float), np.nan)).any(1)
             if keep.all() or not keep.any(): continue
@@ -590,8 +590,9 @@ def _fmt(axis, v, date=None):
     loc, lab = axis.get_major_locator(), axis.get_major_formatter()
     if isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter):   # explicit labels, not numeric formatters (offsets, unicode minus)
         ticks = axis.get_ticklocs(); labels = lab.format_ticks(ticks)
-        at = [s for t, s in zip(ticks, labels) if abs(t - v) <= 1e-9 * max(abs(v), abs(t))]
-        if at and at[0].strip() and labels.count(at[0]) == 1: return at[0]
+        if len(ticks):
+            i = np.abs(ticks - v).argmin(); t, s = ticks[i], labels[i]
+            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return s
     return f"{v:.4g}"
 
 
@@ -602,7 +603,7 @@ def _datefmt(axis, v):
     d = mdates.num2date(np.unique(v), tz=axis.units); lo, hi = axis.get_view_interval()
     fs = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
     if abs(hi - lo) <= 3 and any((x.hour, x.minute) != (0, 0) for x in d): fs = fs[1:]
-    return next((f for f in fs if len({x.strftime(f) for x in d}) == len(d)), fs[-1])
+    return next((f for f in fs if len({x.strftime(f) for x in d}) == len(d)), fs[-1] + " %z")
 
 
 def _compact(axis, lo, hi, v=None):
@@ -677,8 +678,14 @@ def _heat_at(ax, a, z, k):
     """(row, column) labels of flat heat cell k: the labelled tick nearest the cell centre when within half the cell pitch, else the centre value."""
     i, j = divmod(int(k), z.shape[1])
     if isinstance(a, QuadMesh):
-        c = a.get_coordinates(); x, y = c[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
-        px, py = abs(c[i, j + 1, 0] - c[i, j, 0]), abs(c[i + 1, j, 1] - c[i, j, 1])
+        c = a.get_coordinates()
+        if c.shape[:2] == z.shape:
+            x, y = c[i, j]
+            px = min(abs(np.diff(c[i, max(0, j - 1):j + 2, 0])), default=0)
+            py = min(abs(np.diff(c[max(0, i - 1):i + 2, j, 1])), default=0)
+        else:
+            x, y = c[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
+            px, py = abs(c[i, j + 1, 0] - c[i, j, 0]), abs(c[i + 1, j, 1] - c[i, j, 1])
     else:
         l, r, b, t = a.get_extent(); n, m = z.shape
         x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
@@ -784,7 +791,7 @@ def describe(fig, meta):
                 if miss: series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=0, missing=miss, points=xy, values=[], **{k: [] for k in errors}))
                 continue
             cx, cy = _compact(ax.xaxis, *ax.get_xlim(), xy[:, 0]), _compact(ax.yaxis, *ax.get_ylim(), xy[:, 1])
-            dx = _datefmt(ax.xaxis, xy[:, 0])
+            dx, dy = _datefmt(ax.xaxis, xy[:, 0]), _datefmt(ax.yaxis, xy[:, 1])
             sampled = len(xy) > 16
             indices = _samples(xy[:, 0], np.arange(len(xy)))[1].astype(int) if sampled else np.arange(len(xy))
             px, py = xy[indices].T
@@ -795,7 +802,7 @@ def describe(fig, meta):
                 bounds[k] = [('?' if not np.isfinite(v).all() else f'{v[0]:.4g}' if np.isclose(*v, rtol=1e-10, atol=0) else f'-{v[0]:.4g}/+{v[1]:.4g}') for v in values[eligible][indices]]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
-            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(lambda v: _fmt(ax.xaxis, v, dx), xy[:, 0]), y=rng(fy, xy[:, 1]),
+            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(lambda v: _fmt(ax.xaxis, v, dx), xy[:, 0]), y=rng(lambda v: _fmt(ax.yaxis, v, dy), xy[:, 1]),
                                at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext, **bounds,
                                **({'drawstyle': a.get_drawstyle()} if a is not None and a.get_drawstyle() != 'default' else {})))
         for a in ax.collections:
@@ -805,10 +812,12 @@ def describe(fig, meta):
             if isinstance(a, PathCollection):
                 handled.add(id(a))
                 xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
-                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), xy[:, 0]), _compact(ax.yaxis, *ax.get_ylim(), xy[:, 1])
+                mean = xy.mean(0) if len(xy) else None
+                displayed = np.vstack([xy, mean]) if len(xy) else xy
+                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[:, 0]), _compact(ax.yaxis, *ax.get_ylim(), displayed[:, 1])
                 out = _outliers(xy) if len(xy) else []
                 rest = np.delete(xy, out, 0)
-                stats = dict(mean=f"{cx(xy[:, 0].mean())},{cy(xy[:, 1].mean())}") if len(xy) else {}
+                stats = dict(mean=f"{cx(mean[0])},{cy(mean[1])}") if len(xy) else {}
                 if len(xy) > 2 and np.ptp(xy[:, 0]) and np.ptp(xy[:, 1]): stats["r"] = f"{np.corrcoef(xy.T)[0, 1]:.2f}"
                 if out: stats.update(outliers=" ".join(f"({cx(xy[i, 0])},{cy(xy[i, 1])})" for i in out), rest=f"x={cx(rest[:, 0].min())}..{cx(rest[:, 0].max())} y={cy(rest[:, 1].min())}..{cy(rest[:, 1].max())}")
                 series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), missing=miss, points=xy, x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))

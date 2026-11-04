@@ -647,6 +647,93 @@ def test_fixed_formatter_names_positions_without_a_fixed_locator(close):
     assert bar_values(build) == ["north=3", "south=4", "east=5"]
 
 
+@pytest.mark.parametrize("invert", [False, True])
+def test_gouraud_mesh_labels_use_vertex_positions(close, invert):
+    def build(ax):
+        ax.pcolormesh([0, 2, 7], [0, 3, 8], np.arange(1, 10).reshape(3, 3), shading="gouraud")
+        ax.set_xticks([0, 2, 7], ["A", "B", "C"])
+        ax.set_yticks([0, 3, 8], ["lo", "mid", "hi"])
+        if invert:
+            ax.invert_xaxis(); ax.invert_yaxis()
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["values"] == ["min lo/A=1", "max hi/C=9"]
+    assert heat["cols"] == "A B C"
+    assert heat["grid"] == ["lo: 1 2 3", "mid: 4 5 6", "hi: 7 8 9"]
+
+
+def test_gouraud_mesh_labels_respect_boundary_pitch(close):
+    def build(ax):
+        ax.pcolormesh([0, 2], [0, 4], [[1, 2], [3, 4]], shading="gouraud")
+        ax.set_xticks([-2, 4], ["left", "right"])
+        ax.set_yticks([-3, 7], ["bottom", "top"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["values"] == ["min 0/0=1", "max 4/2=4"]
+    assert heat["cols"] == "0 2"
+    assert heat["grid"] == ["0: 1 2", "4: 3 4"]
+
+
+@pytest.mark.parametrize("horizontal", [False, True])
+@pytest.mark.parametrize("positions", [[1e9, 1e9 + 1], [1e9 + .25, 1e9 + .75]])
+def test_close_explicit_ticks_use_nearest_alias(close, horizontal, positions):
+    def build(ax):
+        if horizontal:
+            ax.barh(positions, [3, 4]); ax.set_yticks([1e9, 1e9 + 1], ["A", "B"])
+        else:
+            ax.bar(positions, [3, 4]); ax.set_xticks([1e9, 1e9 + 1], ["A", "B"])
+    assert bar_values(build) == ["A=3", "B=4"]
+
+
+def test_close_explicit_ticks_name_line_ranges(close):
+    def build(ax):
+        ax.plot([1e9, 1e9 + 1], [1e9, 1e9 + 1])
+        ax.set_xticks([1e9, 1e9 + 1], ["A", "B"])
+        ax.set_yticks([1e9, 1e9 + 1], ["C", "D"])
+    s = line_series(build)[0]
+    assert s["x"] == "A..B" and s["y"] == "C..D"
+
+
+def test_close_explicit_ticks_name_heat_fallback(close):
+    def build(ax):
+        ax.imshow([[1, 2], [3, 4]], extent=[1e9, 1e9 + 1, 1e9, 1e9 + 1], origin="lower")
+        ax.set_xticks([1e9 - .1, 1e9 + 1.1], ["A", "B"])
+        ax.set_yticks([1e9 - .1, 1e9 + 1.1], ["C", "D"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["values"] == ["min C/A=1", "max D/B=4"]
+    assert heat["cols"] == "A B"
+    assert heat["grid"] == ["C: 1 2", "D: 3 4"]
+
+
+def test_dst_fold_instants_stay_distinct(close):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/New_York")
+    times = [datetime(2026, 11, 1, h, 30, tzinfo=timezone.utc) for h in (5, 6)]
+    expected = [t.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S.%f %z") for t in times]
+    def build(ax):
+        ax.xaxis_date(tz); ax.yaxis_date(tz)
+        ax.plot(times, times)
+        ax.scatter(times, times)
+    r = tsa.render(figure(build), 60)
+    line, scatter = (next(s for s in r.series if s["kind"] == k) for k in ("line", "scatter"))
+    assert line["at"] == line["ys"] == expected
+    assert line["x"] == line["y"] == scatter["x"] == scatter["y"] == "..".join(expected)
+    mean = datetime(2026, 11, 1, 6, tzinfo=timezone.utc).astimezone(tz).strftime("%Y-%m-%d %H:%M:%S.%f %z")
+    assert scatter["mean"] == f"{mean},{mean}"
+    assert np.array_equal(line["points"], scatter["points"])
+
+
+@pytest.mark.parametrize("horizontal", [False, True])
+def test_scatter_date_mean_keeps_time_of_day(close, horizontal):
+    from datetime import datetime
+    times = [datetime(2026, 10, d) for d in (27, 28)]
+    def build(ax):
+        ax.scatter([1, 3], times) if horizontal else ax.scatter(times, [1, 3])
+    s, _ = scatter_of(build)
+    date_range = "2026-10-27 00:00..2026-10-28 00:00"
+    assert s["y" if horizontal else "x"] == date_range
+    assert s["mean"] == ("2,2026-10-27 12:00" if horizontal else "2026-10-27 12:00,2")
+
+
 def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):
     def build(ax):
         ax.imshow([[1, 2], [3, 4]], extent=[0, .4, 0, .4], origin="lower")
