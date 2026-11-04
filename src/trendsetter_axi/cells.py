@@ -9,6 +9,24 @@ from wcwidth import wcwidth, wcswidth
 
 SGR = re.compile(r"\x1b\[[0-9;:]*m")
 RESET = "\x1b[0m"
+CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+TERMINAL_ESCAPES = re.compile(r"(?:\x1b\]|\x9d).*?(?:\x07|\x1b\\|\x9c)|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]", re.DOTALL)
+
+SUP = dict(zip("0123456789-+−", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺⁻"))
+def sup(t): return "".join(SUP[ch] for ch in t) if all(ch in SUP for ch in t) else "^" + t
+
+
+def clean_text(s):
+    """Sanitize artist text, preserving layout newlines/tabs and readable math."""
+    s = CONTROLS.sub(lambda m: m.group() if m.group() in "\n\t" else "", TERMINAL_ESCAPES.sub("", s))
+    if s.count("$") >= 2 and s.count("$") % 2 == 0:  # mathtext: drop the markup, keep the words
+        s = re.sub(r"\\?mathdefault", "", s)
+        s = re.sub(r"\^\{([^}]*)\}|\^(.)", lambda m: sup(m.group(1) if m.group(1) is not None else m.group(2)), s)
+        for a, b in [("\\times", "×"), ("\\cdot", "·"), ("\\alpha", "α"), ("\\beta", "β"), ("\\mu", "µ"),
+                     ("\\sigma", "σ"), ("\\pm", "±"), ("\\degree", "°"), ("_{", "_"), ("\\", "")]:
+            s = s.replace(a, b)
+        s = s.replace("$", "").replace("{", "").replace("}", "")
+    return s.replace("−", "-")
 
 
 class DisplayCapacityError(ValueError):
@@ -32,10 +50,11 @@ def clusters(text):
             continue
         char = text[i]
         cells = wcwidth(char)
-        # Zero-width joiners/variation selectors and flag pairs can change
-        # the width of their base; measure the complete cluster, not each codepoint.
+        # ponytail: keep terminal emoji sequences intact, not full Unicode grapheme segmentation.
+        # Measure the complete cluster; modifiers can have positive standalone width.
         flag_pair = len(plain) == 1 and all(0x1F1E6 <= ord(c) <= 0x1F1FF for c in plain + char)
-        if cells > 0 and plain and not plain.endswith("\u200d") and not flag_pair:
+        modifier = 0x1F3FB <= ord(char) <= 0x1F3FF or char in "\ufe0f\u20e3" or 0xE0020 <= ord(char) <= 0xE007F
+        if cells > 0 and plain and not plain.endswith("\u200d") and not flag_pair and not modifier:
             yield pending, max(0, wcswidth(plain))
             pending, plain = "", ""
         if cells >= 0:

@@ -74,12 +74,26 @@ def test_controls_are_stripped_from_text_and_summary(close):
     assert "\x1b" not in summary and "\x07" not in summary
     assert summary.count("losses:") == 1
     title = next(line for line in summary.splitlines() if line.startswith("title:"))
-    assert title == "title: TRED / losses: none / fake"
+    assert title == r"title: TRED / losses\: none / fake"
     assert "x: x" in summary.splitlines() and "evil" not in summary
     assert "y: first / second" in summary.splitlines()
     assert repr(name) in summary
     assert r.scales[0]["title"] == "TRED\nlosses: none\nfake"
     assert r.scales[0]["x"]["label"] == "x"
+
+
+def test_terminal_sequences_are_removed_before_label_wrapping(close):
+    label = "before\x1b]0;" + "evil" * 100 + "\x1b\\after"
+
+    def build(ax):
+        ax.plot([0, 1], [1, 2])
+        ax.set(title=label, xlabel=label)
+
+    fig = figure(build)
+    r = tsa.render(fig, 40)
+    assert "beforeafter" in r.text
+    assert "evil" not in r.text and "\x1b" not in r.text
+    assert fig.axes[0].get_title() == label
 
 
 def test_generated_ansi_is_kept_apart_from_labels(close):
