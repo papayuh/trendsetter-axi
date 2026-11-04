@@ -22,7 +22,7 @@ class RenderResult:
     series: list               # one dict per series, from the source data (SVG: values unavailable)
     scales: list               # per axes: title, x and y label, scale kind, range
     warnings: list             # notes about how the input was read
-    losses: list               # dicts kind/what/detail/material: everything the text does not show
+    losses: list               # detected render losses; summary coverage is separate (see README.md)
     supported_features: dict   # what this kind of input lets the renderer know
     summary_omissions: list = field(default_factory=list)  # source facts not represented, separate from render losses
     not_described: list = field(default_factory=list)  # (artist type, count), separate from render losses
@@ -30,7 +30,7 @@ class RenderResult:
     def __str__(self): return self.text
 
     def summary(self):
-        """Compact scales, source values, render losses and summary omissions for an agent.
+        """Compact scales, source values, render losses, omissions and artist coverage for an agent.
 
         See README.md, "What the text lost: render", for sampling, rounding and known limits.
         """

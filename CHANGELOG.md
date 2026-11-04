@@ -2,13 +2,13 @@
 
 ## Unreleased
 
-- Summaries describe labelled errorbars, including line-free plots, with symmetric/asymmetric x/y bounds in data coordinates and unknown bounds distinct from missing central points. One-sided limits explicitly disclose unsupported bounds (and omit line-free limit containers); sparse alignment is linear and leaves ambiguous duplicates unknown. Visible unsupported data artists appear in `not_described` and a `not described:` coverage line, separate from render losses.
-- Compact equal-width touching bars are presented as `bars` with `heights:`, not histogram counts; the API kind remains `histogram` and the seven-bar threshold is unchanged.
+- Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
+- Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
 
 - Defer format-specific imports: package import, native rankings and scalar responses load neither NumPy nor Matplotlib; vector SVG does not load Matplotlib. Default dependencies are unchanged.
 - Opt-in `render_ranking` and `render_compact` enforce hard row and cell budgets, with exact signed values, wrapped table fallback and structured display omissions; legacy `render(rows=...)` remains a preference.
 - `present` resolves explicit/session/saved/automatic display preferences against a caller-supplied surface, bypasses rendering for scalars and requires a confirmed user-visible callback for images. The harness owns persistence and delivery.
-- Step lines record drawstyle. Separate `summary_omissions` disclose midpoint-inferred line-free errorbar centers, filled-area paired bounds and sample support without changing render losses or strict-mode materiality.
+- Step lines record drawstyle. Add `summary_omissions` separately from render losses; see the [summary contract](README.md#what-the-text-lost-render).
 - Documentation: strict mode, `rows`, summary rounding and the benchmark threshold now state exactly what is checked and measured.
 - `render(source, cols=80, *, color=False, strict=False)` returns a `RenderResult`: `text`, `dimensions`, `series`, `scales`, `warnings`, `losses` and `supported_features`. `render_figure` and `render_svg` still return the same string.
 - Losses count data artists that drew nothing or ended with no visible cell, data points outside the axes view, cut legend entries and dropped or cut text.
