@@ -47,11 +47,11 @@ def test_use_fanout_hits_the_work_budget():
     assert "100,000" in msg and "100,001 visited" in msg and "work budget" in msg, msg
 
 
-def test_use_cycle_and_depth_are_rejected():
+@pytest.mark.parametrize("body", ['<g id="a"><use href="#a"/></g>', "<g>" * 2000 + RECT.format("") + "</g>" * 2000],
+                         ids=["cycle", "nested-groups"])
+def test_use_cycle_and_depth_are_rejected(body):
     with pytest.raises(ValueError, match="deeper than 256"):
-        tsa.render_svg(doc('<g id="a"><use href="#a"/></g>'), 80)
-    with pytest.raises(ValueError, match="deeper than 256"):
-        tsa.render_svg(doc("<g>" * 2000 + RECT.format("") + "</g>" * 2000), 80)
+        tsa.render_svg(doc(body), 80)
 
 
 @pytest.mark.parametrize("attrs", ['width="1e400" height="100"', 'width="-10" height="100"', 'width="nan" height="100"',
@@ -123,12 +123,32 @@ def test_mask_and_gradient_are_material_unsupported():
     assert r.text.rsplit("\n", 1)[0] == RECT_TEXT, r.text
 
 
+@pytest.mark.parametrize("definition", ['', '<linearGradient id="g"/>'])
+def test_gradient_without_stops_uses_grey(definition):
+    body = '<defs>' + definition + '</defs>' + RECT.format(' style="fill: url(#g)"')
+    r = tsa.render(doc(body), 80)
+    assert r.text.rsplit("\n", 1)[0] == RECT_TEXT
+    assert r.series[0]["color"] == "#808080"
+    assert unsupported(r)["gradient #g"]["material"] is True
+
+
+def test_gradient_stroke_is_reported():
+    body = '<defs><radialGradient id="g"><stop style="stop-color: #ff0000"/></radialGradient></defs>'
+    body += '<line x1="150" y1="50" x2="250" y2="50" style="stroke: url(#g)"/>'
+    r = tsa.render(doc(body), 80)
+    assert r.series[0]["color"] == "#ff0000"
+    assert unsupported(r)["gradient #g"]["material"] is True
+    with pytest.raises(tsa.RenderLossError):
+        tsa.render(doc(body), 80, strict=True)
+
+
 def test_group_opacity_is_inherited():
     empty = ""
     assert tsa.render_svg(doc(RECT.format(' opacity="0.03"')), 80) == empty
     assert tsa.render_svg(doc(f'<g opacity="0.03">{RECT.format("")}</g>'), 80) == empty
     half = RECT.format(' fill-opacity="0.5"')
     assert tsa.render_svg(doc(f'<g opacity="0.5">{half}</g>'), 80) != empty   # 0.25 > 0.05
+    assert tsa.render_svg(doc(f'<g opacity="0.2">{RECT.format("")}</g>'), 80) != empty   # product applied once, not squared
     assert tsa.render_svg(doc(f'<g opacity="0.5"><g opacity="0.08">{RECT.format("")}</g></g>'), 80) == empty  # 0.04: products nest
     assert tsa.render_svg(doc(f'<g opacity="0">{RECT.format("")}</g>'), 80) == empty
 
