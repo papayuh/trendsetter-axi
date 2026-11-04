@@ -36,6 +36,8 @@ def _copy(fig):
     work = copy.deepcopy(fig, memo)
     for o in shells:
         memo[id(o)].__dict__.update(copy.deepcopy(o.__dict__, memo))
+    for ax in work.axes:
+        for a in ax._children: a._remove_method = ax._children.remove
     return work
 
 

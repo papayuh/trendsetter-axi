@@ -201,7 +201,7 @@ class Canvas:
                                              [(c + 1) * self.cw, (r + 1) * self.ch], [c * self.cw, (r + 1) * self.ch]])],
                                   rgb[yi, xi], clip))
 
-    def heat_grid(self, xs, ys, t, clip=None):
+    def heat_grid(self, xs, ys, t, clip=None, *, values=None):
         """t: (h, w) levels in 0..1, NaN = missing (stays blank); xs (w+1) / ys (h+1) ascending px edges, row 0 at top.
         One text cell per data cell or the nearest data cell when a text cell spans several."""
         xs, ys, t = (np.asarray(a, float) for a in (xs, ys, t))
@@ -222,22 +222,24 @@ class Canvas:
         x0, y0, x1, y1 = (0, 0, self.w, self.h) if clip is None else (max(0, clip[0]), max(0, clip[1]), min(self.w, clip[2]), min(self.h, clip[3]))
         nx = int(((xs[1:] > x0) & (xs[:-1] < x1)).sum())
         ny = int(((ys[1:] > y0) & (ys[:-1] < y1)).sum())
-        if nx <= len(np.unique(ci[cs])) and ny <= len(np.unique(ri[rs])): return
-        self.meta.setdefault("heat_sampled", []).append((self.owner, t.shape, (len(rs), len(cs))))
+        sampled_rows, sampled_cols = len(np.unique(ri[rs])), len(np.unique(ci[cs]))
+        if nx <= sampled_cols and ny <= sampled_rows: return
+        self.meta.setdefault("heat_sampled", []).append((self.owner, t.shape, (len(rs), len(cs)), sampled_rows * sampled_cols))
         shown = {(r, c): level for r, c, level in self.heat[first:]}
         sampled = {(int(ri[r]), int(ci[c])) for r, c in shown}
-        finite = np.isfinite(t)
+        values = t if values is None else np.asarray(values, float)
+        finite = np.isfinite(values) & np.isfinite(t)
         if not finite.any(): return
         # ponytail: only global min/max levels are audited, not skipped interior cells or spatial patterns.
         for kind, fill, arg in (("min", np.inf, np.argmin), ("max", -np.inf, np.argmax)):
-            i, j = map(int, np.unravel_index(arg(np.where(finite, t, fill)), t.shape))
+            i, j = map(int, np.unravel_index(arg(np.where(finite, values, fill)), t.shape))
             value = t[i, j]; level = int(min(self.levels - 1, max(0, value) * self.levels))
             # Tied extrema (including quantised ties) survive if any occurrence is shown.
             if (i, j) in sampled or level in shown.values(): continue
             x, y = (xs[j] + xs[j + 1]) / 2, (ys[i] + ys[i + 1]) / 2
             if not (x0 <= x < x1 and y0 <= y < y1): continue   # axes clipping is not a sampling loss
             if shown.get((self._row(y), self._col(x))) != level:
-                self.meta.setdefault("lost_extreme", []).append(dict(owner=self.owner, extreme=kind, index=(i, j), value=float(value)))
+                self.meta.setdefault("lost_extreme", []).append(dict(owner=self.owner, extreme=kind, index=(i, j), value=float(values[i, j])))
 
     @staticmethod
     def _rect(polys):

@@ -125,6 +125,12 @@ class TextRenderer(RendererBase):
             return t.reshape(shape)
         except Exception: return None
 
+    def _heat_grid(self, xs, ys, t, gc):
+        values = np.ma.filled(np.ma.asarray(self.cur.get_array(), float), np.nan).reshape(t.shape)
+        if xs[0] > xs[-1]: xs, t, values = xs[::-1], t[:, ::-1], values[:, ::-1]
+        if ys[0] > ys[-1]: ys, t, values = ys[::-1], t[::-1], values[::-1]
+        return self.cv.heat_grid(xs, ys, t, self._clip(gc), values=values)
+
     def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight, coordinates, offsets,
                        offsetTrans, facecolors, antialiased, edgecolors):
         xy = self._flip(master_transform.transform(np.asarray(coordinates).reshape(-1, 2)))
@@ -132,9 +138,7 @@ class TextRenderer(RendererBase):
         t = self._levels((meshHeight, meshWidth))
         xs, ys = xy[0, :, 0], xy[:, 0, 1]
         if t is not None and np.allclose(xy[..., 0], xs) and np.allclose(xy[..., 1], ys[:, None]) and (np.diff(xs) != 0).all() and (np.diff(ys) != 0).all():
-            if xs[0] > xs[-1]: xs, t = xs[::-1], t[:, ::-1]
-            if ys[0] > ys[-1]: ys, t = ys[::-1], t[::-1]
-            return self.cv.heat_grid(xs, ys, t, self._clip(gc))   # regular mesh: a real cell grid, quantised levels
+            return self._heat_grid(xs, ys, t, gc)   # regular mesh: a real cell grid, quantised levels
         fc = np.asarray(facecolors)
         clip = self._clip(gc)
         for i in range(meshHeight):
@@ -154,7 +158,7 @@ class TextRenderer(RendererBase):
         t = self._levels(None) if self.cur is not None and getattr(self.cur, "get_array", None) and np.ndim(self.cur.get_array()) == 2 else None
         grid = t is not None and self._image_grid(t)
         if grid:   # scalar image (imshow of numbers): masked cells stay blank, the rest take quantised levels
-            return self.cv.heat_grid(*grid, self._clip(gc))   # edges of the whole array in pixels: cells outside the view or the clip are skipped, never squeezed into it
+            return self._heat_grid(*grid, gc)   # edges of the whole array in pixels: cells outside the view or the clip are skipped, never squeezed into it
         im = np.asarray(im, float)[::-1] / 255.0   # mpl hands rows bottom-first
         rgb = im[..., :3] * im[..., 3:4] + (1 - im[..., 3:4])
         h, w = im.shape[:2]
@@ -162,7 +166,7 @@ class TextRenderer(RendererBase):
         self.cv.image(x, self.h - (y + h), x + w, self.h - y, rgb, im[..., 3])
 
     def _image_grid(self, t):
-        """(xs, ys, t) for heat_grid: pixel edges of every cell of the image array through its own transform (extent, origin, zoom, inverted axes), ascending, row 0 at top. None when the image is not axis-aligned."""
+        """(xs, ys, t): pixel edges of every image cell through its own transform, in source row/column order. None when the image is not axis-aligned."""
         a = self.cur
         l, r, b, tp = a.get_extent(); n, m = t.shape
         tr = a.get_transform()
@@ -170,8 +174,6 @@ class TextRenderer(RendererBase):
         ys = tr.transform(np.column_stack([np.full(n + 1, l), np.linspace(tp, b, n + 1) if getattr(a, "origin", "upper") == "upper" else np.linspace(b, tp, n + 1)]))
         if not (np.allclose(xs[:, 1], xs[0, 1]) and np.allclose(ys[:, 0], ys[0, 0])): return None
         xs, ys = xs[:, 0], self.h - ys[:, 1]
-        if xs[0] > xs[-1]: xs, t = xs[::-1], t[:, ::-1]
-        if ys[0] > ys[-1]: ys, t = ys[::-1], t[::-1]
         return xs, ys, t
 
     def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
@@ -431,6 +433,9 @@ def _collapse(fig):
                 ax.set_ylim(len(idx), 0); ax.set_yticks(np.arange(len(idx)) + .5)
             else:
                 im.set_data(a[keep]); im.set_extent((*im.get_extent()[:2], len(idx) - .5, -.5)); ax.set_ylim(len(idx) - .5, -.5); ax.set_yticks(range(len(idx)))
+            target = new if mesh else im
+            target._tc_heat_shape = getattr(im, "_tc_heat_shape", a.shape)
+            target._tc_heat_rows = getattr(im, "_tc_heat_rows", np.arange(a.shape[0]))[keep]
             ax.set_yticklabels(names)
             note = (WEEKDAYS[names[0]] + "s only" if len(idx) == 1 and names[0] in WEEKDAYS else ", ".join(names) + " only" if len(idx) <= 3 else f"{len(idx)} of {len(keep)} rows have data")
             ax.set_title(f"{ax.get_title()}\n{note}" if ax.get_title() else note)
@@ -863,6 +868,9 @@ def describe(fig, meta):
 def losses(fig, meta):
     """Data the text does not show, measured on the drawn figure: data artists that left no visible cell, and points outside the axes view.
     ponytail: series are keyed by colour, so an artist sharing its colour with a drawn one counts as drawn; per-artist ink ids if that matters."""
+    for k, (owner, shape, shown, sampled) in enumerate(meta.get("heat_sampled", [])):
+        a = meta["owners"][owner][0]
+        meta["heat_sampled"][k] = (owner, getattr(a, "_tc_heat_shape", shape), shown, sampled)
     for e in meta.get("lost_extreme", []):
         a = meta["owners"][e["owner"]][0]
         z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float))
@@ -876,8 +884,9 @@ def losses(fig, meta):
         i, j = e["index"]
         if xy[0, 0] > xy[1, 0]: j = z.shape[1] - 1 - j
         if xy[0, 1] < xy[1, 1]: i = z.shape[0] - 1 - i
-        e["index"], e["value"] = (i, j), float(z[i, j])
         labels = "/".join(_heat_at(a.axes, a, z, i * z.shape[1] + j))
+        rows = getattr(a, "_tc_heat_rows", None)
+        e["index"] = (int(rows[i]) if rows is not None else i, j)
         name = _name(a, {})
         e["what"] = f"heatmap {e['extreme']} {e['index']}={e['value']:.4g} ({labels})" + (f" {name!r}" if name else "")
     bars = {id(b): c for ax in _data_axes(fig) for c in ax.containers if isinstance(c, BarContainer) for b in c}

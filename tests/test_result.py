@@ -897,6 +897,80 @@ def test_heatmap_extreme_outside_view_is_not_a_sampling_loss(close):
     assert not any(loss["kind"] == "lost_extreme" for loss in r.losses)
 
 
+@pytest.mark.parametrize("mesh", [False, True])
+@pytest.mark.parametrize("kept_rows", [(2,), (1, 4)])
+@pytest.mark.parametrize("invert_x", [False, True])
+@pytest.mark.parametrize("value", [42, -42])
+def test_collapsed_heatmap_preserves_source_diagnostics(close, mesh, kept_rows, invert_x, value):
+    z = np.full((7, 100), np.nan)
+    z[list(kept_rows)] = 0
+    row = kept_rows[-1]
+    z[row, 75] = value
+    def build(ax):
+        kw = dict(vmin=min(0, value), vmax=max(0, value))
+        if mesh:
+            ax.pcolormesh(z, **kw)
+            ax.invert_yaxis()
+        else:
+            ax.imshow(z, aspect="auto", **kw)
+        offset = .5 if mesh else 0
+        ax.set_xticks([75 + offset], ["east"])
+        ax.set_yticks([i + offset for i in kept_rows], ["north"] * len(kept_rows))
+        if invert_x: ax.invert_xaxis()
+    fig = figure(build)
+    r = tsa.render(fig, 40, rows=12)
+    sampled = [loss for loss in r.losses if loss["kind"] == "heat_sampled"]
+    assert len(sampled) == 1 and sampled[0]["detail"].startswith("7x100 cells shown as"), r.losses
+    lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
+    extreme = "max" if value > 0 else "min"
+    assert len(lost) == 1 and f"heatmap {extreme} {(row, 75)}={value}" in lost[0]["what"], r.losses
+    assert "north/east" in lost[0]["what"]
+    with pytest.raises(tsa.RenderLossError, match="lost_extreme"):
+        tsa.render(fig, 40, rows=12, strict=True)
+    artist = fig.axes[0].collections[0] if mesh else fig.axes[0].images[0]
+    np.testing.assert_equal(artist.get_array().filled(np.nan), z)
+
+
+@pytest.mark.parametrize("kind", ["upper", "lower", "mesh"])
+@pytest.mark.parametrize("invert_x, invert_y", [(False, False), (True, False), (False, True), (True, True)])
+@pytest.mark.parametrize("clipped", [False, True])
+@pytest.mark.parametrize("value", [42, -42])
+def test_heatmap_extrema_selected_before_clipped_normalisation(close, kind, invert_x, invert_y, clipped, value):
+    from matplotlib.colors import Normalize
+    z = np.zeros((100, 100))
+    z[0, 0] = np.sign(value)
+    z[50, 50] = value
+    def build(ax):
+        norm = Normalize(vmin=min(0, np.sign(value)), vmax=max(0, np.sign(value)), clip=True)
+        if kind == "mesh":
+            ax.pcolormesh(z, norm=norm)
+        else:
+            ax.imshow(z, aspect="auto", origin=kind, norm=norm)
+        if clipped:
+            ax.set_ylim((99.5, 9.5) if kind == "upper" else (10, 100) if kind == "mesh" else (9.5, 99.5))
+        if invert_x: ax.invert_xaxis()
+        if invert_y: ax.invert_yaxis()
+    fig = figure(build)
+    r = tsa.render(fig, 40, rows=12)
+    lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
+    extreme = "max" if value > 0 else "min"
+    assert len(lost) == 1 and f"heatmap {extreme} (50, 50)={value}" in lost[0]["what"], r.losses
+    with pytest.raises(tsa.RenderLossError, match="lost_extreme"):
+        tsa.render(fig, 40, rows=12, strict=True)
+
+
+@pytest.mark.parametrize("shape", [(100, 1), (1, 100)])
+def test_heatmap_sampling_ratio_counts_unique_source_cells(close, shape):
+    z = np.zeros(shape)
+    r = tsa.render(figure(lambda ax: ax.imshow(z, aspect="auto", vmin=0, vmax=1)), 40, rows=12, strict=True)
+    heat_rows = [sum(ch in core.HEAT for ch in row) for row in r.text.splitlines()]
+    distinct = sum(n > 0 for n in heat_rows) if shape[1] == 1 else max(heat_rows)
+    ratio = round(z.size / distinct)
+    assert ratio > 1
+    sampled = [loss for loss in r.losses if loss["kind"] == "heat_sampled"]
+    assert len(sampled) == 1 and f"1 in ~{ratio} data cells sampled" in sampled[0]["detail"], r.losses
+
+
 def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):
     def build(ax):
         ax.imshow([[1, 2], [3, 4]], extent=[0, .4, 0, .4], origin="lower")

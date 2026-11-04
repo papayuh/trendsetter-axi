@@ -85,9 +85,9 @@ def build(text, meta, cols, series, scales, losses, features):
         legend = role == "legend"   # a series name the reader cannot see
         losses.append(dict(kind="series_label" if legend else "text", what=f"{role} {s!r}", detail=why))
     losses += [dict(kind="unsupported", what=u, detail="drawn unclipped") for u in dict.fromkeys(meta.get("unsupported", []))]
-    for owner, (nr, nc), (rows, columns) in meta.get("heat_sampled", []):
+    for owner, (nr, nc), (rows, columns), sampled in meta.get("heat_sampled", []):
         losses.append(dict(kind="heat_sampled", what="heatmap",
-                           detail=f"{nr}x{nc} cells shown as {rows}x{columns} text cells: 1 in ~{max(1, round(nr * nc / (rows * columns)))} data cells sampled"))
+                           detail=f"{nr}x{nc} cells shown as {rows}x{columns} text cells: 1 in ~{max(1, round(nr * nc / sampled))} data cells sampled"))
     for e in meta.get("lost_extreme", []):
         what = e.get("what", f"heatmap {e['extreme']} {e['index']}={e['value']:.4g}")
         losses.append(dict(kind="lost_extreme", what=what, detail="not among the sampled cells"))
