@@ -4,6 +4,8 @@ Trick over mpl_ascii: the renderer's text metrics *are* character cells, and the
 layout engine is pointed at this renderer, so matplotlib itself lays out ticks,
 legends and margins for the terminal grid instead of us patching collisions later.
 """
+from collections import Counter
+
 import numpy as np
 from matplotlib.backend_bases import RendererBase
 from matplotlib.axis import Axis
@@ -598,13 +600,32 @@ def render(fig, cols=80, color=False, rows=None):
     return text, rend.cv.meta
 
 
-def _fmt(axis, v, date=None):
+def _coordinate(v):
+    return "0" if v == 0 else repr(float(v)).removesuffix(".0")
+
+
+def _coordinates(values):
+    labels = ["0" if v == 0 else f"{v:.4g}" for v in values]
+    return labels if len(set(zip(labels, values))) == len(set(labels)) else [_coordinate(v) for v in values]
+
+
+def _aliases(values, labels, coordinates=None):
+    if coordinates is None: coordinates = [_coordinate(v) for v in values]
+    counts = Counter(labels)
+    aliases = [s if s.strip() and counts[s] == 1 else "" for s in labels]
+    completed = [s or coordinate for s, coordinate in zip(aliases, coordinates)]
+    return aliases if len(set(zip(completed, values))) == len(set(completed)) else [""] * len(aliases)
+
+
+def _fmt(axis, v, date=None, coordinate=None):
     """A data value as the axis means it: a date (in strftime format `date`, else to the minute on a short view), a category name, the explicit tick label at v, else 4 significant digits."""
+    fallback = _coordinate(v) if coordinate is None else coordinate
     if isinstance(axis.units, UnitData):
-        names = {i: summary_text(str(k)) for k, i in axis.units._mapping.items()}
+        values = list(axis.units._mapping.values())
+        labels = _aliases(values, [summary_text(str(k)) for k in axis.units._mapping])
+        names = dict(zip(values, labels))
         if np.isclose(v, round(v)) and round(v) in names:
-            s = names[round(v)]
-            return s if s.strip() and list(names.values()).count(s) == 1 else f"{v:.4g}"
+            return names[round(v)] or fallback
     lo, hi = axis.get_view_interval()
     if "Date" in type(axis.get_converter()).__name__:
         d = mdates.num2date(v, tz=axis.units)   # the axis timezone, as its ticks show it
@@ -612,11 +633,12 @@ def _fmt(axis, v, date=None):
         return d.strftime(date).rstrip("0").rstrip(".") if date.endswith("%f") else d.strftime(date)
     loc, lab = axis.get_major_locator(), axis.get_major_formatter()
     if isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter):   # explicit labels, not numeric formatters (offsets, unicode minus)
-        ticks = axis.get_ticklocs(); labels = [summary_text(s) for s in lab.format_ticks(ticks)]
+        ticks = axis.get_ticklocs(); labels = _aliases(ticks, [summary_text(s) for s in lab.format_ticks(ticks)])
         if len(ticks):
             i = np.abs(ticks - v).argmin(); t, s = ticks[i], labels[i]
-            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return s
-    return f"{v:.4g}"
+            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s: return s
+        return fallback
+    return f"{v:.4g}" if coordinate is None else coordinate
 
 
 def _datefmt(axis, v):
@@ -705,21 +727,28 @@ def _heat_at(ax, a, z, k):
     if isinstance(a, QuadMesh):
         c = a.get_coordinates()
         if c.shape[:2] == z.shape:
-            x, y = c[i, j]
-            px = min(abs(np.diff(c[i, max(0, j - 1):j + 2, 0])), default=0)
-            py = min(abs(np.diff(c[max(0, i - 1):i + 2, j, 1])), default=0)
+            x, y = c[i, :, 0], c[:, j, 1]
+            pitch = lambda v: np.minimum(np.r_[np.inf, abs(np.diff(v))], np.r_[abs(np.diff(v)), np.inf]) if len(v) > 1 else np.zeros(1)
+            px, py = pitch(x), pitch(y)
         else:
-            x, y = c[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
-            px, py = abs(c[i, j + 1, 0] - c[i, j, 0]), abs(c[i + 1, j, 1] - c[i, j, 1])
+            x = (c[i, :-1, 0] + c[i, 1:, 0] + c[i + 1, :-1, 0] + c[i + 1, 1:, 0]) / 4
+            y = (c[:-1, j, 1] + c[1:, j, 1] + c[:-1, j + 1, 1] + c[1:, j + 1, 1]) / 4
+            px, py = abs(np.diff(c[i, :, 0])), abs(np.diff(c[:, j, 1]))
     else:
         l, r, b, t = a.get_extent(); n, m = z.shape
-        x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
-        px, py = abs(r - l) / m, abs(t - b) / n
-    def tick(axis, v, pitch):
-        labels = [summary_text(lab.get_text()) for lab in axis.get_ticklabels()]
-        d, s = min(zip(abs(axis.get_ticklocs() - v), labels), default=(np.inf, ""))
-        return s if d <= pitch / 2 and s.strip() and labels.count(s) == 1 else _fmt(axis, v)
-    return tick(ax.yaxis, y, py), tick(ax.xaxis, x, px)
+        x = l + (np.arange(m) + .5) * (r - l) / m
+        y = t + (np.arange(n) + .5) * (b - t) / n if a.origin == "upper" else b + (np.arange(n) + .5) * (t - b) / n
+        px, py = np.full(m, abs(r - l) / m), np.full(n, abs(t - b) / n)
+    def tick(axis, values, pitches, index):
+        ticks = axis.get_ticklocs()
+        labels = _aliases(ticks, [summary_text(lab.get_text()) for lab in axis.get_ticklabels()])
+        coordinates, completed = _coordinates(values), []
+        for v, pitch, coordinate in zip(values, pitches, coordinates):
+            d, s = min(zip(abs(ticks - v), labels), default=(np.inf, ""))
+            completed.append(s if d <= pitch / 2 else _fmt(axis, v, coordinate=coordinate))
+        aliases = _aliases(values, completed, coordinates)
+        return aliases[index] or coordinates[index]
+    return tick(ax.yaxis, y, py, i), tick(ax.xaxis, x, px, j)
 
 
 def describe(fig, meta):

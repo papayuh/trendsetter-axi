@@ -957,6 +957,103 @@ def test_heatmap_aliases_are_validated_after_hygiene(close, labels, kind, size, 
     assert np.array_equal(ax.images[0].get_array() if kind == "image" else ax.collections[0].get_array(), z)
 
 
+@pytest.mark.parametrize("positions, labels, expected", [([0, 1], ["\x00", "0"], ["0", "1"]),
+                                                         ([0, 1, 2], ["\x00", "0", "1"], ["0", "1", "2"]),
+                                                         ([10**9, 10**9 + 1], ["A\nB", "A / B"], ["1000000000", "1000000001"]),
+                                                         ([0, 1], ["1", "0"], ["1", "0"])])
+@pytest.mark.parametrize("source", ["category", "fixed", "function"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_final_position_identities_include_numeric_fallbacks(close, positions, labels, expected, source, axis, inverted):
+    from matplotlib.ticker import FixedFormatter
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    values = np.arange(3, 3 + len(labels))
+    if axis == "x": ax.bar(labels if source == "category" else positions, values)
+    else: ax.barh(labels if source == "category" else positions, values)
+    if source == "category" and positions[0] == 10**9: expected = ["0", "1"]
+    if source != "category":
+        getattr(ax, "set_" + axis + "ticks")(positions, labels)
+        if source == "fixed": getattr(ax, axis + "axis").set_major_formatter(FixedFormatter(labels))
+    if inverted: getattr(ax, "invert_" + axis + "axis")()
+    result = tsa.render(fig, 60)
+    assert result.series[0]["values"] == [f"{p}={v}" for p, v in zip(expected, values)]
+    assert len({p.split("=")[0] for p in result.series[0]["values"]}) == len(values)
+    assert np.array_equal([b.get_height() if axis == "x" else b.get_width() for b in ax.containers[0]], values)
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_rejected_tick_aliases_keep_unsnapped_coordinates_distinct(close, axis):
+    positions = [10**9 + .1234, 10**9 + .1235]
+    def build(ax):
+        ax.bar(positions, [3, 4]) if axis == "x" else ax.barh(positions, [3, 4])
+        getattr(ax, "set_" + axis + "ticks")([10**9, 10**9 + 1], ["A\nB", "A / B"])
+    values = bar_values(build)
+    assert values == [f"{v}={value}" for v, value in zip(positions, [3, 4])]
+    assert len({v.split("=")[0] for v in values}) == 2
+
+
+@pytest.mark.parametrize("labels", [["\x00", "0"], ["\x00", "0", "1"]])
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_categorical_fallback_collisions_do_not_share_summary_rows(close, labels, axis):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    for label, value in zip(labels, range(3, 3 + len(labels))):
+        ax.plot([label], [value]) if axis == "x" else ax.plot([value], [label])
+    result = tsa.render(fig, 60)
+    assert [s["at" if axis == "x" else "ys"] for s in result.series] == [[str(i)] for i in range(len(labels))]
+    for i, series in enumerate(result.series):
+        assert np.array_equal(series["points"], [[i, i + 3]] if axis == "x" else [[i + 3, i]])
+    if axis == "x": assert result.summary().count("lines at x:") == len(labels)
+
+
+@pytest.mark.parametrize("mode", ["numeric_alias", "duplicate_alias"])
+@pytest.mark.parametrize("offset", [0, 10**9])
+@pytest.mark.parametrize("kind", ["image", "flat", "gouraud"])
+@pytest.mark.parametrize("size", [2, 7])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_heatmap_completed_identities_are_distinct(close, mode, offset, kind, size, axis, inverted):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    z = np.arange(size * size).reshape(size, size)
+    edges = np.arange(size + (kind == "flat")) + offset
+    if kind == "image": ax.imshow(z, extent=[offset - .5, offset + size - .5] * 2, origin="lower")
+    else: ax.pcolormesh(edges, edges, z, shading=kind)
+    positions = np.arange(size) + offset + (0.5 if kind == "flat" else 0)
+    expected = [str(int(v)) if v == int(v) else str(v) for v in positions]
+    labels = ["\x00", expected[0]] if mode == "numeric_alias" else ["A\nB", "A / B"]
+    labels += ["\x00"] * (size - 2)
+    cols, rows = [f"c{i}" for i in range(size)], [f"r{i}" for i in range(size)]
+    ax.set_xticks(positions, labels if axis == "x" else cols)
+    ax.set_yticks(positions, labels if axis == "y" else rows)
+    if axis == "x": cols = expected
+    else: rows = expected
+    if inverted:
+        ax.invert_xaxis(); ax.invert_yaxis()
+    result = tsa.render(fig, 60)
+    heat = next(s for s in result.series if s["kind"] == "heatmap")
+    assert heat["values"] == [f"min {rows[0]}/{cols[0]}=0", f"max {rows[-1]}/{cols[-1]}={size * size - 1}"]
+    if size == 2:
+        assert heat["cols"] == " ".join(cols)
+        assert heat["grid"] == [f"{r}: {2 * i} {2 * i + 1}" for i, r in enumerate(rows)]
+    else:
+        assert heat["row_means"] == " ".join(f"{r}={size * i + 3}" for i, r in enumerate(rows))
+        assert heat["col_means"] == " ".join(f"{c}={21 + i}" for i, c in enumerate(cols))
+    assert np.array_equal(ax.images[0].get_array() if kind == "image" else ax.collections[0].get_array(), z)
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_heatmap_aliases_are_checked_against_cell_centres(close, axis):
+    def build(ax):
+        ax.imshow([[1, 2], [3, 4]], origin="lower")
+        ax.set_xticks([0.1, 1.1] if axis == "x" else [0, 1], ["\x00", "0"] if axis == "x" else ["c0", "c1"])
+        ax.set_yticks([0.1, 1.1] if axis == "y" else [0, 1], ["\x00", "0"] if axis == "y" else ["r0", "r1"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    if axis == "x":
+        assert heat["cols"] == "0 1" and heat["values"] == ["min r0/0=1", "max r1/1=4"]
+    else:
+        assert heat["grid"] == ["0: 1 2", "1: 3 4"] and heat["values"] == ["min 0/c0=1", "max 1/c1=4"]
+
+
 def test_explicit_tick_labels_name_positions(close):
     def named(ax):
         ax.bar([0, 1, 2], [3, 4, 5], label="sales"); ax.set_xticks([0, 1, 2], ["north", "south", "east"])
