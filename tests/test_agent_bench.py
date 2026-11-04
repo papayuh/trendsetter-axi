@@ -77,6 +77,11 @@ def test_load_rejects_rows_whose_stimulus_changed(tmp_path, monkeypatch):
     (bench.MANIFESTS / "after.json").write_text(json.dumps({"c1": {"text": "aaaa"}}))
     assert bench.load(key, "after") == ({("c1", "text", "m"): row}, 0)
     assert bench.load(key, "nope") == ({}, 0)
+    # A missing hash is not evidence of matching a stimulus, even without a manifest entry.
+    row.pop("shown")
+    bench.RESULTS.write_text(json.dumps(row) + "\n")
+    (bench.MANIFESTS / "after.json").write_text("{}")
+    assert bench.load(key, "after") == ({}, 1)
 
 
 def test_stale_hash_seed_is_excluded(tmp_path, monkeypatch):
@@ -198,3 +203,17 @@ def test_full_lifecycle_with_fake_provider(tmp_path, monkeypatch):
     assert "2 incomplete charts" in report and "`hm_correlation` (hybrid)" in report
     assert f"`bar_fifteen` ({', '.join(arms)})" in report
     assert "questions on 1 charts" in report
+
+    # A whole missing arm must not disappear from the population or make charts complete.
+    bench.RESULTS.write_text("\n".join(l for l in lines if '"format": "hybrid"' not in l) + "\n")
+    bench.write_report("m")
+    report = bench.REPORT.read_text()
+    assert "3 incomplete charts" in report
+    assert all(f"`{c}` (hybrid)" in report for c in charts)
+
+    # Exclusions remain visible even when no complete chart survives grading.
+    bench.RESULTS.write_text("\n".join(json.dumps(dict(json.loads(l), shown="stale")) for l in lines) + "\n")
+    bench.write_report("m")
+    report = bench.REPORT.read_text()
+    assert f"{len(lines)} rows excluded: stimulus changed since the manifest" in report
+    assert "3 incomplete charts" in report
