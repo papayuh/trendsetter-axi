@@ -609,36 +609,65 @@ def _coordinates(values):
     return labels if len(set(zip(labels, values))) == len(set(labels)) else [_coordinate(v) for v in values]
 
 
-def _aliases(values, labels, coordinates=None):
-    if coordinates is None: coordinates = [_coordinate(v) for v in values]
+def _unique_labels(labels):
+    labels = [summary_text(str(s)) for s in labels]
     counts = Counter(labels)
-    aliases = [s if s.strip() and counts[s] == 1 else "" for s in labels]
-    completed = [s or coordinate for s, coordinate in zip(aliases, coordinates)]
-    return aliases if len(set(zip(completed, values))) == len(set(completed)) else [""] * len(aliases)
+    return [s if s.strip() and counts[s] == 1 else "" for s in labels]
 
 
-def _fmt(axis, v, date=None, coordinate=None):
-    """A data value as the axis means it: a date (in strftime format `date`, else to the minute on a short view), a category name, the explicit tick label at v, else 4 significant digits."""
-    fallback = _coordinate(v) if coordinate is None else coordinate
-    if isinstance(axis.units, UnitData):
-        values = list(axis.units._mapping.values())
-        labels = _aliases(values, [summary_text(str(k)) for k in axis.units._mapping])
-        names = dict(zip(values, labels))
-        if np.isclose(v, round(v)) and round(v) in names:
-            return names[round(v)] or fallback
-    lo, hi = axis.get_view_interval()
-    if "Date" in type(axis.get_converter()).__name__:
-        d = mdates.num2date(v, tz=axis.units)   # the axis timezone, as its ticks show it
-        date = date or ("%Y-%m-%d" if (d.hour, d.minute) == (0, 0) or abs(hi - lo) > 3 else "%Y-%m-%d %H:%M")   # time of day only on a short view
-        return d.strftime(date).rstrip("0").rstrip(".") if date.endswith("%f") else d.strftime(date)
+def _aliases(values, labels, coordinates):
+    owners, users = {}, {}
+    for v, s in zip(values, labels): owners.setdefault(s, set()).add(v)
+    aliases = [s if s.strip() and len(owners[s]) == 1 else "" for s in labels]
+    for i, s in enumerate(aliases):
+        if s: users.setdefault(s, []).append(i)
+    pending = [(coordinate, v) for v, s, coordinate in zip(values, aliases, coordinates) if not s]
+    while pending:
+        coordinate, v = pending.pop()
+        for i in users.pop(coordinate, ()):
+            if values[i] != v:
+                aliases[i] = ""
+                pending.append((coordinates[i], values[i]))
+    return aliases
+
+
+def _named(axis):
     loc, lab = axis.get_major_locator(), axis.get_major_formatter()
-    if isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter):   # explicit labels, not numeric formatters (offsets, unicode minus)
-        ticks = axis.get_ticklocs(); labels = _aliases(ticks, [summary_text(s) for s in lab.format_ticks(ticks)])
+    return isinstance(axis.units, UnitData) or isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter)
+
+
+def _nearest(ticks, values, labels=None):
+    order = np.argsort(ticks, kind="stable")
+    at = np.searchsorted(ticks[order], values)
+    left, right = order[np.maximum(0, at - 1)], order[np.minimum(len(order) - 1, at)]
+    dl, dr = abs(ticks[left] - values), abs(ticks[right] - values)
+    tie = left <= right if labels is None else np.asarray(labels, object)[left] <= np.asarray(labels, object)[right]
+    return np.where((dl < dr) | ((dl == dr) & tie), left, right)
+
+
+def _formatter(axis, values, date=None, coordinates=None):
+    if "Date" in type(axis.get_converter()).__name__:
+        lo, hi = axis.get_view_interval()
+        def formatted(v):
+            d = mdates.num2date(v, tz=axis.units)
+            fmt = date or ("%Y-%m-%d" if (d.hour, d.minute) == (0, 0) or abs(hi - lo) > 3 else "%Y-%m-%d %H:%M")
+            return d.strftime(fmt).rstrip("0").rstrip(".") if fmt.endswith("%f") else d.strftime(fmt)
+        return formatted
+    if not _named(axis):
+        return (lambda v: f"{v:.4g}") if coordinates is None else dict(zip(values, coordinates)).__getitem__
+    if coordinates is None: coordinates = [_coordinate(v) for v in values]
+    if isinstance(axis.units, UnitData):
+        names = dict(zip(axis.units._mapping.values(), _unique_labels(axis.units._mapping)))
+        labels = [names.get(round(v), "") if np.isclose(v, round(v)) else "" for v in values]
+    else:
+        ticks = axis.get_ticklocs()
+        candidates = _unique_labels(axis.get_major_formatter().format_ticks(ticks))
         if len(ticks):
-            i = np.abs(ticks - v).argmin(); t, s = ticks[i], labels[i]
-            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s: return s
-        return fallback
-    return f"{v:.4g}" if coordinate is None else coordinate
+            indices = _nearest(ticks, np.asarray(values))
+            labels = [candidates[i] if abs(ticks[i] - v) <= 1e-9 * max(abs(v), abs(ticks[i])) else "" for v, i in zip(values, indices)]
+        else: labels = [""] * len(values)
+    aliases = _aliases(values, labels, coordinates)
+    return dict(zip(values, [s or coordinate for s, coordinate in zip(aliases, coordinates)])).__getitem__
 
 
 def _datefmt(axis, v):
@@ -652,12 +681,12 @@ def _datefmt(axis, v):
     return next((f for f in fs if len({x.strftime(f) for x in d}) == len(d)), fs[-1] + " %z")
 
 
-def _compact(axis, lo, hi, v=None):
+def _compact(axis, lo, hi, v=None, fmt=None):
     """Data values on one axis (None: a colour scale), on a step near 1/60 of the smaller of the view span lo..hi and the span of the series' values v
     (4 significant digits for a constant series, 3 on a log axis): within ~2.5% of the span, few tokens."""
-    if axis is not None and (isinstance(axis.units, UnitData) or "Date" in type(axis.get_converter()).__name__):
-        date = _datefmt(axis, v) if v is not None else None
-        return lambda x: _fmt(axis, x, date)
+    if axis is not None and isinstance(axis.units, UnitData): return fmt
+    if axis is not None and "Date" in type(axis.get_converter()).__name__:
+        return _formatter(axis, (), _datefmt(axis, v) if v is not None else None)
     if axis is not None and axis.get_scale() == "log":
         return lambda v: (s if "e" not in (s := f"{v:.3g}") or abs(v) >= 1e15 or abs(v) < 1e-3 else f"{float(s):.0f}" if abs(v) >= 1 else s)
     span = abs(hi - lo) or abs(hi) or 1
@@ -688,7 +717,9 @@ def _scale(ax, k):
     kind = "category" if isinstance(axis.units, UnitData) else "date" if "Date" in type(axis.get_converter()).__name__ else axis.get_scale()
     d = dict(label=clean_text(axis.label.get_text()), scale=kind)
     if kind == "category": d["categories"] = len(axis.units._mapping)
-    else: d["range"] = "..".join(_fmt(axis, v) for v in getattr(ax, f"get_{k}lim")())
+    else:
+        values = getattr(ax, f"get_{k}lim")()
+        d["range"] = "..".join(map(_formatter(axis, values), values))
     return d
 
 
@@ -720,35 +751,57 @@ def _points(a, bars):
     return tr.transform(xy) if len(xy) else xy
 
 
-def _heat_at(ax, a, z, k):
-    """(row, column) labels of flat heat cell k, falling back to axis formatting.
-    Gouraud values belong to vertices; other meshes and images use cell centres."""
-    i, j = divmod(int(k), z.shape[1])
+def _positions(ax, errorbars, data, handled):
+    positions = [[], []]
+    def add(xy, mean=False):
+        if len(xy):
+            centre = xy.mean(0) if mean else None
+            for k in range(2): positions[k].append(np.append(xy[:, k], centre[k]) if mean else xy[:, k])
+    for a in ax.lines:
+        if a.get_visible() and id(a) not in handled: add(data(a.get_transform(), _valid(a.get_xydata())[0]))
+    for a in ax.collections:
+        if not a.get_visible(): continue
+        if isinstance(a, PathCollection): add(data(a.get_offset_transform(), _valid(a.get_offsets())[0]), mean=True)
+        elif isinstance(a, PolyCollection) and a.get_paths(): add(data(a.get_transform(), _valid(np.concatenate([p.vertices for p in a.get_paths()]))[0]))
+    for c in ax.containers:
+        if isinstance(c, BarContainer):
+            h = c.orientation == "horizontal"
+            add(np.array([[b.get_width(), b.get_y() + b.get_height() / 2] if h else [b.get_x() + b.get_width() / 2, b.get_height()] for b in c if b.get_visible()]).reshape(-1, 2))
+    for _, _, raw, _ in errorbars: add(_valid(raw)[0])
+    return [np.unique(np.concatenate(p)) if p else np.array([]) for p in positions]
+
+
+def _heat_labels(ax, a, z, points, dimension):
+    i, j = np.asarray(points).T
+    component = 1 - dimension
     if isinstance(a, QuadMesh):
         c = a.get_coordinates()
         if c.shape[:2] == z.shape:
-            x, y = c[i, :, 0], c[:, j, 1]
-            pitch = lambda v: np.minimum(np.r_[np.inf, abs(np.diff(v))], np.r_[abs(np.diff(v)), np.inf]) if len(v) > 1 else np.zeros(1)
-            px, py = pitch(x), pitch(y)
+            values = c[i, j, component]
+            along, size = (j, z.shape[1]) if dimension else (i, z.shape[0])
+            before, after = np.maximum(0, along - 1), np.minimum(size - 1, along + 1)
+            left = c[i, before, component] if dimension else c[before, j, component]
+            right = c[i, after, component] if dimension else c[after, j, component]
+            pitches = np.minimum(np.where(along > 0, abs(values - left), np.inf), np.where(along + 1 < size, abs(right - values), np.inf)) if size > 1 else np.zeros(len(points))
         else:
-            x = (c[i, :-1, 0] + c[i, 1:, 0] + c[i + 1, :-1, 0] + c[i + 1, 1:, 0]) / 4
-            y = (c[:-1, j, 1] + c[1:, j, 1] + c[:-1, j + 1, 1] + c[1:, j + 1, 1]) / 4
-            px, py = abs(np.diff(c[i, :, 0])), abs(np.diff(c[:, j, 1]))
+            values = (c[i, j, component] + c[i, j + 1, component] + c[i + 1, j, component] + c[i + 1, j + 1, component]) / 4
+            pitches = abs(c[i, j + 1, 0] - c[i, j, 0]) if dimension else abs(c[i + 1, j, 1] - c[i, j, 1])
     else:
         l, r, b, t = a.get_extent(); n, m = z.shape
-        x = l + (np.arange(m) + .5) * (r - l) / m
-        y = t + (np.arange(n) + .5) * (b - t) / n if a.origin == "upper" else b + (np.arange(n) + .5) * (t - b) / n
-        px, py = np.full(m, abs(r - l) / m), np.full(n, abs(t - b) / n)
-    def tick(axis, values, pitches, index):
-        ticks = axis.get_ticklocs()
-        labels = _aliases(ticks, [summary_text(lab.get_text()) for lab in axis.get_ticklabels()])
-        coordinates, completed = _coordinates(values), []
-        for v, pitch, coordinate in zip(values, pitches, coordinates):
-            d, s = min(zip(abs(ticks - v), labels), default=(np.inf, ""))
-            completed.append(s if d <= pitch / 2 else _fmt(axis, v, coordinate=coordinate))
-        aliases = _aliases(values, completed, coordinates)
-        return aliases[index] or coordinates[index]
-    return tick(ax.yaxis, y, py, i), tick(ax.xaxis, x, px, j)
+        start, stop, indices, size = (l, r, j, m) if dimension else (t, b, i, n) if a.origin == "upper" else (b, t, i, n)
+        values = start + (indices + .5) * (stop - start) / size
+        pitches = np.full(len(points), abs(stop - start) / size)
+    axis = ax.xaxis if dimension else ax.yaxis
+    coordinates = _coordinates(values)
+    fallback = _formatter(axis, values, coordinates=coordinates)
+    ticks = axis.get_ticklocs()
+    candidates = _unique_labels(lab.get_text() for lab in axis.get_ticklabels())
+    if len(ticks):
+        nearest = _nearest(ticks, values, candidates)
+        completed = [candidates[k] if abs(ticks[k] - v) <= pitch / 2 else fallback(v) for v, pitch, k in zip(values, pitches, nearest)]
+    else: completed = [fallback(v) for v in values]
+    aliases = _aliases(values, completed, coordinates)
+    return [s or coordinate for s, coordinate in zip(aliases, coordinates)]
 
 
 def describe(fig, meta):
@@ -760,7 +813,6 @@ def describe(fig, meta):
     hidden = sum(not ax.get_visible() for ax in fig.axes if not hasattr(ax, "_colorbar"))   # hidden axes and artists: not drawn, so not described
     for j, ax in enumerate(_data_axes(fig)):
         scales.append(dict(axes=j, title=clean_text(ax.get_title()), x=_scale(ax, "x"), y=_scale(ax, "y")))
-        fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
         data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
         errorbars = []
@@ -814,6 +866,9 @@ def describe(fig, meta):
                     errors[k + 'err'] = bounds
                 errorbars.append((a, c, xy, errors))
                 continue
+        domains = _positions(ax, errorbars, data, handled) if any(_named(axis) for axis in (ax.xaxis, ax.yaxis)) else ((), ())
+        fx, fy = (_formatter(axis, values) for axis, values in zip((ax.xaxis, ax.yaxis), domains))
+        for c in ax.containers:
             if not isinstance(c, BarContainer) or not len(c): continue
             handled.update(id(b) for b in c)
             bs = [b for b in c if b.get_visible()]; hidden += len(c) - len(bs)
@@ -824,13 +879,13 @@ def describe(fig, meta):
             wid = np.array([b.get_height() if h else b.get_width() for b in bs], float); edge = np.array([b.get_y() if h else b.get_x() for b in bs], float)
             hist = len(bs) > 6 and np.allclose(wid, wid[0]) and np.allclose(np.diff(edge), wid[0]) and not isinstance((ax.yaxis if h else ax.xaxis).units, UnitData)
             if hist:   # equal-width, edge-to-edge bars: one header and heights, with no statistical claim
-                fe, fc = _compact(ax.yaxis if h else ax.xaxis, edge[0], edge[-1] + wid[0]), _compact(ax.xaxis if h else ax.yaxis, 0, np.nanmax(val))
+                fe, fc = _compact(ax.yaxis if h else ax.xaxis, edge[0], edge[-1] + wid[0], fmt=fp), _compact(ax.xaxis if h else ax.yaxis, 0, np.nanmax(val), fmt=fv)
                 k = int(np.nanargmax(val))
                 series.append(dict(name=_name(c, {}), kind="histogram", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs),
                                    bins=f"{len(bs)} bins of {fe(wid[0])} from {fe(edge[0])} to {fe(edge[-1] + wid[0])}",
                                    peak=f"{fe(edge[k])}-{fe(edge[k] + wid[0])}={fc(val[k])}", values=[fc(v) for v in val]))
                 continue
-            fv = _compact(ax.xaxis if h else ax.yaxis, min(0, np.nanmin(val)), np.nanmax(val)) if len(val) and np.isfinite(val).any() else fv
+            fv = _compact(ax.xaxis if h else ax.yaxis, min(0, np.nanmin(val)), np.nanmax(val), fmt=fv) if len(val) and np.isfinite(val).any() else fv
             pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
             if len(pairs) > 40: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
             series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs), values=pairs))
@@ -845,7 +900,7 @@ def describe(fig, meta):
             if not len(xy):   # no data at all (a legend proxy): nothing to say; all of it missing: say so
                 if miss: series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=0, missing=miss, points=xy, values=[], **{k: [] for k in errors}))
                 continue
-            cx, cy = _compact(ax.xaxis, *ax.get_xlim(), xy[:, 0]), _compact(ax.yaxis, *ax.get_ylim(), xy[:, 1])
+            cx, cy = _compact(ax.xaxis, *ax.get_xlim(), xy[:, 0], fmt=fx), _compact(ax.yaxis, *ax.get_ylim(), xy[:, 1], fmt=fy)
             dx, dy = _datefmt(ax.xaxis, xy[:, 0]), _datefmt(ax.yaxis, xy[:, 1])
             sampled = len(xy) > 16
             indices = _samples(xy[:, 0], np.arange(len(xy)))[1].astype(int) if sampled else np.arange(len(xy))
@@ -857,7 +912,8 @@ def describe(fig, meta):
                 bounds[k] = [('?' if not np.isfinite(v).all() else f'{v[0]:.4g}' if np.isclose(*v, rtol=1e-10, atol=0) else f'-{v[0]:.4g}/+{v[1]:.4g}') for v in values[eligible][indices]]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
-            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(lambda v: _fmt(ax.xaxis, v, dx), xy[:, 0]), y=rng(lambda v: _fmt(ax.yaxis, v, dy), xy[:, 1]),
+            rx, ry = (_formatter(axis, (), date) if date else fmt for axis, date, fmt in zip((ax.xaxis, ax.yaxis), (dx, dy), (fx, fy)))
+            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(rx, xy[:, 0]), y=rng(ry, xy[:, 1]),
                                at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext, **bounds,
                                **({'drawstyle': a.get_drawstyle()} if a is not None and a.get_drawstyle() != 'default' else {})))
         for a in ax.collections:
@@ -869,7 +925,7 @@ def describe(fig, meta):
                 xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
                 mean = xy.mean(0) if len(xy) else None
                 displayed = [np.append(xy[:, k], mean[k]) if len(xy) and "Date" in type(axis.get_converter()).__name__ else xy[:, k] for k, axis in enumerate((ax.xaxis, ax.yaxis))]
-                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[0]), _compact(ax.yaxis, *ax.get_ylim(), displayed[1])
+                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[0], fmt=fx), _compact(ax.yaxis, *ax.get_ylim(), displayed[1], fmt=fy)
                 out = _outliers(xy) if len(xy) else []
                 rest = np.delete(xy, out, 0)
                 stats = dict(mean=f"{cx(mean[0])},{cy(mean[1])}") if len(xy) else {}
@@ -891,16 +947,18 @@ def describe(fig, meta):
             cb = getattr(a, "colorbar", None)
             label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
             cz = _compact(None, float(z.min()), float(z.max())) if z.count() else None
-            v = [f"min {'/'.join(_heat_at(ax, a, z, z.argmin()))}={cz(z.min())}", f"max {'/'.join(_heat_at(ax, a, z, z.argmax()))}={cz(z.max())}"] if z.count() else []
-            cells = {}
-            if z.count():   # small grids in full, else the mean of every row and column (when there are few enough)
-                rl = [_heat_at(ax, a, z, i * z.shape[1])[0] for i in range(z.shape[0])]
-                cl = [_heat_at(ax, a, z, k)[1] for k in range(z.shape[1])]
-                fmt = lambda row: " ".join("." if m else cz(x) for x, m in zip(row.data, np.ma.getmaskarray(row)))  # noqa: E731
-                if z.size <= 36: cells = dict(cols=" ".join(cl), grid=[f"{r}: {fmt(z[i])}" for i, r in enumerate(rl)])
+            v, cells = [], {}
+            if z.count():
+                extrema = [tuple(np.unravel_index(k, z.shape)) for k in (z.argmin(), z.argmax())]
+                row_points = extrema + ([(i, 0) for i in range(z.shape[0])] if z.size <= 36 or z.shape[0] <= 12 else [])
+                col_points = extrema + ([(0, k) for k in range(z.shape[1])] if z.size <= 36 or z.shape[1] <= 12 else [])
+                rl, cl = _heat_labels(ax, a, z, row_points, 0), _heat_labels(ax, a, z, col_points, 1)
+                v = [f"min {rl[0]}/{cl[0]}={cz(z.min())}", f"max {rl[1]}/{cl[1]}={cz(z.max())}"]
+                fmt = lambda row: " ".join("." if m else cz(x) for x, m in zip(row.data, np.ma.getmaskarray(row)))
+                if z.size <= 36: cells = dict(cols=" ".join(cl[2:]), grid=[f"{r}: {fmt(z[i])}" for i, r in enumerate(rl[2:])])
                 else:
-                    if z.shape[0] <= 12: cells["row_means"] = " ".join(f"{r}={cz(m)}" for r, m in zip(rl, z.mean(1)))
-                    if z.shape[1] <= 12: cells["col_means"] = " ".join(f"{k}={cz(m)}" for k, m in zip(cl, z.mean(0)))
+                    if z.shape[0] <= 12: cells["row_means"] = " ".join(f"{r}={cz(m)}" for r, m in zip(rl[2:], z.mean(1)))
+                    if z.shape[1] <= 12: cells["col_means"] = " ".join(f"{k}={cz(m)}" for k, m in zip(cl[2:], z.mean(0)))
             series.append(dict(name=label or _name(a, {}), kind="heatmap", axes=j, key=None, color=None, n=int(z.count()), shape=f"{z.shape[0]}x{z.shape[1]}",
                                missing=int(z.mask.sum()) if np.ma.is_masked(z) else 0, values=v, **cells))
         for a in [*ax.lines, *ax.collections, *ax.patches, *ax.images, *(a for c in ax.containers for a in c.get_children())]:

@@ -1054,6 +1054,142 @@ def test_heatmap_aliases_are_checked_against_cell_centres(close, axis):
         assert heat["grid"] == ["0: 1 2", "1: 3 4"] and heat["values"] == ["min 0/c0=1", "max 1/c1=4"]
 
 
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("formatter", ["fixed", "function"])
+@pytest.mark.parametrize("kind", ["bar", "line", "errorbar", "errorbar_only", "area"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_actual_projection_coordinates_reject_colliding_aliases(close, axis, formatter, kind, inverted):
+    from matplotlib.ticker import FixedFormatter
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    x, y = ([0.5, 1], [3, 4]) if axis == "x" else ([3, 4], [0.5, 1])
+    if kind == "bar":
+        ax.bar(x, y) if axis == "x" else ax.barh(y, x)
+    elif kind == "line": ax.plot(x, y)
+    elif kind.startswith("errorbar"):
+        ax.errorbar(x, y, fmt="none" if kind == "errorbar_only" else "-", **{("yerr" if axis == "x" else "xerr"): 0.1})
+    elif axis == "x": ax.fill_between(x, y)
+    else: ax.fill_betweenx(y, x)
+    labels = ["unused", "0\x00.5"]
+    getattr(ax, "set_" + axis + "ticks")([0, 1], labels)
+    if formatter == "fixed": getattr(ax, axis + "axis").set_major_formatter(FixedFormatter(labels))
+    if inverted: getattr(ax, "invert_" + axis + "axis")()
+    result = tsa.render(fig, 60)
+    series = result.series[0]
+    if kind == "bar": assert series["values"] == ["0.5=3", "1=4"]
+    else: assert series[axis] == "0.5..1"
+    if "points" in series: assert np.array_equal(series["points"], np.column_stack([x, y]))
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_distinct_series_use_complete_axis_coordinates(close, axis):
+    def build(ax):
+        for p, v in [(0.5, 3), (1, 4)]:
+            ax.plot([p], [v]) if axis == "x" else ax.plot([v], [p])
+        getattr(ax, "set_" + axis + "ticks")([0, 1], ["unused", "0\x00.5"])
+    result = tsa.render(figure(build), 60)
+    assert [s[axis] for s in result.series] == ["0.5..0.5", "1..1"]
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_scale_ranges_validate_actual_endpoints(close, axis, inverted):
+    def build(ax):
+        ax.plot([0.5, 1], [0.5, 1])
+        getattr(ax, "set_" + axis + "ticks")([0, 1], ["unused", "0\x00.5"])
+        getattr(ax, "set_" + axis + "lim")((1, 0.5) if inverted else (0.5, 1))
+    result = tsa.render(figure(build), 60)
+    assert result.scales[0][axis]["range"] == ("1..0.5" if inverted else "0.5..1")
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_categorical_scatter_mean_participates_in_identity_validation(close, axis):
+    labels = ["A", "0\x00.5"]
+    x, y = (labels, [3, 4]) if axis == "x" else ([3, 4], labels)
+    result = tsa.render(figure(lambda ax: ax.scatter(x, y)), 60)
+    series = result.series[0]
+    assert series[axis] == "A..1"
+    assert series["mean"].split(",")["xy".index(axis)] == "0.5"
+    assert np.array_equal(series["points"], [[0, 3], [1, 4]] if axis == "x" else [[3, 0], [4, 1]])
+
+
+@pytest.mark.parametrize("labels, expected", [(["\x00", "0", "C"], ["0", "1", "C"]),
+                                             (["\x00", "0", "3", "2", "C"], ["0", "1", "3", "2", "C"])])
+@pytest.mark.parametrize("source", ["category", "fixed", "function"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_collision_fallback_preserves_unrelated_aliases(close, labels, expected, source, axis, inverted):
+    from matplotlib.ticker import FixedFormatter
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    positions = labels if source == "category" else list(range(len(labels)))
+    values = list(range(3, 3 + len(labels)))
+    ax.bar(positions, values, label="quoted\nseries") if axis == "x" else ax.barh(positions, values, label="quoted\nseries")
+    if source != "category":
+        getattr(ax, "set_" + axis + "ticks")(positions, labels)
+        if source == "fixed": getattr(ax, axis + "axis").set_major_formatter(FixedFormatter(labels))
+    if inverted: getattr(ax, "invert_" + axis + "axis")()
+    result = tsa.render(fig, 60)
+    assert result.series[0]["values"] == [f"{p}={v}" for p, v in zip(expected, values)]
+    assert repr("quoted\nseries") in result.summary()
+
+
+@pytest.mark.parametrize("kind", ["image", "flat", "gouraud"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("size", [3, 7])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_heatmap_collision_fallback_preserves_unrelated_aliases(close, kind, axis, size, inverted):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    z = np.arange(size * size).reshape(size, size)
+    if kind == "image": ax.imshow(z)
+    else: ax.pcolormesh(z, shading=kind)
+    positions = np.arange(size) + (0.5 if kind == "flat" else 0)
+    labels = ["\x00", str(positions[0]), "C", *[f"p{i}" for i in range(3, size)]]
+    expected = [f"{v:g}" for v in positions[:2]] + labels[2:]
+    ax.set_xticks(positions, labels if axis == "x" else [f"c{i}" for i in range(size)])
+    ax.set_yticks(positions, labels if axis == "y" else [f"r{i}" for i in range(size)])
+    if inverted:
+        ax.invert_xaxis(); ax.invert_yaxis()
+    result = tsa.render(fig, 60)
+    heat = next(s for s in result.series if s["kind"] == "heatmap")
+    if size == 3:
+        if axis == "x": assert heat["cols"] == " ".join(expected)
+        else: assert heat["grid"] == [f"{r}: {3 * i} {3 * i + 1} {3 * i + 2}" for i, r in enumerate(expected)]
+    else:
+        field = "col_means" if axis == "x" else "row_means"
+        assert heat[field] == " ".join(f"{label}={21 + i if axis == 'x' else 7 * i + 3}" for i, label in enumerate(expected))
+
+
+@pytest.mark.parametrize("kind", ["image", "flat", "gouraud"])
+@pytest.mark.parametrize("shape", [(1, 10000), (10000, 1)])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_heatmap_description_formats_only_requested_coordinates(close, monkeypatch, kind, shape, inverted):
+    from trendsetter_axi import mpl
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    z = np.arange(np.prod(shape)).reshape(shape)
+    if kind == "image": ax.imshow(z)
+    else: ax.pcolormesh(z, shading=kind)
+    if inverted:
+        ax.invert_xaxis(); ax.invert_yaxis()
+    original = mpl._coordinates
+    visited = 0
+    def bounded(values):
+        nonlocal visited
+        visited += len(values)
+        assert visited <= 32
+        return original(values)
+    monkeypatch.setattr(mpl, "_coordinates", bounded)
+    series, _ = mpl.describe(fig, {"series": []})
+    heat = next(s for s in series if s["kind"] == "heatmap")
+    assert 0 < visited <= 32
+    assert heat["shape"] == f"{shape[0]}x{shape[1]}" and heat["n"] == 10000
+    assert len(heat["values"]) == 2 and heat["values"][0].endswith("=0") and heat["values"][1].endswith("=9999")
+    assert ("row_means" in heat) == (shape[0] == 1)
+    assert ("col_means" in heat) == (shape[1] == 1)
+    assert "cols" not in heat and "grid" not in heat
+
+
 def test_explicit_tick_labels_name_positions(close):
     def named(ax):
         ax.bar([0, 1, 2], [3, 4, 5], label="sales"); ax.set_xticks([0, 1, 2], ["north", "south", "east"])
