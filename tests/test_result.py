@@ -954,9 +954,15 @@ def test_heatmap_extrema_selected_before_clipped_normalisation(close, kind, inve
     r = tsa.render(fig, 40, rows=12)
     lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
     extreme = "max" if value > 0 else "min"
-    assert len(lost) == 1 and f"heatmap {extreme} (50, 50)={value}" in lost[0]["what"], r.losses
-    with pytest.raises(tsa.RenderLossError, match="lost_extreme"):
+    # Axis snapping can sample the spike depending on the Matplotlib version.
+    # The emitted heat level, not a fixed source position, determines whether it was lost.
+    if core.HEAT[-1 if value > 0 else 0] in r.text:
+        assert not lost, r.losses
         tsa.render(fig, 40, rows=12, strict=True)
+    else:
+        assert len(lost) == 1 and f"heatmap {extreme} (50, 50)={value}" in lost[0]["what"], r.losses
+        with pytest.raises(tsa.RenderLossError, match="lost_extreme"):
+            tsa.render(fig, 40, rows=12, strict=True)
 
 
 @pytest.mark.parametrize("shape", [(100, 1), (1, 100)])
