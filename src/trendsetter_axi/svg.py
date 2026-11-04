@@ -1,10 +1,11 @@
 """SVG -> core.Canvas. Handles plain SVG such as plotly, Vega/Altair or
 matplotlib (svg.fonttype=none) output."""
-import base64, io, re
+import base64, io, re, struct
 import xml.etree.ElementTree as ET
 import numpy as np
 from .core import Canvas, sup
 from .cells import width, wrap
+from .result import UNSUPPORTED
 
 NS = re.compile(r"\{.*?\}")
 NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, .5, 0), "blue": (0, 0, 1),
@@ -12,6 +13,12 @@ NAMED = {"black": (0, 0, 0), "white": (1, 1, 1), "red": (1, 0, 0), "green": (0, 
          "darkgray": (.66, .66, .66), "lightgray": (.83, .83, .83), "currentcolor": (0, 0, 0)}
 INHERIT = ("fill", "stroke", "fill-opacity", "stroke-opacity", "stroke-width", "stroke-dasharray",
            "font-size", "text-anchor", "visibility", "dominant-baseline")
+# Work budgets: elements visited per render (each <use> expansion counts again), nesting depth (also stops <use> cycles)
+# and pixels per embedded PNG. Past any of them render raises ValueError instead of running away.
+MAX_ELEMENTS = 100_000
+MAX_DEPTH = 256
+MAX_PIXELS = 16_000_000
+URL = re.compile(r"url\(\s*['\"]?#([^)'\"\s]+)")
 
 
 def color(v):
@@ -125,6 +132,7 @@ def styles(el, parent):
     for part in (el.get("style") or "").split(";"):
         if ":" in part:
             k, v = part.split(":", 1); st[k.strip()] = v.strip()
+    st["opacity"] = float(parent.get("opacity", 1)) * float(st.get("opacity", 1) or 1)   # a group's opacity multiplies into its children
     if "font" in st:  # matplotlib: "font: 10px 'DejaVu Sans'"
         m = re.search(r"([\d.]+)px", st["font"])
         if m: st["font-size"] = m.group(1)
@@ -147,24 +155,27 @@ ROLES = (("gridlayer", "grid"), ("minor-gridlayer", "grid"), ("role-axis-grid", 
 
 
 def shape_role(ids):
-    toks = " ".join(ids).split()
-    return next((r for p, r in ROLES if any(t.startswith(p) for t in toks)), None)
+    toks = " " + " ".join(" ".join(ids).split())   # " " + prefix found <=> some token starts with prefix
+    return next((r for p, r in ROLES if " " + p in toks), None)
 
 
 def render(svg, cols=80, ansi=False, shift=0):
     root = ET.fromstring(svg)
     vb = root.get("viewBox")
+    size = lambda k: float(re.sub(r"(px|pt|pc|mm|cm|in|%)$", "", (root.get(k) or "nan").strip()))
     if vb: x0, y0, W, H = (float(v) for v in re.split(r"[\s,]+", vb.strip()))
-    else: x0, y0, W, H = 0, 0, float(re.sub("[^0-9.]", "", root.get("width"))), float(re.sub("[^0-9.]", "", root.get("height")))
+    else: x0, y0, W, H = 0, 0, size("width"), size("height")
+    if not (np.isfinite(W) and np.isfinite(H) and W > 0 and H > 0):
+        raise ValueError(f"SVG size must be finite and positive, got {W} x {H}")
     # pt-sized root (matplotlib) vs viewBox: scale from user units to viewBox units
     cv = Canvas(W, H, cols)
     ids = {el.get("id"): el for el in root.iter() if el.get("id")}
     k = (cols - shift) / cols   # shift > 0: squeeze the drawing right by `shift` columns so left tick labels fit
     base = np.array([[k, 0, shift * cv.cw - x0 * k], [0, 1, -y0], [0, 0, 1]])
 
-    def clip_rect(el, M):
+    def clip_rect(st, M):
         """The pixel rect of an element's clip-path, False when the clip cannot be honoured (recorded in cv.meta), None when it has none."""
-        ref = re.search(r"url\(\s*['\"]?#([^)'\"\s]+)", el.get("clip-path") or (styles(el, {}).get("clip-path") or ""))
+        ref = URL.search(st.get("clip-path") or "")
         if not ref: return None
         cp = ids.get(ref.group(1))
         kids = [k for k in cp] if cp is not None else []
@@ -176,44 +187,65 @@ def render(svg, cols=80, ansi=False, shift=0):
         cv.meta.setdefault("unsupported", []).append("clip-path #" + ref.group(1))   # not one axis-aligned rect: drawn unclipped, and the output says so
         return False
 
-    def walk(el, M, st, classes, clip=None):
+    visited = 0
+
+    def walk(el, M, st, classes, clip=None, depth=0):
+        nonlocal visited
+        visited += 1
+        if visited > MAX_ELEMENTS: raise ValueError(f"SVG exceeds its work budget of {MAX_ELEMENTS:,} elements ({visited:,} visited, each <use> expansion counted)")
+        if depth > MAX_DEPTH: raise ValueError(f"SVG nests deeper than {MAX_DEPTH} levels (runaway nesting or a <use> cycle)")
         tag = NS.sub("", el.tag)
         if tag in ("defs", "clipPath", "mask", "style", "title", "desc", "metadata", "marker", "pattern", "linearGradient", "radialGradient"):
             return
         st = styles(el, st)
-        if st.get("display") == "none" or st.get("visibility") == "hidden" or float(st.get("opacity", 1) or 1) == 0: return
-        M = M @ parse_transform(el.get("transform"))
-        r = clip_rect(el, M)
+        if st.get("display") == "none" or st.get("visibility") == "hidden" or st["opacity"] == 0: return
+        for k in ("mask", "filter"):   # not rendered: drawn without, and the output says so
+            if ref := URL.search(st.get(k) or ""): cv.meta.setdefault("unsupported", []).append(f"{k} #{ref.group(1)}")
+        if el.get("transform"): M = M @ parse_transform(el.get("transform"))
+        r = clip_rect(st, M)
         if r:   # nested clips intersect; an empty intersection draws nothing
             clip = r if clip is None else (max(clip[0], r[0]), max(clip[1], r[1]), min(clip[2], r[2]), min(clip[3], r[3]))
             if clip[0] >= clip[2] or clip[1] >= clip[3]: return
         classes = classes + [el.get("class") or "", el.get("id") or ""]
-        ids_ = [c for c in classes if c]
-        legend = "legend" in " ".join(classes) or (  # matplotlib/plotnine: figure-level artists outside any axes_N group are legend keys
-            not any(c.startswith("axes_") for c in ids_) and any(c.startswith(("line2d_", "patch_", "PathCollection_")) for c in ids_))
         if tag == "use":
-            ref = ids.get((el.get("{http://www.w3.org/1999/xlink}href") or el.get("href") or "").lstrip("#"))
+            href = el.get("{http://www.w3.org/1999/xlink}href") or el.get("href") or ""
+            ref = ids.get(href.lstrip("#"))
             if ref is not None:
                 T = np.array([[1, 0, float(el.get("x", 0))], [0, 1, float(el.get("y", 0))], [0, 0, 1]])
-                walk(ref, M @ T, st, classes, clip)
+                walk(ref, M @ T, st, classes, clip, depth + 1)
+            else: cv.meta.setdefault("warnings", []).append(f"<use> of {href or 'nothing'} not found, skipped")
             return
         if tag == "text":
             return draw_text(el, M, st, classes, clip)
         if tag == "image":
             return draw_image(el, M, clip)
         shapes = shape(tag, el)
+        ids_ = [c for c in classes if c] if shapes is not None else []   # only shapes read them: groups and <use> skip the scan
         if shapes is not None and not any(c.startswith(("text_", "xtick_", "ytick_")) or "annotation" in c for c in ids_):  # text bbox, annotation boxes, gridlines: not data
+            legend = "legend" in " ".join(classes) or (  # matplotlib/plotnine: figure-level artists outside any axes_N group are legend keys
+                not any(c.startswith("axes_") for c in ids_) and any(c.startswith(("line2d_", "patch_", "PathCollection_")) for c in ids_))
             draw_shape(shapes, M, st, "legend" if legend else shape_role(ids_), "violin" in " ".join(classes), clip)
-        for ch in el: walk(ch, M, st, classes, clip)
+        for ch in el: walk(ch, M, st, classes, clip, depth + 1)
 
     def tf(M, p):
         p = np.asarray(p, float)
         return p @ M[:2, :2].T + M[:2, 2]
 
+    def paint(v):
+        """A fill or stroke colour. A url(#id) paint server is drawn flat and reported: a gradient (or unknown id) in its
+        first stop colour, else mid-grey; a pattern in mid-grey."""
+        ref = URL.match((v or "").strip())
+        if not ref: return color(v)
+        el = ids.get(ref.group(1))
+        kind = "pattern" if el is not None and NS.sub("", el.tag) == "pattern" else "gradient"
+        cv.meta.setdefault("unsupported", []).append(f"{kind} #{ref.group(1)}")
+        stop = next((s for s in (el.iter() if el is not None and kind == "gradient" else ()) if NS.sub("", s.tag) == "stop"), None)
+        return (color(styles(stop, {}).get("stop-color")) if stop is not None else None) or (.5, .5, .5)
+
     def draw_shape(shapes, M, st, role, violin=False, clip=None):
-        fill = color(st.get("fill", "black")); stroke = color(st.get("stroke"))
-        fo = float(st.get("fill-opacity", 1) or 1) * float(st.get("opacity", 1) or 1)
-        so = float(st.get("stroke-opacity", 1) or 1) * float(st.get("opacity", 1) or 1)
+        fill = paint(st.get("fill", "black")); stroke = paint(st.get("stroke"))
+        fo = float(st.get("fill-opacity", 1) or 1) * st["opacity"]
+        so = float(st.get("stroke-opacity", 1) or 1) * st["opacity"]
         if fill is not None and len(fill) > 3: fo *= fill[3]
         if stroke is not None and len(stroke) > 3: so *= stroke[3]
         sw = float(re.sub("[a-z]", "", st.get("stroke-width", "1") or "1") or 1)
@@ -257,8 +289,13 @@ def render(svg, cols=80, ansi=False, shift=0):
     def draw_image(el, M, clip=None):
         href = el.get("{http://www.w3.org/1999/xlink}href") or el.get("href") or ""
         if "base64," not in href: return
+        data = base64.b64decode(href.split("base64,", 1)[1])
+        if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 24:
+            return cv.meta.setdefault("warnings", []).append("unsupported image: not a PNG, skipped")
+        iw, ih = struct.unpack(">II", data[16:24])   # IHDR width and height, read before decoding anything
+        if iw * ih > MAX_PIXELS: raise ValueError(f"SVG image {iw} x {ih} exceeds the {MAX_PIXELS:,} pixel decode budget")
         import matplotlib.image as mimg
-        im = mimg.imread(io.BytesIO(base64.b64decode(href.split("base64,", 1)[1])), format="png")
+        im = mimg.imread(io.BytesIO(data), format="png")
         if im.ndim == 2: im = np.stack([im] * 3, -1)
         alpha = im[..., 3] if im.shape[-1] == 4 else None
         if alpha is not None: im = im[..., :3] * im[..., 3:] + (1 - im[..., 3:])
@@ -278,7 +315,10 @@ def render(svg, cols=80, ansi=False, shift=0):
         if t[6] == "other" and any(abs(t[1] - m[1]) < 1.5 * cv.ch and 0 <= t[0] - m[0] < 12 * cv.cw for m, *_ in cv.legend_marks):
             cv.texts[i] = t[:6] + ("legend",)
     text = cv.render(color=ansi)
-    if cv.meta.get("unsupported"): text += "\n" + "\n".join(wrap("unsupported: " + ", ".join(dict.fromkeys(cv.meta["unsupported"])) + " (drawn unclipped)", cols))
+    if cv.meta.get("unsupported"):   # one note per effect kind: "clip-path #a, clip-path #b (drawn unclipped); mask #m (drawn unmasked)"
+        groups = {}
+        for u in dict.fromkeys(cv.meta["unsupported"]): groups.setdefault(UNSUPPORTED[u.split(" ")[0]][0], []).append(u)
+        text += "\n" + "\n".join(wrap("unsupported: " + "; ".join(f"{', '.join(us)} ({d})" for d, us in groups.items()), cols))
     return text, cv.meta
 
 
