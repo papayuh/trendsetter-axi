@@ -1,0 +1,299 @@
+{
+ "bar_fifteen": {
+  "image": "fd3690c0b13aac66",
+  "mpl_ascii": "212741a06af3dc7d",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "c47ffe768620484a",
+  "summary": "1830dce552a1a4d6",
+  "text": "4ac6fab9d56c32cc"
+ },
+ "bar_grouped": {
+  "image": "c4e9cf0819d5a38b",
+  "mpl_ascii": "cb9249be1c170090",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "c9ca2ffb923170d4",
+  "summary": "8e057358c24e68e8",
+  "text": "ab6c0328b378b848"
+ },
+ "bar_profit": {
+  "image": "19a02fd96e284657",
+  "mpl_ascii": "d3b12af047230ab7",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "5295be951945753e",
+  "summary": "6e2fa652ef83b966",
+  "text": "4aedbf1eb4ca9a1a"
+ },
+ "bar_regions": {
+  "image": "51b2f9aaeb37d046",
+  "mpl_ascii": "9a812a270b3715d0",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "6341db296b1aa11f",
+  "summary": "e9abc596e304e804",
+  "text": "4c94906cf605e08b"
+ },
+ "barh_languages": {
+  "image": "9af0f3bc80222d6e",
+  "mpl_ascii": "6eb70f8703886586",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "cc6935f0e80976df",
+  "summary": "aec1ab14b01b24a2",
+  "text": "1d387bf488f9c51e"
+ },
+ "hist_bimodal": {
+  "image": "84d54903ee6a05f6",
+  "mpl_ascii": "121cee5c33c44186",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "0e6ac1c6747afcd8",
+  "summary": "51e85f2a44a76d52",
+  "text": "0bf751fb429800a4"
+ },
+ "hist_normal": {
+  "image": "92c1f08622332d46",
+  "mpl_ascii": "b0dde84602799aac",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "d91c6ba3364771f2",
+  "summary": "82c9dea3006893cf",
+  "text": "b2aab249cf97fe58"
+ },
+ "hist_skewed": {
+  "image": "e9b042aeba779f71",
+  "mpl_ascii": "790587de3a6898ed",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "7eca29cda84195cf",
+  "summary": "3361ca2fdcac5460",
+  "text": "7a0b7b01ab8d5594"
+ },
+ "hm_correlation": {
+  "image": "7ea02c50b5b19ae8",
+  "mpl_ascii": "addff66268f0819f",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "e813a05422fdb62c",
+  "summary": "81820ee2e52e1009",
+  "text": "90d533cc8891f6d7"
+ },
+ "hm_monthly": {
+  "image": "52f970cd4981cd60",
+  "mpl_ascii": "8b39c03ac7f9f263",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "f05a1d1a281c0c63",
+  "summary": "8bcbff87736d246f",
+  "text": "8cbd8bdd69911168"
+ },
+ "hm_traffic": {
+  "image": "a22204fbf95a634b",
+  "mpl_ascii": "bdf889b73190cfd7",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "37eb11e54c6690c9",
+  "summary": "3e1c6bfdc437c724",
+  "text": "8608a6cbce88ea85"
+ },
+ "ho_ads": {
+  "image": "31762bdd39b8db17",
+  "mpl_ascii": "30bdfc4af61ac8f0",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "136caf9e581a00bd",
+  "summary": "45af61ecbfd19bf1",
+  "text": "c1724c5526b6a20d"
+ },
+ "ho_bacteria_log": {
+  "image": "f6d50febe154ea06",
+  "mpl_ascii": "e6b674e954e36ffc",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "5ea2dcaf556c1c67",
+  "summary": "2b1e70f1371586c5",
+  "text": "e3a06e0c71478f6a"
+ },
+ "ho_corr_six": {
+  "image": "8f49a9697b89827e",
+  "mpl_ascii": "979e9476f9bb6b73",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "f06065c9a570c557",
+  "summary": "6680288907b239e3",
+  "text": "5c000fd00b3d7319"
+ },
+ "ho_countries": {
+  "image": "765aec954cb6e294",
+  "mpl_ascii": "10c9d7e66f65066b",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "c44a74ca8bc287b2",
+  "summary": "c2e222925a5beba2",
+  "text": "654916788c48d162"
+ },
+ "ho_grouped_three": {
+  "image": "46ab8822d740c770",
+  "mpl_ascii": "90cb886aad8f51d7",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "de8be404c1b114f1",
+  "summary": "6db1807d982915ad",
+  "text": "a9f132d20910a3a7"
+ },
+ "ho_region_month": {
+  "image": "f294c40224820c93",
+  "mpl_ascii": "565a947c9efdca23",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "963ad280ff05e726",
+  "summary": "ab549bf4554b4e3d",
+  "text": "2a1993e23e6a6241"
+ },
+ "ho_revenue_lines": {
+  "image": "e06ddfbcbf85ab2a",
+  "mpl_ascii": "aae733b9db2422de",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "958bcfa3e0c944a8",
+  "summary": "514ddf8ddae0d13a",
+  "text": "ae997e23a63ee342"
+ },
+ "ho_sensor": {
+  "image": "7564626f1f0663b4",
+  "mpl_ascii": "9c3d795a971a90eb",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "be74762d16c43bc4",
+  "summary": "d47f422343079311",
+  "text": "ac00cfb2e026a31a"
+ },
+ "ho_survey_barh": {
+  "image": "d36d594a0ef34493",
+  "mpl_ascii": "1cf5cf9e78aeb06a",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "1a2c58966e97e66d",
+  "summary": "00f12253112ce079",
+  "text": "ad03fd6c16d0d615"
+ },
+ "ho_two_sites": {
+  "image": "8b800249be9c0083",
+  "mpl_ascii": "579e2111c26ea05a",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "3a76ec2ca36c93a3",
+  "summary": "25a4309211ed3daf",
+  "text": "43a9b1cb7f5f7fe2"
+ },
+ "ho_unemployment": {
+  "image": "a15186284c97907a",
+  "mpl_ascii": "0712fcca7cf973d7",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "e217487d61e7c439",
+  "summary": "400c1353a0ac47b9",
+  "text": "693f38132c2dd71d"
+ },
+ "ho_wait_times": {
+  "image": "f97f7122075683ec",
+  "mpl_ascii": "779f08beea0ccc24",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "276b81329f65d85c",
+  "summary": "da03dbab6e087f39",
+  "text": "ebf4d55844cac419"
+ },
+ "line_decay": {
+  "image": "d5c6ce9c91a240ed",
+  "mpl_ascii": "1ca401659aba13dd",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "ec2a5532631c7e1d",
+  "summary": "3fb3310932b4f4e1",
+  "text": "2095432b0628dd1d"
+ },
+ "line_log_users": {
+  "image": "4ea700b4b701a0d0",
+  "mpl_ascii": "e6b674e954e36ffc",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "8ce51e404b5636a6",
+  "summary": "a2d4dfe335891a95",
+  "text": "63c0e567dda5a784"
+ },
+ "line_stock": {
+  "image": "aeb21ba3658704fb",
+  "mpl_ascii": "3b02d3b0f7d7daef",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "6fa67662b65eb944",
+  "summary": "5d3a27a80d1421fe",
+  "text": "0e0c7db1c33da731"
+ },
+ "line_temperature": {
+  "image": "b5c4d9bbbd89b6fe",
+  "mpl_ascii": "a3e681cbbc6186da",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "2d6593a416474bf8",
+  "summary": "6a87f2492945e7b5",
+  "text": "a7a244eb00fd5028"
+ },
+ "line_visits": {
+  "image": "9df7c7d13aa0c272",
+  "mpl_ascii": "1bad03b1c755da7c",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "7a3d23e7a186111d",
+  "summary": "2366511b0d858716",
+  "text": "5ee86d798d895d95"
+ },
+ "line_weekly_sales": {
+  "image": "e7d23c6536a2a1e3",
+  "mpl_ascii": "dfb64e419b2c0f51",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "eedb70ba78e66104",
+  "summary": "c204be7da2fa9a22",
+  "text": "29a6abafedd7d684"
+ },
+ "ml_cities": {
+  "image": "ffb569eda9185dbd",
+  "mpl_ascii": "a21179d32dcf62b9",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "3a2eedac91c68832",
+  "summary": "70f4d1d69a3ba0ba",
+  "text": "926bc37238c8071e"
+ },
+ "ml_cpu": {
+  "image": "1865f3c54582e15a",
+  "mpl_ascii": "c9d9fc0fd725d4e8",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "7d03b7c2ce0496d9",
+  "summary": "4c0e6b6d49e8fbe7",
+  "text": "2d9daa5681a06441"
+ },
+ "ml_forecast": {
+  "image": "622bf9063a72f6ad",
+  "mpl_ascii": "87bb0e442421bb18",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "c170dc0a0ad3198b",
+  "summary": "03b964b075fe8dea",
+  "text": "7ac50dca935257e6"
+ },
+ "ml_products": {
+  "image": "77c0a799d912a04b",
+  "mpl_ascii": "678e4478ae890905",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "2deb6ebdc5677b93",
+  "summary": "3764cac86540d7c0",
+  "text": "a780123b1187c1e8"
+ },
+ "ml_rates": {
+  "image": "72428c525161cd92",
+  "mpl_ascii": "aac57a97bdec8b5c",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "cff49c8821a534f3",
+  "summary": "d61cd2872fe72e2f",
+  "text": "72fe1ae29007de0c"
+ },
+ "reconstructed": true,
+ "sc_clusters": {
+  "image": "46d63574a2191c40",
+  "mpl_ascii": "7fe9a4bbfdc8c424",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "2e58cd37c5da971d",
+  "summary": "e3caf5acf1d10e20",
+  "text": "2d2ead803bdd8096"
+ },
+ "sc_height_weight": {
+  "image": "1ca0f57150c4bb88",
+  "mpl_ascii": "fcfd2ead68fe077b",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "38e8cd188a2fb6d3",
+  "summary": "21c23197eb950c72",
+  "text": "0daa931094cec1cf"
+ },
+ "sc_outlier": {
+  "image": "ad7d4b34d91646d9",
+  "mpl_ascii": "6c731e81605c1c02",
+  "none": "e3b0c44298fc1c14",
+  "plotext": "1464bdc29ed455b8",
+  "summary": "c69bc2304d35d36e",
+  "text": "3d927d52b63f55d3"
+ }
+}

@@ -5,10 +5,12 @@ Run from repo root:
     PYTHONPATH=src python benchmarks/agent/run.py --tag after                  # build fixtures, ask the model (resumes), write RESULTS.md
     PYTHONPATH=src python benchmarks/agent/run.py --tag after --split heldout  # the held-out charts (heldout.py)
     PYTHONPATH=src python benchmarks/agent/run.py --no-ask                     # rebuild fixtures, regrade results.jsonl into RESULTS.md
+    PYTHONPATH=src python benchmarks/agent/run.py --tag after --replicate 2    # ask every call again, as tag after#2
 
 Every row in results.jsonl carries a tag (a renderer version or a tuning round), the questions it asked and a hash of the
 chart it showed. A row is reused, under the new tag and marked `reused_from`, when the same chart was already shown with the
-same questions, so formats the renderer does not touch (image, mpl_ascii, plotext, none) are asked once.
+same questions, so formats the renderer does not touch (image, mpl_ascii, plotext, none) are asked once. manifests/<tag>.json
+records the hash of each chart and format a tag asked about; a row whose hash differs from its tag's manifest is not graded.
 
 Model calls go through the locally logged-in `claude -p` CLI: one call per chart and format, all of a chart's questions in
 that call, no tools, no MCP servers, no settings files, a short fixed system prompt. Building the fixtures needs tiktoken,
@@ -18,6 +20,7 @@ import argparse
 import base64
 import hashlib
 import json
+import math
 import re
 import statistics
 import subprocess
@@ -37,8 +40,8 @@ from trendsetter_axi import render  # noqa: E402
 HERE = Path(__file__).parent
 COLS, DPI = 80, 100
 FIXTURES, OUT = HERE / "fixtures", HERE / "out"
-RESULTS, REPORT = HERE / "results.jsonl", HERE / "RESULTS.md"
-FORMATS = ["none", "text", "summary", "image", "mpl_ascii", "plotext"]
+RESULTS, REPORT, MANIFESTS = HERE / "results.jsonl", HERE / "RESULTS.md", HERE / "manifests"
+FORMATS = ["none", "text", "summary", "image", "mpl_ascii", "plotext", "ascii", "ascii_tall", "hybrid"]   # report order
 TEXTS = {"text": "txt", "summary": "summary.txt", "ascii": "ascii.txt", "ascii_tall": "ascii_tall.txt", "hybrid": "hybrid.txt",
          "mpl_ascii": "mpl_ascii.txt", "plotext": "plotext.txt"}   # fixture suffix per text format
 ASCII = dict(cols=COLS, ascii=True, rows=16)       # the token-lean chart for a model
@@ -145,6 +148,21 @@ def parse(reply):
     return found
 
 
+def number(given):
+    """`given` as a finite float, or None: a JSON number, or a string that is one after stripping whitespace, one leading
+    currency symbol, thousands commas and a trailing %. Anything else ("1/0", "10 or 11", [10], true) is not an answer."""
+    if isinstance(given, str):
+        s = given.strip()
+        s = s[1:] if s[:1] in "$€£¥" else s
+        try:
+            given = float(s.removesuffix("%").replace(",", ""))
+        except ValueError:
+            return None
+    if isinstance(given, bool) or not isinstance(given, (int, float)) or not math.isfinite(given):
+        return None
+    return float(given)
+
+
 def grade(q, given):
     """True when `given` is right for question `q` (see charts.py for the types)."""
     if given is None:
@@ -152,30 +170,54 @@ def grade(q, given):
     if q["type"] == "label":
         norm = lambda s: re.sub(r"\s+", "", str(s)).lower()  # noqa: E731
         return norm(given) == norm(q["answer"])
-    try:
-        v = float(re.sub(r"[^0-9eE.+-]", "", str(given)))
-    except ValueError:
+    v = number(given)
+    if v is None:
         return False
     return v == q["answer"] if q["type"] == "int" else abs(v - q["answer"]) <= q["tol"]
+
+
+def meets(correct, total, pct):
+    """Whether correct/total reaches pct percent, in integers: 37/39 is 94.9%, which rounds to 95% but does not meet it."""
+    return 100 * correct >= pct * total
 
 
 def rows():
     return [json.loads(line) for line in RESULTS.read_text().splitlines()] if RESULTS.exists() else []
 
 
+def manifest(tag):
+    """{chart: {format: hash}} of what `tag` showed; before and iter1 are rebuilt from their own rows ("reconstructed")."""
+    path = MANIFESTS / f"{tag}.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
 def load(key, tag):
-    """The last usable row per (chart, format, model) under `tag`: asked this answer key's questions and not an error."""
-    return {(r["chart"], r["format"], r["model"]): r for r in rows()
-            if r["tag"] == tag and r["chart"] in key and r.get("asked") == asks(key[r["chart"]]["questions"]) and not r["is_error"]}
+    """The last usable row per (chart, format, model) under `tag` (asked this answer key's questions, not an error, showed
+    the chart the tag's manifest names), and how many otherwise usable rows showed a different chart."""
+    m, usable, excluded = manifest(tag), {}, 0
+    for r in rows():
+        if r["tag"] == tag and r["chart"] in key and r.get("asked") == asks(key[r["chart"]]["questions"]) and not r["is_error"]:
+            expected = m.get(r["chart"], {}).get(r["format"])
+            if expected is not None and r.get("shown") == expected:
+                usable[r["chart"], r["format"], r["model"]] = r
+            else:
+                excluded += 1
+    return usable, excluded
 
 
 def scored(key, model, tag):
-    """Rows of one tag by (chart, format), each question graded, and the charts every reported format covers."""
-    by = {(c, f): r for (c, f, m), r in load(key, tag).items() if m == model}
-    fmts = [f for f in dict.fromkeys(FORMATS + sorted({f for _, f in by})) if f == "none" or any((c, f) in by for c in key)]
+    """Rows of one tag by (chart, format), each question graded, the charts every reported format covers, the charts
+    missing some format (left out of every table) and the count of rows excluded by the manifest."""
+    found, excluded = load(key, tag)
+    by = {(c, f): r for (c, f, m), r in found.items() if m == model}
+    m = manifest(tag)
+    expected = {f for c in key for f in m.get(c, {})}
+    fmts = [f for f in dict.fromkeys(FORMATS + sorted(expected | {f for _, f in by}))
+            if f == "none" or f in expected or any((c, f) in by for c in key)]
     charts = [c for c in key if all((c, f) in by for f in fmts)]
+    incomplete = {c: [f for f in fmts if (c, f) not in by] for c in key if c not in charts}
     score = {(c, f): [grade(q, parse(r["reply"]).get(qid)) for qid, q in key[c]["questions"].items()] for (c, f), r in by.items()}
-    return by, score, [f for f in fmts if f != "none"] + ["none"], charts
+    return by, score, [f for f in fmts if f != "none"] + ["none"], charts, incomplete, excluded
 
 
 def acc(cells):
@@ -185,9 +227,13 @@ def acc(cells):
 
 def section(split, key, model, tag):
     """The detailed tables for one split under one tag."""
-    by, score, shown, charts = scored(key, model, tag)
+    by, score, shown, charts, incomplete, excluded = scored(key, model, tag)
+    diagnostics = ([f"{len(incomplete)} incomplete charts, left out of every table: "
+                    + ", ".join(f"`{c}` ({', '.join(fs)})" for c, fs in incomplete.items()) + "."] if incomplete else [])
+    if excluded:
+        diagnostics.append(f"{excluded} rows excluded: stimulus changed since the manifest.")
     if not charts:
-        return []
+        return [f"## {split} split, `{tag}`: no complete charts", "", *diagnostics, ""] if diagnostics else []
 
     def chart_tokens(cid, fmt):  # what the chart itself cost: this call's input minus the same call with no chart
         return by[cid, fmt]["input_tokens"] - by[cid, "none"]["input_tokens"]
@@ -206,6 +252,7 @@ def section(split, key, model, tag):
          f"(same chart shown, same questions). Cost of those made for it: ${sum(r['cost_usd'] or 0 for r in fresh):.2f}.",
          *(f"{n} raised on {len(cs)} chart(s) ({', '.join(f'`{c}`' for c in cs)}); that call got the error in place of a chart."
            for n, cs in failed.items() if cs),
+         *diagnostics,
          "", "| format | accuracy | chart tokens, median (Claude) | chart tokens, total (Claude) | o200k median | output tokens, median | wall s, median | API s, median |",
          "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for fmt in shown:
@@ -261,7 +308,7 @@ def write_report(model):
             cells = []
             for metric in ("acc", "tok", "out"):
                 for t in TAGS:
-                    by, score, _, charts = res[t]
+                    by, score, _, charts = res[t][:4]
                     if f not in res[t][2] or not charts:
                         cells.append("-"); continue
                     if metric == "acc": cells.append(acc([score[c, f] for c in charts]))
@@ -284,11 +331,19 @@ def main():
     ap.add_argument("--split", choices=list(SPLITS), default="dev")
     ap.add_argument("--formats", default=",".join(FORMATS), help="comma-separated; none is always asked (it is the token baseline)")
     ap.add_argument("--no-ask", action="store_true")
+    ap.add_argument("--replicate", type=int, help="ask every call again under tag TAG#N, reusing no earlier row")
     args = ap.parse_args()
+    tag = f"{args.tag}#{args.replicate}" if args.replicate else args.tag
     key = build(args.split)
     if not args.no_ask:
         fmts = ["none"] + [f for f in args.formats.split(",") if f != "none"]
-        done, old = load(key, args.tag), [r for r in rows() if r["model"] == args.model and not r["is_error"]]
+        m = manifest(tag)   # written before asking, so a row appended below always matches it, even if the run stops
+        for cid in key:
+            m.setdefault(cid, {}).update({fmt: shown(cid, fmt) for fmt in fmts})
+        MANIFESTS.mkdir(exist_ok=True)
+        (MANIFESTS / f"{tag}.json").write_text(json.dumps(m, indent=1, sort_keys=True) + "\n")
+        done = load(key, tag)[0]
+        old = [] if args.replicate else [r for r in rows() if r["model"] == args.model and not r["is_error"]]
         env = dict(cli=subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip(),
                    matplotlib=matplotlib.__version__, python=sys.version.split()[0])
         with RESULTS.open("a") as f:
@@ -298,7 +353,7 @@ def main():
                     if (cid, fmt, args.model) in done and done[cid, fmt, args.model]["shown"] == now:
                         continue
                     prior = next((r for r in reversed(old) if (r["chart"], r["format"], r.get("shown"), r.get("asked")) == (cid, fmt, now, asked)), None)
-                    r = dict(prior, tag=args.tag, reused_from=prior.get("reused_from") or prior["tag"]) if prior else ask(args.model, cid, fmt, k["questions"], env, args.tag)
+                    r = dict(prior, tag=tag, reused_from=prior.get("reused_from") or prior["tag"]) if prior else ask(args.model, cid, fmt, k["questions"], env, tag)
                     f.write(json.dumps(r) + "\n")
                     f.flush()
                     print(cid, fmt, "reused" if prior else "asked", r["input_tokens"], r["wall_s"], r["reply"][:80].replace("\n", " "), flush=True)
