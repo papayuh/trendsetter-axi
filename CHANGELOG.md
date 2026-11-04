@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Batch neutral data lines over 32 points like coloured lines, avoiding per-segment rendering overhead; short neutral rules retain box-drawing glyphs.
+- Batch dense neutral data lines to avoid per-segment rendering overhead; see [usage](README.md#usage) for scope and compatibility.
 - Add heatmap sampling diagnostics without changing rendered text; see the [loss contract](README.md#what-the-text-lost-render) for `heat_sampled`, `lost_extreme` and mitigation.
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).

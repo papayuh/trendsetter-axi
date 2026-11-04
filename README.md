@@ -67,7 +67,7 @@ print(render_figure(fig, cols=80))
 
 Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
 
-Dense black and grey data lines use the same batched dot sampler as coloured lines. Neutral data paths over 32 points are batched; short neutral rules keep their box-drawing glyphs.
+For matplotlib figures, dense black and grey data lines use the same batched dot sampler as coloured lines; short neutral rules keep their box-drawing glyphs. The batching threshold is documented in `Canvas.stroke()` in [`core.py`](src/trendsetter_axi/core.py); it applies only to strokes tagged as data, not unclassified SVG geometry.
 
 ### Bounded displays and preferences
 
