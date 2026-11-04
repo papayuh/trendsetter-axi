@@ -627,7 +627,7 @@ def _data_axes(fig): return [ax for ax in fig.axes if not hasattr(ax, "_colorbar
 
 
 def _valid(xy):
-    """The rows of an artist's (x, y) data a reader can see, and how many are masked or non-finite."""
+    """Unmasked, finite (x, y) rows and the excluded count; viewport clipping is separate."""
     xy = np.ma.filled(np.ma.masked_invalid(np.ma.asarray(xy, float)), np.nan).reshape(-1, 2)
     ok = np.isfinite(xy).all(1)
     return xy if ok.all() else xy[ok], int((~ok).sum())
@@ -663,7 +663,7 @@ def _heat_at(ax, a, z, k):
 
 
 def describe(fig, meta):
-    """Scales and series of every data axes, read from the figure's own data (never from the text): what the chart says in numbers."""
+    """Scales and visible series of visible data axes, read from the figure's own data (never from the text)."""
     keys = {tuple(s["rgb"]): s["key"] for s in meta["series"]}
     key = lambda c: keys.get(tuple(round(float(v), 2) for v in to_rgb(c)))
     scales, series = [], []
