@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report heatmap centre sampling as non-material `heat_sampled`, with source and text-grid sizes. Unsampled finite min/max levels absent from the text are material `lost_extreme` losses, naming the source cell, value and labels; `strict=True` now refuses them. Increase `rows`/`cols` to reduce sampling; rendered text is unchanged.
+
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
 - Fix `summary()` identity and precision for heatmaps, small numeric series, timestamps, scatter means and explicit tick labels; see the [summary contract](README.md#what-the-text-lost-render).

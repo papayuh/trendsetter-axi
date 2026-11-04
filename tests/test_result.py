@@ -802,9 +802,13 @@ def test_sampling_without_lost_extreme_is_not_material(close, kind):
         z[50, 50] = 100
         z = np.ma.array(z, mask=np.zeros(z.shape, bool)); z.mask[50, 50] = True
     if kind == "empty": z[:] = np.nan
-    r = tsa.render(figure(lambda ax: ax.imshow(z, aspect="auto", vmin=0, vmax=1)), 40, rows=12, strict=True)
+    fig = figure(lambda ax: ax.imshow(z, aspect="auto", vmin=0, vmax=1))
+    r = tsa.render(fig, 40, rows=12, strict=kind != "empty")
     assert any(loss["kind"] == "heat_sampled" and not loss["material"] for loss in r.losses), r.losses
     assert not any(loss["kind"] == "lost_extreme" for loss in r.losses), r.losses
+    if kind == "empty":   # Preserve the pre-existing all-missing artist diagnostic.
+        with pytest.raises(tsa.RenderLossError, match="lost_artist"):
+            tsa.render(fig, 40, rows=12, strict=True)
 
 
 def test_lost_extreme_tracks_the_shown_cells():
@@ -819,6 +823,8 @@ def test_lost_extreme_tracks_the_shown_cells():
     assert (0, 0, len(core.HEAT) - 1) in canvas.heat
     assert sum(level > 0 for _, _, level in canvas.heat) == 1
     assert canvas.meta.get("heat_sampled")
+    text = canvas.render()
+    assert text.count(core.HEAT[-1]) == 1 and text.count(core.HEAT[0]) == 40 * 10 - 1
 
 
 @pytest.mark.parametrize("spike, lost", [(1.1, False), (100, True)])
@@ -845,6 +851,50 @@ def test_lost_heat_extreme_uses_source_index_value_and_labels(close, origin, inv
     index = tuple(map(int, np.unravel_index(z.argmax(), z.shape)))
     assert len(lost) == 1 and f"heatmap max {index}=42" in lost[0]["what"], r.losses
     assert "north/east" in lost[0]["what"]
+
+
+@pytest.mark.parametrize("n, cols", [(100, 80), (400, 60)])
+def test_sampled_heatmap_seed_fails_strict_at_default_height(close, n, cols):
+    z = np.zeros((n, n)); z[n // 2, n // 2] = 100
+    fig = figure(lambda ax: ax.imshow(z, vmin=0, vmax=100))
+    index = tuple(map(int, np.unravel_index(z.argmax(), z.shape)))
+    with pytest.raises(tsa.RenderLossError, match="lost_extreme") as exc:
+        tsa.render(fig, cols, strict=True)
+    assert f"{index}=100" in str(exc.value)
+
+
+@pytest.mark.parametrize("invert", [False, True])
+def test_sampled_mesh_reports_source_extreme(close, invert):
+    z = np.zeros((100, 100)); z[25, 75] = 42
+    def build(ax):
+        ax.pcolormesh(z, vmin=0, vmax=42)
+        ax.set_xticks([75.5], ["east"]); ax.set_yticks([25.5], ["north"])
+        if invert: ax.invert_xaxis(); ax.invert_yaxis()
+    r = tsa.render(figure(build), 40, rows=12)
+    lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
+    index = tuple(map(int, np.unravel_index(z.argmax(), z.shape)))
+    assert len(lost) == 1 and f"{index}=42" in lost[0]["what"] and "north/east" in lost[0]["what"], r.losses
+
+
+def test_sampling_losses_keep_each_heatmap(close):
+    fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+    for ax, value in zip(axes, [1, -1]):
+        z = np.zeros((100, 100)); z[50, 50] = value
+        ax.imshow(z, vmin=min(0, value), vmax=max(0, value))
+    r = tsa.render(fig, 80, rows=12)
+    assert sum(loss["kind"] == "heat_sampled" for loss in r.losses) == len(axes)
+    lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
+    assert len(lost) == len(axes) and any("max (50, 50)=1" in loss["what"] for loss in lost) and any("min (50, 50)=-1" in loss["what"] for loss in lost), r.losses
+
+
+def test_heatmap_extreme_outside_view_is_not_a_sampling_loss(close):
+    z = np.zeros((100, 100)); z[99, 99] = 1
+    def build(ax):
+        ax.imshow(z, vmin=0, vmax=1)
+        ax.set_xlim(-.5, 49.5); ax.set_ylim(49.5, -.5)
+    r = tsa.render(figure(build), 40, rows=12, strict=True)
+    assert any(loss["kind"] == "heat_sampled" for loss in r.losses)
+    assert not any(loss["kind"] == "lost_extreme" for loss in r.losses)
 
 
 def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):

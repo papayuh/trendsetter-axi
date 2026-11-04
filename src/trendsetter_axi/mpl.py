@@ -863,6 +863,23 @@ def describe(fig, meta):
 def losses(fig, meta):
     """Data the text does not show, measured on the drawn figure: data artists that left no visible cell, and points outside the axes view.
     ponytail: series are keyed by colour, so an artist sharing its colour with a drawn one counts as drawn; per-artist ink ids if that matters."""
+    for e in meta.get("lost_extreme", []):
+        a = meta["owners"][e["owner"]][0]
+        z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float))
+        if isinstance(a, QuadMesh):
+            xy = a.get_coordinates()[[0, -1], [0, -1]]
+        else:
+            l, r, b, top = a.get_extent()
+            xy = [(l, top), (r, b)] if a.origin == "upper" else [(l, b), (r, top)]
+        xy = a.get_transform().transform(xy)
+        # Undo the ascending-pixel edge flips applied before heat_grid.
+        i, j = e["index"]
+        if xy[0, 0] > xy[1, 0]: j = z.shape[1] - 1 - j
+        if xy[0, 1] < xy[1, 1]: i = z.shape[0] - 1 - i
+        e["index"], e["value"] = (i, j), float(z[i, j])
+        labels = "/".join(_heat_at(a.axes, a, z, i * z.shape[1] + j))
+        name = _name(a, {})
+        e["what"] = f"heatmap {e['extreme']} {e['index']}={e['value']:.4g} ({labels})" + (f" {name!r}" if name else "")
     bars = {id(b): c for ax in _data_axes(fig) for c in ax.containers if isinstance(c, BarContainer) for b in c}
     kind = lambda a: "bar" if id(a) in bars else type(a).__name__
     lost, clipped = {}, {}

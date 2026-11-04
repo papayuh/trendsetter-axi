@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from .cells import width
 
-MATERIAL = ("lost_artist", "lost_series", "series_label")   # strict=True refuses these: no visible cell, or a dropped or cut legend entry
+MATERIAL = ("lost_artist", "lost_series", "series_label", "lost_extreme")   # strict=True refuses lost data, extrema and legend entries
 FIGURE = dict(color=True, artist_roles=True, source_values=True, artist_losses=True)
 SVG = dict(color=True, artist_roles=False, source_values=False, artist_losses=False)   # SVG has shapes, not artists or data
 
@@ -85,6 +85,12 @@ def build(text, meta, cols, series, scales, losses, features):
         legend = role == "legend"   # a series name the reader cannot see
         losses.append(dict(kind="series_label" if legend else "text", what=f"{role} {s!r}", detail=why))
     losses += [dict(kind="unsupported", what=u, detail="drawn unclipped") for u in dict.fromkeys(meta.get("unsupported", []))]
+    for owner, (nr, nc), (rows, columns) in meta.get("heat_sampled", []):
+        losses.append(dict(kind="heat_sampled", what="heatmap",
+                           detail=f"{nr}x{nc} cells shown as {rows}x{columns} text cells: 1 in ~{max(1, round(nr * nc / (rows * columns)))} data cells sampled"))
+    for e in meta.get("lost_extreme", []):
+        what = e.get("what", f"heatmap {e['extreme']} {e['index']}={e['value']:.4g}")
+        losses.append(dict(kind="lost_extreme", what=what, detail="not among the sampled cells"))
     for l in losses: l["material"] = l["kind"] in MATERIAL
     warnings = [f"{meta['guessed']} axis-aligned light strokes taken for gridlines by colour, not drawn"] if meta["guessed"] else []
     if meta.get("hidden"): warnings.append(f"{meta['hidden']} hidden artist{'s' * (meta['hidden'] > 1)} not described")

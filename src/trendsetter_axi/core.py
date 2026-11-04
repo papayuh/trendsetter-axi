@@ -207,12 +207,37 @@ class Canvas:
         xs, ys, t = (np.asarray(a, float) for a in (xs, ys, t))
         ci = np.searchsorted(xs, (np.arange(self.cols) + .5) * self.cw) - 1
         ri = np.searchsorted(ys, (np.arange(self.rows) + .5) * self.ch) - 1
-        for r in np.nonzero((ri >= 0) & (ri < t.shape[0]))[0]:
-            for c in np.nonzero((ci >= 0) & (ci < t.shape[1]))[0]:
-                if clip is not None and not (clip[0] <= (c + .5) * self.cw <= clip[2] and clip[1] <= (r + .5) * self.ch <= clip[3]): continue
+        rs = np.nonzero((ri >= 0) & (ri < t.shape[0]))[0]
+        cs = np.nonzero((ci >= 0) & (ci < t.shape[1]))[0]
+        if clip is not None:
+            rs = rs[(clip[1] <= (rs + .5) * self.ch) & ((rs + .5) * self.ch <= clip[3])]
+            cs = cs[(clip[0] <= (cs + .5) * self.cw) & ((cs + .5) * self.cw <= clip[2])]
+        first = len(self.heat)
+        for r in rs:
+            for c in cs:
                 if (ci == ci[c]).sum() >= 4 and (c + 1 == self.cols or ci[c + 1] != ci[c]): continue   # wide cells keep a blank seam column: neighbours read as separate blocks
                 v = t[ri[r], ci[c]]
                 if np.isfinite(v): self.heat.append((int(r), int(c), int(min(self.levels - 1, max(0, v) * self.levels))))
+        if not len(rs) or not len(cs): return
+        x0, y0, x1, y1 = (0, 0, self.w, self.h) if clip is None else (max(0, clip[0]), max(0, clip[1]), min(self.w, clip[2]), min(self.h, clip[3]))
+        nx = int(((xs[1:] > x0) & (xs[:-1] < x1)).sum())
+        ny = int(((ys[1:] > y0) & (ys[:-1] < y1)).sum())
+        if nx <= len(np.unique(ci[cs])) and ny <= len(np.unique(ri[rs])): return
+        self.meta.setdefault("heat_sampled", []).append((self.owner, t.shape, (len(rs), len(cs))))
+        shown = {(r, c): level for r, c, level in self.heat[first:]}
+        sampled = {(int(ri[r]), int(ci[c])) for r, c in shown}
+        finite = np.isfinite(t)
+        if not finite.any(): return
+        # ponytail: only global min/max levels are audited, not skipped interior cells or spatial patterns.
+        for kind, fill, arg in (("min", np.inf, np.argmin), ("max", -np.inf, np.argmax)):
+            i, j = map(int, np.unravel_index(arg(np.where(finite, t, fill)), t.shape))
+            value = t[i, j]; level = int(min(self.levels - 1, max(0, value) * self.levels))
+            # Tied extrema (including quantised ties) survive if any occurrence is shown.
+            if (i, j) in sampled or level in shown.values(): continue
+            x, y = (xs[j] + xs[j + 1]) / 2, (ys[i] + ys[i + 1]) / 2
+            if not (x0 <= x < x1 and y0 <= y < y1): continue   # axes clipping is not a sampling loss
+            if shown.get((self._row(y), self._col(x))) != level:
+                self.meta.setdefault("lost_extreme", []).append(dict(owner=self.owner, extreme=kind, index=(i, j), value=float(value)))
 
     @staticmethod
     def _rect(polys):
