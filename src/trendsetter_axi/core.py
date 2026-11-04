@@ -455,6 +455,13 @@ class Canvas:
 
     # ---- compose ----------------------------------------------------------------
     def render(self, color=False):
+        raster = self._rasterize(color)
+        cell, sid_at, heatrgb = self._compose_cells(raster)
+        continuation, inv = self._place_text(raster, cell, sid_at)
+        return self._serialize(raster, cell, sid_at, heatrgb, continuation, inv, color)
+
+    def _rasterize(self, color):
+        """Rasterize queued geometry, keeping dot and fill layers separate."""
         if self.tiny:   # many tiny fills in >8 colours tile a heatmap: continuous ramp, not glyph markers
             rect = lambda ps: len(ps) == 1 and len(ps[0]) in (4, 5) and all(np.ptp(np.round(ps[0][:4, k], 1)) > 0 and len(set(np.round(ps[0][:4, k], 1))) == 2 for k in (0, 1))   # axis-aligned quad: a heatmap cell, not a circle/diamond marker
             if len(self.tiny) > 50 and len({tuple(np.round(t[1][:3], 2)) for t in self.tiny}) > 8 and sum(rect(t[0]) for t in self.tiny) > 0.9 * len(self.tiny): self.cont += [t[:3] for t in self.tiny]
@@ -466,8 +473,6 @@ class Canvas:
         nser = len(self.series)
         multi = nser > 1
         dots = np.full((R_ * 4, C_ * 2), -2, int)       # -2 none, -1 neutral, else series id
-        cell = np.full((R_, C_), "", object)
-        sid_at = np.full((R_, C_), -2, int)                # series for color output
         box = np.zeros((R_, C_), int)
         frame = np.zeros((R_, C_), bool)                  # dark axis/spine lines: beat fills
         fill = np.full((R_, C_), -1, int)
@@ -504,6 +509,7 @@ class Canvas:
         natural = .95 * band <= hmax <= band * 1.001 and hmin >= .6 * hmax   # data already fills the band evenly: draw true proportions, no caption
         rscaled = ridge and not natural and hmax / max(hmin, 1e-9) > 1.05   # per-ridge scale really changed relative heights
         alt, altsid, fills = {}, set(), self.fills   # ridgeline: consecutive same-colour ridges alternate fill (colour: darker shade; plain: ▓) so neighbours separate
+        seqs = []
         if ridge:
             seq = sorted((f for f in self.fills if flat(f[0])), key=lambda f: max(p[:, 1].max() for p in f[0])); prev, flip, ids = None, 0, []
             for f in seq:
@@ -641,6 +647,24 @@ class Canvas:
                 else:
                     put_dots(np.array([[int(y * sy), int(x * sx)]]), sid, None)
 
+        # ponytail: transient buffers stay local to this render, not as new Canvas attributes.
+        return dict(dots=dots, box=box, frame=frame, fill=fill, shade=shade, under=under,
+                    stamps=stamps, inked=inked, famsid=famsid, famruns=famruns,
+                    marks=marks, mark_sid=mark_sid, glyph=glyph, multi=multi, nser=nser,
+                    shaded=shaded, ridge=ridge, rscaled=rscaled, alt=alt, seqs=seqs,
+                    shade_of=shade_of, ramp=ramp)
+
+    def _compose_cells(self, raster):
+        """Choose geometry glyphs in the existing layer order, before text."""
+        R_, C_ = self.rows, self.cols
+        dots, box, frame = raster["dots"], raster["box"], raster["frame"]
+        fill, shade, under = raster["fill"], raster["shade"], raster["under"]
+        stamps, marks = raster["stamps"], raster["marks"]
+        famsid, famruns = raster["famsid"], raster["famruns"]
+        glyph, multi = raster["glyph"], raster["multi"]
+        cell = np.full((R_, C_), "", object)
+        sid_at = np.full((R_, C_), -2, int)                # series for color output
+
         # braille cells
         for r in range(R_):
             for c in range(C_):
@@ -720,6 +744,17 @@ class Canvas:
                     elif r == r1: g = '└' if c == c0 else '┘' if c == c1 else '─'
                     else: g = '│' if c in (c0, c1) else ' '
                     cell[r, c] = g; sid_at[r, c] = sid
+
+        return cell, sid_at, heatrgb
+
+    def _place_text(self, raster, cell, sid_at):
+        """Place labels, audit visible data, then stamp legend keys."""
+        R_, C_ = self.rows, self.cols
+        dots, box, fill = raster["dots"], raster["box"], raster["fill"]
+        marks, mark_sid, inked = raster["marks"], raster["mark_sid"], raster["inked"]
+        shaded, ridge, alt = raster["shaded"], raster["ridge"], raster["alt"]
+        seqs, shade_of = raster["seqs"], raster["shade_of"]
+        ramp, glyph, multi = raster["ramp"], raster["glyph"], raster["multi"]
 
         # text: real characters; never overwrite earlier text
         taken = np.zeros((R_, C_), bool)
@@ -818,6 +853,14 @@ class Canvas:
             cell[r, c] = "─" if sid is None or sid < 0 else (shade_of.get(sid, "█") if kind == "fill" and sid in shade_of else ramp(lum(inv[sid])) if kind == "fill" and self.cont and sid in inv else glyph(sid) if multi else ("█" if kind == "fill" else "•" if kind == "mark" else "─"))
             sid_at[r, c] = sid if sid is not None else -2
 
+        return continuation, inv
+
+    def _serialize(self, raster, cell, sid_at, heatrgb, continuation, inv, color):
+        """Serialize rows and append the existing keys, side labels and captions."""
+        R_, C_ = self.rows, self.cols
+        under, rscaled = raster["under"], raster["rscaled"]
+        nser, multi = raster["nser"], raster["multi"]
+        shade_of, glyph = raster["shade_of"], raster["glyph"]
         rows = self._serialize_rows(cell, sid_at, under, continuation, inv, heatrgb, color)
         while rows and not rows[-1].strip(): rows.pop()
         if self.heat: rows = [r for i, r in enumerate(rows) if r.strip() or not (i and not rows[i - 1].strip())]   # axes shrunk to the observed rows but the canvas did not: at most one blank row
