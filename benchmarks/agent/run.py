@@ -197,7 +197,8 @@ def load(key, tag):
     m, usable, excluded = manifest(tag), {}, 0
     for r in rows():
         if r["tag"] == tag and r["chart"] in key and r.get("asked") == asks(key[r["chart"]]["questions"]) and not r["is_error"]:
-            if r.get("shown") == m.get(r["chart"], {}).get(r["format"]):
+            expected = m.get(r["chart"], {}).get(r["format"])
+            if expected is not None and r.get("shown") == expected:
                 usable[r["chart"], r["format"], r["model"]] = r
             else:
                 excluded += 1
@@ -209,7 +210,10 @@ def scored(key, model, tag):
     missing some format (left out of every table) and the count of rows excluded by the manifest."""
     found, excluded = load(key, tag)
     by = {(c, f): r for (c, f, m), r in found.items() if m == model}
-    fmts = [f for f in dict.fromkeys(FORMATS + sorted({f for _, f in by})) if f == "none" or any((c, f) in by for c in key)]
+    m = manifest(tag)
+    expected = {f for c in key for f in m.get(c, {})}
+    fmts = [f for f in dict.fromkeys(FORMATS + sorted(expected | {f for _, f in by}))
+            if f == "none" or f in expected or any((c, f) in by for c in key)]
     charts = [c for c in key if all((c, f) in by for f in fmts)]
     incomplete = {c: [f for f in fmts if (c, f) not in by] for c in key if c not in charts}
     score = {(c, f): [grade(q, parse(r["reply"]).get(qid)) for qid, q in key[c]["questions"].items()] for (c, f), r in by.items()}
@@ -224,8 +228,12 @@ def acc(cells):
 def section(split, key, model, tag):
     """The detailed tables for one split under one tag."""
     by, score, shown, charts, incomplete, excluded = scored(key, model, tag)
+    diagnostics = ([f"{len(incomplete)} incomplete charts, left out of every table: "
+                    + ", ".join(f"`{c}` ({', '.join(fs)})" for c, fs in incomplete.items()) + "."] if incomplete else [])
+    if excluded:
+        diagnostics.append(f"{excluded} rows excluded: stimulus changed since the manifest.")
     if not charts:
-        return []
+        return [f"## {split} split, `{tag}`: no complete charts", "", *diagnostics, ""] if diagnostics else []
 
     def chart_tokens(cid, fmt):  # what the chart itself cost: this call's input minus the same call with no chart
         return by[cid, fmt]["input_tokens"] - by[cid, "none"]["input_tokens"]
@@ -244,9 +252,7 @@ def section(split, key, model, tag):
          f"(same chart shown, same questions). Cost of those made for it: ${sum(r['cost_usd'] or 0 for r in fresh):.2f}.",
          *(f"{n} raised on {len(cs)} chart(s) ({', '.join(f'`{c}`' for c in cs)}); that call got the error in place of a chart."
            for n, cs in failed.items() if cs),
-         *([f"{len(incomplete)} incomplete charts, left out of every table: "
-            + ", ".join(f"`{c}` ({', '.join(fs)})" for c, fs in incomplete.items()) + "."] if incomplete else []),
-         *([f"{excluded} rows excluded: stimulus changed since the manifest."] if excluded else []),
+         *diagnostics,
          "", "| format | accuracy | chart tokens, median (Claude) | chart tokens, total (Claude) | o200k median | output tokens, median | wall s, median | API s, median |",
          "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for fmt in shown:
