@@ -37,4 +37,5 @@ for kind in ('line', 'bar', 'heat'):
                 results.append([r.text, r.summary(), r.dimensions, r.losses, r.series, r.scales])
             except axi.RenderLossError as error:
                 results.append(['error', str(error), error.result.text])
-print(json.dumps(results, sort_keys=True))
+# Line/scatter points are ndarrays; normalize them only for this lazy/eager comparison.
+print(json.dumps(results, sort_keys=True, default=lambda array: array.tolist()))
