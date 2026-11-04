@@ -21,13 +21,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
-dependencies = ["numpy", "matplotlib", "wcwidth>=0.2.13"]
+dependencies = ["numpy>=1.23.0", "matplotlib>=3.10.0", "wcwidth>=0.2.13"]
 
 [project.urls]
 Homepage = "https://github.com/papayuh/trendsetter-axi"

@@ -5,18 +5,64 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  MPLBACKEND: Agg
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.12", "3.14"]
+        dependencies: [latest]
+        include:
+          - python-version: "3.10"
+            dependencies: floors
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev]'
+      - name: Install latest compatible dependencies
+        if: matrix.dependencies == 'latest'
+        run: python -m pip install --upgrade -e '.[dev]'
+      - name: Install dependency floors
+        if: matrix.dependencies == 'floors'
+        run: python -m pip install -e '.[dev]' 'matplotlib==3.10.0' 'numpy==1.23.0'
       # also collects the self-checks embedded in mpl.py and the fake-renderer sensitivity check
       - run: python -m pytest -q
+
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
+      - name: Build and install wheel into a clean environment
+        run: |
+          uv build
+          uv venv --python "$(command -v python)" .wheel-venv
+          # Embedded self-checks exercise the optional pandas-backed gallery fixtures.
+          uv pip install --python .wheel-venv/bin/python dist/*.whl pandas
+      - name: Exercise installed package outside the checkout
+        run: |
+          python="$GITHUB_WORKSPACE/.wheel-venv/bin/python"
+          cd "$(mktemp -d)"
+          "$python" - <<'PY'
+          from pathlib import Path
+          import sys
+          import trendsetter_axi
+          from matplotlib.figure import Figure
+
+          assert Path(trendsetter_axi.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
+          fig = Figure()
+          ax = fig.subplots()
+          ax.plot([0, 1, 2], [0, 2, 1])
+          assert trendsetter_axi.render_figure(fig, cols=60).strip()
+          svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><path d="M10 60 L60 10 L110 40" fill="none" stroke="black"/></svg>'
+          assert trendsetter_axi.render_svg(svg, cols=60).strip()
+          PY
+          "$python" -m trendsetter_axi.mpl --test
