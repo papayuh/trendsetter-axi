@@ -767,6 +767,86 @@ def test_scatter_date_mean_keeps_time_of_day(close, horizontal):
     assert s["mean"] == ("2,2026-10-27 12:00" if horizontal else "2026-10-27 12:00,2")
 
 
+@pytest.mark.parametrize("position", [(50, 50), (0, 0), (99, 99), (0, 99), (25, 75)])
+@pytest.mark.parametrize("value", [1, -1])
+def test_sampled_heatmap_reports_lost_extreme(close, position, value):
+    z = np.zeros((100, 100)); z[position] = value
+    fig = figure(lambda ax: ax.imshow(z, aspect="auto", vmin=min(0, value), vmax=max(0, value)))
+    r = tsa.render(fig, 40, rows=12)
+    sampled = [loss for loss in r.losses if loss["kind"] == "heat_sampled"]
+    assert len(sampled) == 1 and not sampled[0]["material"], r.losses
+    heat_rows = [sum(ch in core.HEAT for ch in row) for row in r.text.splitlines()]
+    shown = (sum(n > 0 for n in heat_rows), max(heat_rows))
+    assert "100x100" in sampled[0]["detail"] and f"{shown[0]}x{shown[1]} text cells" in sampled[0]["detail"]
+    extreme = "max" if value > 0 else "min"
+    index = tuple(map(int, np.unravel_index(getattr(z, "arg" + extreme)(), z.shape)))
+    lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
+    assert len(lost) == 1 and lost[0]["material"], r.losses
+    assert f"heatmap {extreme} {index}={value}" in lost[0]["what"]
+    with pytest.raises(tsa.RenderLossError, match="lost_extreme") as exc:
+        tsa.render(fig, 40, rows=12, strict=True)
+    assert str(index) in str(exc.value)
+
+
+def test_full_resolution_heatmap_has_no_sampling_loss(close):
+    z = np.arange(100).reshape(10, 10)
+    r = tsa.render(figure(lambda ax: ax.imshow(z, aspect="auto")), 80, strict=True)
+    assert not [loss for loss in r.losses if loss["kind"] in ("heat_sampled", "lost_extreme")]
+
+
+@pytest.mark.parametrize("kind", ["checkerboard", "constant", "nan", "masked", "empty"])
+def test_sampling_without_lost_extreme_is_not_material(close, kind):
+    z = (np.indices((100, 100)).sum(0) % 2).astype(float) if kind == "checkerboard" else np.zeros((100, 100))
+    if kind == "nan": z[50, 50] = np.nan
+    if kind == "masked":
+        z[50, 50] = 100
+        z = np.ma.array(z, mask=np.zeros(z.shape, bool)); z.mask[50, 50] = True
+    if kind == "empty": z[:] = np.nan
+    r = tsa.render(figure(lambda ax: ax.imshow(z, aspect="auto", vmin=0, vmax=1)), 40, rows=12, strict=True)
+    assert any(loss["kind"] == "heat_sampled" and not loss["material"] for loss in r.losses), r.losses
+    assert not any(loss["kind"] == "lost_extreme" for loss in r.losses), r.losses
+
+
+def test_lost_extreme_tracks_the_shown_cells():
+    z = np.zeros((100, 100))
+    xs, ys = np.linspace(0, 400, 101), np.linspace(0, 200, 101)
+    ci = np.searchsorted(xs, (np.arange(40) + .5) * 10) - 1
+    ri = np.searchsorted(ys, (np.arange(10) + .5) * 20) - 1
+    z[ri[0], ci[0]] = 1
+    canvas = core.Canvas(400, 200, 40)
+    canvas.heat_grid(xs, ys, z)
+    assert not canvas.meta.get("lost_extreme")
+    assert (0, 0, len(core.HEAT) - 1) in canvas.heat
+    assert sum(level > 0 for _, _, level in canvas.heat) == 1
+    assert canvas.meta.get("heat_sampled")
+
+
+@pytest.mark.parametrize("spike, lost", [(1.1, False), (100, True)])
+def test_heatmap_sampling_compares_normalised_levels(close, spike, lost):
+    from matplotlib.colors import LogNorm
+    z = np.ones((100, 100)); z[50, 50] = spike
+    norm = LogNorm(vmin=1, vmax=100)
+    levels = np.minimum(3, norm(z) * 4).astype(int)
+    assert (levels[50, 50] != levels[0, 0]) == lost
+    r = tsa.render(figure(lambda ax: ax.imshow(z, aspect="auto", norm=norm)), 40, rows=12)
+    assert any(loss["kind"] == "heat_sampled" for loss in r.losses), r.losses
+    assert any(loss["kind"] == "lost_extreme" for loss in r.losses) == lost, r.losses
+
+
+@pytest.mark.parametrize("origin, invert", [("upper", False), ("lower", False), ("upper", True)])
+def test_lost_heat_extreme_uses_source_index_value_and_labels(close, origin, invert):
+    z = np.zeros((100, 100)); z[25, 75] = 42
+    def build(ax):
+        ax.imshow(z, aspect="auto", origin=origin, vmin=0, vmax=42)
+        ax.set_xticks([75], ["east"]); ax.set_yticks([25], ["north"])
+        if invert: ax.invert_xaxis(); ax.invert_yaxis()
+    r = tsa.render(figure(build), 40, rows=12)
+    lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
+    index = tuple(map(int, np.unravel_index(z.argmax(), z.shape)))
+    assert len(lost) == 1 and f"heatmap max {index}=42" in lost[0]["what"], r.losses
+    assert "north/east" in lost[0]["what"]
+
+
 def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):
     def build(ax):
         ax.imshow([[1, 2], [3, 4]], extent=[0, .4, 0, .4], origin="lower")
