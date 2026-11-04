@@ -283,3 +283,119 @@ def test_mathtext_runs_keep_superscript_layout():
     body = ('<text x="150" y="50"><tspan x="0" y="0" style="font-size: 12px">x</tspan>'
             '<tspan x="8" y="-4" style="font-size: 8px">2</tspan></text>')
     assert tsa.render_svg(doc(body), 80).strip() == "x²"
+
+
+@pytest.mark.parametrize("prop", ["fill", "stroke"])
+@pytest.mark.parametrize("ref", ["g", "p", "missing"])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("container", ["group", "use", "image", "text", "tspan", "empty-text", "empty-tspan", "empty-shape", "hidden-run", "excluded-shape"])
+def test_nonpainting_containers_do_not_report_paints(prop, ref, inline, container):
+    effect = f'style="{prop}: url(#{ref})"' if inline else f'{prop}="url(#{ref})"'
+    defs = '<defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient><pattern id="p"/></defs>'
+    rect = RECT.format(' stroke="none"')
+    if container == "group":
+        body, expected = f'<g {effect}>{rect}</g>', RECT_TEXT
+    elif container == "use":
+        target = rect.replace('<rect ', '<rect id="target" ')
+        body, expected = f'<defs>{target}</defs><use href="#target" {effect}/>', RECT_TEXT
+    elif container == "image":
+        body, expected = f'<image {effect}/>', ""
+    elif container == "text":
+        body, expected = f'<text x="150" y="50" {effect}><tspan fill="black" stroke="none">label</tspan></text>', "label"
+    elif container == "tspan":
+        body, expected = f'<text x="150" y="50"><tspan {effect}><tspan fill="black" stroke="none">label</tspan></tspan></text>', "label"
+    elif container == "empty-text":
+        body, expected = f'<text {effect}/>', ""
+    elif container == "empty-tspan":
+        body, expected = f'<text><tspan {effect}> </tspan></text>', ""
+    elif container == "empty-shape":
+        body, expected = f'<rect width="0" height="10" {effect}/>', ""
+    elif container == "hidden-run":
+        body, expected = f'<text><tspan visibility="hidden" {effect}>hidden</tspan></text>', ""
+    else:
+        body, expected = f'<g id="annotation"><rect width="10" height="10" {effect}/></g>', ""
+    r = tsa.render(doc(defs + body), 80, strict=True)
+    assert unsupported(r) == {}
+    assert r.text.strip() == expected.strip()
+
+
+@pytest.mark.parametrize("prop,ref,material", [("mask", "m", True), ("filter", "f", True), ("clip-path", "c", False)])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("container", ["group", "use"])
+def test_container_effects_still_report(prop, ref, material, inline, container):
+    defs = '<defs><mask id="m"/><filter id="f"/><clipPath id="c"><circle r="1"/></clipPath></defs>'
+    effect = f'style="{prop}: url(#{ref})"' if inline else f'{prop}="url(#{ref})"'
+    if container == "group":
+        body = f'<g {effect}>{RECT.format("")}</g>'
+    else:
+        target = RECT.format("").replace('<rect ', '<rect id="target" ')
+        body = f'<defs>{target}</defs><use href="#target" {effect}/>'
+    source = doc(defs + body)
+    r = tsa.render(source, 80)
+    assert unsupported(r)[f"{prop} #{ref}"]["material"] is material
+    assert r.text.rsplit("\n", 1)[0] == RECT_TEXT
+    if material:
+        with pytest.raises(tsa.RenderLossError):
+            tsa.render(source, 80, strict=True)
+    else:
+        assert tsa.render(source, 80, strict=True).text == r.text
+
+
+@pytest.mark.parametrize("definition", [
+    '<clipPath id="c"><rect width="10" height="10"/></clipPath>',
+    '<clipPath id="c"><circle r="1"/></clipPath>',
+    '',
+], ids=["rectangular", "circular", "unresolved"])
+@pytest.mark.parametrize("nested", [False, True], ids=["direct-tspan", "nested-tspan"])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+def test_run_local_clips_are_reported_unclipped(definition, nested, inline):
+    effect = 'style="clip-path: url(#c)"' if inline else 'clip-path="url(#c)"'
+    run = f'<tspan {effect}>label</tspan>'
+    if nested: run = f'<tspan {effect}><tspan>label</tspan></tspan>'
+    source = doc(f'<defs>{definition}</defs><text x="150" y="50">{run}</text>')
+    r = tsa.render(source, 80, strict=True)
+    assert r.text.rsplit("\n", 1)[0].strip() == "label"
+    assert "drawn unclipped" in r.text
+    assert unsupported(r)["clip-path #c"]["material"] is False
+
+
+@pytest.mark.parametrize("container", ["text", "group"])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("rect,expected", [
+    ('width="10" height="10"', ""),
+    ('x="100" y="20" width="100" height="60"', "label"),
+])
+def test_text_root_rectangular_clips_remain_honoured(container, inline, rect, expected):
+    effect = 'style="clip-path: url(#c)"' if inline else 'clip-path="url(#c)"'
+    if container == "text":
+        body = f'<text x="150" y="50" {effect}>label</text>'
+    else:
+        body = f'<g {effect}><text x="150" y="50">label</text></g>'
+    source = doc(f'<defs><clipPath id="c"><rect {rect}/></clipPath></defs>{body}')
+    r = tsa.render(source, 80, strict=True)
+    assert r.text.strip() == expected
+    assert unsupported(r) == {}
+
+
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("container", ["text", "tspan", "nested-tspan"])
+def test_text_visibility_can_be_overridden(inline, container):
+    hidden = 'style="visibility: hidden"' if inline else 'visibility="hidden"'
+    visible = 'style="visibility: visible"' if inline else 'visibility="visible"'
+    run = f'<tspan {visible}>label</tspan>'
+    if container == "text":
+        body = f'<text x="150" y="50" {hidden}>hidden{run}</text>'
+    else:
+        run = f'<tspan {hidden}>hidden{run}</tspan>'
+        if container == "nested-tspan": run = f'<tspan {hidden}>{run}</tspan>'
+        body = f'<text x="150" y="50">{run}</text>'
+    assert tsa.render_svg(doc(body), 80).strip() == "label"
+
+
+@pytest.mark.parametrize("restriction", ['visibility="hidden"', 'display="none"', 'opacity="0"'])
+def test_text_visibility_does_not_override_other_pruning(restriction):
+    if restriction.startswith("visibility"):
+        body = f'<text x="150" y="50"><tspan {restriction}>hidden<tspan>hidden</tspan></tspan></text>'
+    else:
+        body = f'<text x="150" y="50"><tspan {restriction}><tspan visibility="visible">hidden</tspan></tspan></text>'
+    assert tsa.render_svg(doc(body), 80) == ""
