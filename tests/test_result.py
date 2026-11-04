@@ -139,7 +139,7 @@ def test_summary_reads_each_kind_compactly(close):
     rng = np.random.default_rng(0)
     def hist(ax): ax.hist(rng.normal(size=500), bins=np.linspace(-4, 4, 17))
     s = tsa.render(figure(hist), 60).summary()
-    assert "histogram 16 bins of 0.5 from -4 to 4 peak" in s and "counts:" in s, s
+    assert "bars 16 bins of 0.5 from -4 to 4 peak" in s and "heights:" in s, s
 
     def heat(ax):
         ax.imshow([[1, 2], [3, 4]]); ax.set_xticks([0, 1], ["a", "b"]); ax.set_yticks([0, 1], ["top", "low"])
@@ -312,3 +312,92 @@ def test_hidden_artists_are_not_described(close):
     assert len(r.scales) == 1, r.scales
     assert [w for w in r.warnings if "hidden" in w] == ["3 hidden artists not described"], r.warnings   # the line, the bar, the axes
     assert all(l["kind"] == "text" for l in r.losses), r.losses   # hidden is not lost: losses() already skips invisible artists
+
+
+@pytest.mark.parametrize("errors, expected", [
+    ([3, 3, 3], ["3", "3", "3"]),
+    ([[1, 1, 1], [2, 2, 2]], ["-1/+2"] * 3),
+    ([3, np.nan, 3], ["3", "?", "3"]),
+])
+def test_errorbar_bounds_are_described(close, errors, expected):
+    x, y = np.arange(3), np.array([4, 5, 6])
+    fig = figure(lambda ax: ax.errorbar(x, y, yerr=errors, xerr=0.5, label="estimate", capsize=3))
+    r = tsa.render(fig, 60)
+    assert len(r.series) == 1
+    s = r.series[0]
+    assert s["name"] == "estimate" and s["kind"] == "line"
+    assert s["yerr"] == expected and s["xerr"] == ["0.5"] * len(x)
+    assert s["missing"] == 0 and np.array_equal(s["points"], np.column_stack([x, y]))
+    values = [f"{v}±{e}" if not e.startswith("-") else f"{v}{e}" for v, e in zip(y, expected)]
+    assert " ".join(values) in r.summary() and "'estimate'" in r.summary()
+    assert "xerr: 0.5 0.5 0.5" in r.summary()
+    assert r.not_described == []   # neither caps nor bar segments are extra series
+
+
+@pytest.mark.parametrize("kw, field, values", [
+    (dict(yerr=3), "yerr", "4±3 5±3 6±3"),
+    (dict(xerr=0.5), "xerr", "0±0.5 1±0.5 2±0.5"),
+    (dict(xerr=0.5, yerr=3), "yerr", "4±3 5±3 6±3"),
+])
+def test_errorbar_only_plot_is_described(close, kw, field, values):
+    x, y = np.arange(3), np.array([4, 5, 6])
+    r = tsa.render(figure(lambda ax: ax.errorbar(x, y, fmt="none", label="estimate", **kw)), 60)
+    assert len(r.series) == 1
+    s = r.series[0]
+    assert s["kind"] == "errorbar" and s["n"] == len(x) and field in s
+    assert np.array_equal(s["points"], np.column_stack([x, y]))
+    assert values in r.summary() and "'estimate'" in r.summary()
+    assert r.summary() != "losses: none" and r.not_described == []
+
+
+@pytest.mark.parametrize("kind", ["pie", "contour", "patch", "empty"])
+def test_unsupported_artists_are_listed(close, kind):
+    from matplotlib.patches import Rectangle
+    from trendsetter_axi.mpl import describe
+    from trendsetter_axi.result import FIGURE
+    fig, ax = plt.subplots(figsize=(8, 3))
+    expected = []
+    if kind == "pie":
+        ax.pie([20, 80], labels=["A", "B"])
+        expected = [("Wedge", 2)]
+    elif kind == "contour":
+        artist = ax.contour(np.arange(9).reshape(3, 3))
+        expected = [(type(artist).__name__, 1)]
+    elif kind == "patch":
+        ax.add_patch(Rectangle((0.1, 0.1), 0.5, 0.5))
+        expected = [("Rectangle", 1)]
+    ax.add_patch(Rectangle((0, 0), 1, 1, visible=False))
+    r = tsa.render(fig, 60)
+    assert r.series == [] and r.not_described == expected
+    assert r.supported_features == FIGURE
+    coverage = [line for line in r.summary().splitlines() if line.startswith("not described:")]
+    assert coverage == (["not described: " + ", ".join(f"{n} {name}" for name, n in expected)] if expected else [])
+    losses = [loss.copy() for loss in r.losses]
+    meta = dict(series=[], losses=losses)
+    describe(fig, meta)
+    assert meta["losses"] == losses and all(loss["kind"] != "not_described" for loss in losses)
+
+
+@pytest.mark.parametrize("kind", ["density", "weighted", "bar", "stacked", "barh", "six", "seven"])
+def test_bar_bins_claim_no_statistics(close, kind):
+    x, heights = np.arange(8), np.arange(1, 9)
+    def build(ax):
+        if kind in ("density", "weighted"):
+            samples = np.linspace(0, 16, 1601)
+            ax.hist(samples, bins=np.arange(0, 18, 2), **(dict(density=True) if kind == "density" else dict(weights=np.full(len(samples), 0.5))))
+        elif kind == "barh":
+            ax.barh(x, heights, height=1, label="price")
+        else:
+            n = 6 if kind == "six" else 7 if kind == "seven" else 8
+            ax.bar(x[:n], heights[:n], width=1, label="price")
+            if kind == "stacked": ax.bar(x, heights * 2, width=1, bottom=heights, label="extra")
+    r = tsa.render(figure(build), 60)
+    assert len(r.series) == (2 if kind == "stacked" else 1)
+    assert "counts:" not in r.summary()
+    if kind == "six":
+        assert r.series[0]["kind"] == "bar" and "heights:" not in r.summary()
+    else:
+        assert all(s["kind"] == "histogram" for s in r.series)
+        rows = [line for line in r.summary().splitlines() if line.startswith("bars ")]
+        assert len(rows) == len(r.series) and all("heights:" in line for line in rows)
+        if kind == "bar": assert "bars 'price' 8 bins of 1 from -0.5 to 7.5 peak 6.5-7.5=8 heights: 1 2 3 4 5 6 7 8" in rows[0]
