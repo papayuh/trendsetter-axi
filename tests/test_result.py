@@ -417,6 +417,103 @@ def test_errorbar_sparse_segments_do_not_shift_bounds(close):
     assert "4±1 5±? 6±3 7±?" in r.summary()
 
 
+@pytest.mark.parametrize("fmt", ["-", "none"])
+@pytest.mark.parametrize("invert_x, invert_y", [(False, False), (True, False), (False, True), (True, True)])
+def test_errorbar_segments_use_data_coordinates(close, fmt, invert_x, invert_y):
+    def build(ax):
+        ax.set_xlim((100, 0) if invert_x else (0, 100))
+        ax.set_ylim((200, 0) if invert_y else (0, 200))
+        ax.errorbar([0.5], [0.5], xerr=0.05, yerr=0.1, fmt=fmt, transform=ax.transAxes)
+    r = tsa.render(figure(build), 60)
+    s = r.series[0]
+    assert s["points"] == pytest.approx(np.array([[50, 100]]))
+    assert s["xerr"] == ["5"] and s["yerr"] == ["20"]
+    assert s["missing"] == 0
+    assert "100±20" in r.summary() and "50±5" in r.summary()
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("fmt", ["-", "none"])
+def test_transformed_asymmetric_errorbars_use_data_endpoints(close, axis, fmt):
+    def build(ax):
+        ax.set(xlim=(100, 0), ylim=(100, 0))
+        ax.errorbar([0.5], [0.5], fmt=fmt, transform=ax.transAxes, **{axis + "err": [[0.1], [0.2]]})
+    r = tsa.render(figure(build), 60)
+    s = r.series[0]
+    expected = [[50, 50]]
+    if fmt == "none": expected[0]["xy".index(axis)] = 45
+    assert s["points"] == pytest.approx(np.array(expected))
+    assert s[axis + "err"] == (["15"] if fmt == "none" else ["-20/+10"])
+
+
+@pytest.mark.parametrize("flag", ["lolims", "uplims", "xlolims", "xuplims"])
+@pytest.mark.parametrize("fmt", ["-", "none"])
+@pytest.mark.parametrize("inverted, hide_caps", [(False, False), (True, False), (False, True)])
+def test_one_sided_errorbar_limits_are_explicitly_unsupported(close, flag, fmt, inverted, hide_caps):
+    def build(ax):
+        if inverted: ax.set(xlim=(10, 0), ylim=(10, 0))
+        c = ax.errorbar([2, 4], [5, 7], xerr=1, yerr=2, fmt=fmt, capsize=3, **{flag: [True, False]})
+        if hide_caps:
+            for cap in c.lines[1]: cap.set_visible(False)
+    r = tsa.render(figure(build), 60)
+    field = "xerr" if flag.startswith("x") else "yerr"
+    assert "one-sided limit bounds unsupported" in r.summary()
+    assert field + " unknown for this container" in r.summary()
+    assert r.not_described == []
+    if fmt == "none":
+        assert r.series == []
+        assert "centers unavailable without a data line" in r.summary()
+        assert "centers inferred" not in r.summary() and "±" not in r.summary()
+    else:
+        assert len(r.series) == 1
+        s = r.series[0]
+        assert np.array_equal(s["points"], [[2, 5], [4, 7]]) and s["missing"] == 0
+        assert s[field] == ["?", "?"]
+        other = "yerr" if field == "xerr" else "xerr"
+        assert s[other] == (["2", "2"] if other == "yerr" else ["1", "1"])
+
+
+def test_one_sided_limits_on_both_axes_do_not_claim_intervals(close):
+    r = tsa.render(figure(lambda ax: ax.errorbar([2], [5], xerr=1, yerr=2, xlolims=True, uplims=True)), 60)
+    assert r.series[0]["xerr"] == ["?"] and r.series[0]["yerr"] == ["?"]
+    assert "xerr/yerr unknown for this container" in r.summary()
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("sparse", [False, True])
+def test_errorbar_duplicate_alignment_is_unknown_only_when_sparse(close, axis, sparse):
+    x, y = np.arange(4), np.arange(4) + 4
+    if axis == "x": y[1] = y[0]
+    else: x[1] = x[0]
+    r = tsa.render(figure(lambda ax: ax.errorbar(x, y, errorevery=2 if sparse else 1,
+                                              **{axis + "err": np.arange(4) + 1})), 60)
+    assert r.series[0][axis + "err"] == (["?", "?", "3", "?"] if sparse else ["1", "2", "3", "4"])
+    assert r.series[0]["missing"] == 0
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_sparse_errorbar_alignment_has_linear_scan_budget(close, monkeypatch, axis):
+    from trendsetter_axi.mpl import describe
+    n = 10000
+    x = np.arange(float(n))
+    fig = figure(lambda ax: ax.errorbar(x, 2 * x + 4, errorevery=2, **{axis + "err": 3}))
+    original = np.flatnonzero
+    scanned = 0
+
+    def budgeted(values):
+        nonlocal scanned
+        scanned += np.size(values)
+        assert scanned <= 4 * n
+        return original(values)
+
+    monkeypatch.setattr(np, "flatnonzero", budgeted)
+    series, _ = describe(fig, {"series": []})
+    s = series[0]
+    assert s["n"] == n and s["sampled"] and s["missing"] == 0
+    assert s[axis + "err"] == ["3" if int(v) % 2 == 0 else "?" for v in s["at"]]
+    assert np.array_equal(s["points"], np.column_stack([x, 2 * x + 4]))
+
+
 def test_hidden_errorbar_members_are_not_extra_series(close):
     def build(ax):
         c = ax.errorbar([0, 1, 2], [4, 5, 6], yerr=3, capsize=3)

@@ -11,7 +11,7 @@ from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.category import UnitData
 from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh
 from matplotlib.colors import to_hex, to_rgb
-from matplotlib.lines import Line2D
+from matplotlib.lines import Line2D, CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE
 from matplotlib.container import BarContainer, ErrorbarContainer
 from matplotlib.image import _ImageBase
 from .core import Canvas
@@ -677,12 +677,21 @@ def describe(fig, meta):
         errorbars = []
         for c in ax.containers:
             if isinstance(c, ErrorbarContainer):
-                a, _, cols = c.lines
+                a, caps, cols = c.lines
                 members = c.get_children()
                 handled.update(id(v) for v in members)
                 hidden += sum(not v.get_visible() for v in members)
                 if not any(v.get_visible() for v in members): continue
-                segments = {k: col.get_segments() for k, col in zip([k for k, yes in zip('xy', (c.has_xerr, c.has_yerr)) if yes], cols) if col.get_visible()}
+                limited = {k for k, markers in [('x', (CARETLEFTBASE, CARETRIGHTBASE)), ('y', (CARETUPBASE, CARETDOWNBASE))]
+                           if any(cap.get_marker() in markers for cap in caps)}
+                meta.setdefault('summary_omissions', []).append(dict(
+                    what='errorbar', detail='sample support unavailable in summary; use source arrays' +
+                    ('; one-sided limit bounds unsupported; ' + '/'.join(k + 'err' for k in sorted(limited)) + ' unknown for this container' +
+                     ('; centers unavailable without a data line' if a is None else '') if limited else
+                     '; centers inferred from segment midpoints without a data line' if a is None else '')))
+                if limited and a is None: continue
+                segments = {k: [data(col.get_transform(), seg) for seg in col.get_segments()]
+                            for k, col in zip([k for k, yes in zip('xy', (c.has_xerr, c.has_yerr)) if yes], cols) if col.get_visible()}
                 if a is not None:
                     xy = data(a.get_transform(), a.get_xydata())
                 else:
@@ -702,18 +711,19 @@ def describe(fig, meta):
                 for k, segs in segments.items():
                     axis = 'xy'.index(k)
                     bounds = np.full((len(xy), 2), np.nan)
-                    for i, seg in enumerate(segs):
-                        if len(seg) != 2: continue
-                        # ponytail: sparse segments (errorevery) with duplicate perpendicular coordinates cannot be aligned uniquely; leave those bounds unknown.
-                        matches = [i] if len(segs) == len(xy) else np.flatnonzero(xy[:, 1 - axis] == seg[0, 1 - axis])
-                        if len(matches) == 1:
-                            row = matches[0]
-                            bounds[row] = xy[row, axis] - seg[0, axis], seg[1, axis] - xy[row, axis]
+                    if k not in limited:
+                        rows = {}
+                        if len(segs) != len(xy):
+                            for row, v in enumerate(xy[:, 1 - axis]):
+                                rows[v] = None if v in rows else row
+                        for i, seg in enumerate(segs):
+                            if len(seg) != 2: continue
+                            row = i if len(segs) == len(xy) else rows.get(seg[0, 1 - axis])
+                            if row is not None:
+                                lo, hi = np.sort(seg[:, axis])
+                                bounds[row] = xy[row, axis] - lo, hi - xy[row, axis]
                     errors[k + 'err'] = bounds
                 errorbars.append((a, c, xy, errors))
-                meta.setdefault('summary_omissions', []).append(dict(
-                    what='errorbar', detail='sample support unavailable in summary; use source arrays' +
-                    ('; centers inferred from segment midpoints without a data line' if a is None else '')))
                 continue
             if not isinstance(c, BarContainer) or not len(c): continue
             handled.update(id(b) for b in c)

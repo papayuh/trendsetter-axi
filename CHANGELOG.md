@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Summaries describe labelled errorbars, including line-free plots, with symmetric/asymmetric x/y bounds and unknown bounds distinct from missing central points. Visible unsupported data artists appear in `not_described` and a `not described:` coverage line, separate from render losses.
+- Summaries describe labelled errorbars, including line-free plots, with symmetric/asymmetric x/y bounds in data coordinates and unknown bounds distinct from missing central points. One-sided limits explicitly disclose unsupported bounds (and omit line-free limit containers); sparse alignment is linear and leaves ambiguous duplicates unknown. Visible unsupported data artists appear in `not_described` and a `not described:` coverage line, separate from render losses.
 - Compact equal-width touching bars are presented as `bars` with `heights:`, not histogram counts; the API kind remains `histogram` and the seven-bar threshold is unchanged.
 
 - Defer format-specific imports: package import, native rankings and scalar responses load neither NumPy nor Matplotlib; vector SVG does not load Matplotlib. Default dependencies are unchanged.
