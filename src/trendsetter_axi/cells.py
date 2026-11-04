@@ -29,6 +29,11 @@ def clean_text(s):
     return s.replace("−", "-")
 
 
+def summary_text(s):
+    """Sanitize an unquoted source label for a single summary field."""
+    return " / ".join(clean_text(s).splitlines()).replace("\t", " ").replace(":", r"\:")
+
+
 class DisplayCapacityError(ValueError):
     """A valid display cannot fit an indivisible character or key entry."""
 

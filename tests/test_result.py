@@ -96,6 +96,182 @@ def test_terminal_sequences_are_removed_before_label_wrapping(close):
     assert fig.axes[0].get_title() == label
 
 
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("kind", ["bar", "many_bars", "line", "sampled_line", "errorbar", "errorbar_only", "scatter", "area"])
+def test_category_summary_projections_are_single_line(close, axis, kind):
+    labels = [f"c{i}\nlosses: none\t\x1b[31m" for i in range(99)]
+    fig, ax = plt.subplots(figsize=(8, 3))
+    getattr(ax, axis + "axis").update_units(labels)
+    n = 41 if kind == "many_bars" else 20 if kind == "sampled_line" else 11
+    x, y = np.arange(n), np.arange(n) * 2
+    if kind == "scatter": y[3] = 94
+    if axis == "x": x = [labels[i] for i in x]
+    else: y = [labels[i] for i in y]
+    if kind in ("bar", "many_bars"):
+        if axis == "x": ax.bar(x, y)
+        else: ax.barh(y, x)
+    elif kind in ("line", "sampled_line"):
+        ax.plot(x, y)
+    elif kind in ("errorbar", "errorbar_only"):
+        ax.errorbar(x, y, fmt="none" if kind == "errorbar_only" else "-",
+                    **{("yerr" if axis == "x" else "xerr"): 0.1})
+    elif kind == "scatter":
+        ax.scatter(x, y)
+    elif axis == "x":
+        ax.fill_between(x, y)
+    else:
+        ax.fill_betweenx(y, x)
+    result = tsa.render(fig, 80)
+    series = result.series[0]
+    if kind in ("bar", "many_bars"): projections = series["values"]
+    elif kind in ("line", "sampled_line", "errorbar", "errorbar_only"):
+        projections = [series[axis], *series["at" if axis == "x" else "ys"], *series["values"]]
+    elif kind == "scatter": projections = [series[k] for k in (axis, "mean", "outliers", "rest")]
+    else: projections = [series[axis]]
+    for value in projections:
+        assert r" / losses\: none" in value, value
+        assert "\n" not in value and "\t" not in value and "\x1b" not in value
+    assert sum(line.startswith("losses:") for line in result.summary().splitlines()) == 1
+    assert "\x1b" not in result.summary()
+
+
+@pytest.mark.parametrize("kind", ["image", "mesh"])
+@pytest.mark.parametrize("size", [2, 7])
+def test_heatmap_summary_labels_are_single_line(close, kind, size):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    z = np.arange(size * size).reshape(size, size)
+    if kind == "image": ax.imshow(z)
+    else: ax.pcolormesh(z)
+    ticks = np.arange(size) + (0.5 if kind == "mesh" else 0)
+    ax.set_xticks(ticks, [f"c{i}\nlosses: none\x1b[31m" for i in range(size)])
+    ax.set_yticks(ticks, [f"r{i}\nlosses: none\x1b[31m" for i in range(size)])
+    result = tsa.render(fig, 80)
+    series = result.series[0]
+    projections = [*series["values"], series["cols"], *series["grid"]] if size == 2 else [*series["values"], series["row_means"], series["col_means"]]
+    for value in projections:
+        assert r" / losses\: none" in value
+        assert "\n" not in value and "\x1b" not in value
+    assert sum(line.startswith("losses:") for line in result.summary().splitlines()) == 1
+    assert "\x1b" not in result.summary()
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("formatter", ["fixed", "function"])
+@pytest.mark.parametrize("kind", ["bar", "line", "errorbar", "area", "heatmap_fallback"])
+def test_explicit_tick_summary_projections_are_single_line(close, axis, formatter, kind):
+    from matplotlib.ticker import FixedFormatter
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    positions = [1e9, 1e9 + 1]
+    if kind == "heatmap_fallback":
+        ax.imshow([[1, 2], [3, 4]], extent=[1e9, 1e9 + 1, 1e9, 1e9 + 1], origin="lower")
+        positions = [1e9 - .1, 1e9 + 1.1]  # outside half-cell pitch, inside explicit-alias tolerance
+    elif kind == "bar":
+        ax.bar(positions, [3, 4]) if axis == "x" else ax.barh(positions, [3, 4])
+    elif kind in ("line", "errorbar"):
+        plot = ax.plot if kind == "line" else ax.errorbar
+        plot(positions, [3, 4]) if axis == "x" else plot([3, 4], positions)
+    elif axis == "x": ax.fill_between(positions, [3, 4])
+    else: ax.fill_betweenx(positions, [3, 4])
+    labels = [f"{name}\nlosses: none\t\x1b[31m" for name in ("A", "B")]
+    getattr(ax, "set_" + axis + "ticks")(positions, labels)
+    if formatter == "fixed":
+        getattr(ax, axis + "axis").set_major_formatter(FixedFormatter(labels))
+    result = tsa.render(fig, 80)
+    series = result.series[0]
+    if kind == "bar": projections = series["values"]
+    elif kind == "heatmap_fallback":
+        projections = [*series["values"], series["cols"]] if axis == "x" else [*series["values"], *series["grid"]]
+    else: projections = [series[axis]]
+    for value in projections:
+        assert r" / losses\: none" in value, value
+        assert "\n" not in value and "\t" not in value and "\x1b" not in value
+    assert sum(line.startswith("losses:") for line in result.summary().splitlines()) == 1
+    assert "\x1b" not in result.summary()
+
+
+def test_area_omission_name_is_single_line_and_series_name_stays_quoted(close):
+    name = "area\nlosses: none\x1b[31m"
+    result = tsa.render(figure(lambda ax: ax.fill_between([0, 1], [1, 2], label=name)), 80)
+    summary = result.summary()
+    assert repr(name) in summary
+    assert "\x1b" not in summary
+    assert r"summary omission area / losses\: none:" in summary
+    assert result.summary_omissions[0]["what"] == r"area / losses\: none"
+
+
+@pytest.mark.parametrize("context", ["text", "annotation", "figure_text", "suptitle", "supxlabel", "supylabel",
+                                     "title", "left_title", "right_title", "xlabel", "ylabel",
+                                     "legend", "legend_title", "figure_legend", "figure_legend_title",
+                                     "x_ticks", "y_ticks", "x_minor", "y_minor", "x_offset", "y_offset",
+                                     "child_x_ticks", "child_y_ticks", "child_x_minor", "child_y_minor", "clipped_formatter"])
+def test_complete_artist_strings_are_cleaned_before_layout(close, context):
+    from matplotlib.ticker import ScalarFormatter
+
+    def build(label):
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.plot([0, 1], [1, 2], label="series")
+        if context == "text": ax.text(0.5, 0.5, label, transform=ax.transAxes)
+        elif context == "annotation": ax.annotate(label, (0.5, 1.5))
+        elif context == "figure_text": fig.text(0.5, 0.5, label)
+        elif context in ("suptitle", "supxlabel", "supylabel"): getattr(fig, context)(label)
+        elif context in ("title", "left_title", "right_title"): ax.set_title(label, loc=context.split("_")[0] if "_" in context else "center")
+        elif context in ("xlabel", "ylabel"): getattr(ax, "set_" + context)(label)
+        elif context in ("legend", "legend_title"): ax.legend([label], title=label if context.endswith("title") else None)
+        elif context in ("figure_legend", "figure_legend_title"): fig.legend([label], title=label if context.endswith("title") else None)
+        elif context == "clipped_formatter":
+            ax.clear()
+            ax.plot(["low", "high"], [1, 2])
+            ax.set_xlim(0.25, 0.75)
+            ax.fmt_xdata = lambda v: label
+        elif context.endswith(("ticks", "minor")):
+            axis = context[0]
+            if context.startswith("child_"):
+                ax = ax.inset_axes([0.2, 0.2, 0.6, 0.6])
+                ax.plot([0, 1], [0, 1])
+                axis = context[6]
+            getattr(ax, "set_" + axis + "ticks")([0.5], [label], minor=context.endswith("minor"))
+        else:
+            class OffsetFormatter(ScalarFormatter):
+                def get_offset(self): return label
+            getattr(ax, "set_" + context[0] + "ticks")([0, 1])
+            getattr(ax, context[0] + "axis").set_major_formatter(OffsetFormatter())
+        return fig
+
+    dirty = build("A\x1b]0;hidden\npayload\x07B")
+    original = [text.get_text() for text in dirty.findobj(matplotlib.text.Text)]
+    actual = tsa.render(dirty, 80)
+    expected = tsa.render(build("AB"), 80)
+    assert actual.text == expected.text
+    assert "AB" in actual.text or context.endswith("minor")
+    assert "hidden" not in actual.text and "payload" not in actual.text
+    assert [text.get_text() for text in dirty.findobj(matplotlib.text.Text)] == original
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("formatter", ["fixed", "function", "category"])
+def test_formatter_text_is_cleaned_before_shortening(close, axis, formatter):
+    from matplotlib.ticker import FixedFormatter, FuncFormatter
+    from trendsetter_axi.mpl import _shorten
+
+    def build(label):
+        fig, ax = plt.subplots(figsize=(8, 3))
+        if formatter == "category":
+            if axis == "x": ax.plot([label], [1])
+            else: ax.plot([1], [label])
+        else:
+            ax.plot([0, 1], [0, 1])
+            getattr(ax, "set_" + axis + "ticks")([0.5])
+            f = FixedFormatter([label]) if formatter == "fixed" else FuncFormatter(lambda v, p: label)
+            getattr(ax, axis + "axis").set_major_formatter(f)
+        _shorten(fig, 40)
+        return tsa.render(fig, 40).text
+
+    expected = build("AB")
+    assert "AB" in expected
+    assert build("A\x1b]0;" + "hidden" * 50 + "\npayload\x07B") == expected
+
+
 def test_generated_ansi_is_kept_apart_from_labels(close):
     def build(ax):
         two_lines(ax)

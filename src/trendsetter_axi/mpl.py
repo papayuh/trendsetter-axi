@@ -6,16 +6,18 @@ legends and margins for the terminal grid instead of us patching collisions late
 """
 import numpy as np
 from matplotlib.backend_bases import RendererBase
+from matplotlib.axis import Axis
 from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.category import UnitData
 from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh
 from matplotlib.colors import to_hex, to_rgb
 from matplotlib.lines import Line2D, CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE
+from matplotlib.text import Text
 from matplotlib.container import BarContainer, ErrorbarContainer
 from matplotlib.image import _ImageBase
 from .core import Canvas
-from .cells import clean_text, truncate, width, wrap
+from .cells import clean_text, summary_text, truncate, width, wrap
 
 CW, CH = 7.0, 14.0  # one cell in points (dpi 72 => pixels)
 
@@ -405,7 +407,7 @@ def _shorten(fig, cols):
         for axis, w in ((ax.xaxis, max(5, int(ax.get_position().width * cols) // max(1, len(ax.get_xticks())))), (ax.yaxis, max(5, cols // 3))):  # y labels: at most a third of the width
             f = axis.get_major_formatter()
             if not isinstance(f, (FixedFormatter, FuncFormatter, StrCategoryFormatter)): continue   # numeric/date labels are short; wrapping them would lose set_locs
-            axis.set_major_formatter(FuncFormatter(lambda v, p, f=f, w=w: truncate(str(f(v, p)), w)))
+            axis.set_major_formatter(FuncFormatter(lambda v, p, f=f, w=w: truncate(clean_text(str(f(v, p))), w)))
 
 
 WEEKDAYS = dict(Mon="Monday", Tue="Tuesday", Wed="Wednesday", Thu="Thursday", Fri="Friday", Sat="Saturday", Sun="Sunday")
@@ -457,11 +459,22 @@ def _ramp(fig, cols=80):
             return
 
 
+def _sanitize(fig):
+    for artist in fig.findobj():
+        if isinstance(artist, Text):
+            artist.set_text(clean_text(artist.get_text()))
+        elif isinstance(artist, Axis):
+            for formatter in (artist.get_major_formatter(), artist.get_minor_formatter()):
+                formatter.format_ticks = lambda values, f=formatter.format_ticks: [clean_text(s) for s in f(values)]
+                formatter.get_offset = lambda f=formatter.get_offset: clean_text(f())
+
+
 def prepare(fig, cols, rows=None):
     """Resize to preferred `rows` (minimum 8), else the figure's aspect; return (w_px, h_px).
 
     Heatmaps and bar charts may need more rows. Only `cols` is a hard budget.
     """
+    _sanitize(fig)
     _ramp(fig, cols); _collapse(fig); fig._tc_ytop = False
     w_in, h_in = fig.get_size_inches()
     rows = max(8, rows) if rows else max(10, min(36, round(cols * (h_in / w_in) * CW / CH)))
@@ -474,7 +487,6 @@ def prepare(fig, cols, rows=None):
     # Wrap titles/xlabels in cells now, so layout reserves their extra lines.
     for t, w, role in [(getattr(fig, "_suptitle", None), cols, "title")] + [(t, max(12, int(ax.get_position().width * cols)), role) for ax in fig.axes for t, role in ((ax.title, "title"), (ax.xaxis.label, "label"))]:
         if t is not None:
-            t.set_text(clean_text(t.get_text()))
             if any(width(line) > w for line in t.get_text().split("\n")):
                 t.set_text("\n".join(wrap(t.get_text(), w))); fig._wrapped.update({l: role for l in t.get_text().split("\n")})
     nl = lambda t: len(t.get_text().split("\n")) * bool(t.get_text()) if t is not None else 0
@@ -545,7 +557,7 @@ def _clipped(fig):
         ex = [e[np.isfinite(e)] for e in ex]; ex = [e for e in ex if len(e)]
         if ex and (min(e.min() for e in ex) < x0 - tol or max(e.max() for e in ex) > x1 + tol):
             f = (lambda v: ax.format_xdata(v)) if ax.xaxis.get_converter() is not None else (lambda v: f"{v:.4g}")
-            return f"clipped at x={f(x0)}\u2013{f(x1)} (figure xlim)"
+            return f"clipped at x={clean_text(f(x0))}\u2013{clean_text(f(x1))} (figure xlim)"
     return ""
 
 
@@ -590,7 +602,7 @@ def _fmt(axis, v, date=None):
     """A data value as the axis means it: a date (in strftime format `date`, else to the minute on a short view), a category name, the explicit tick label at v, else 4 significant digits."""
     if isinstance(axis.units, UnitData):
         names = {i: k for k, i in axis.units._mapping.items()}
-        if np.isclose(v, round(v)) and round(v) in names: return str(names[round(v)])
+        if np.isclose(v, round(v)) and round(v) in names: return summary_text(str(names[round(v)]))
     lo, hi = axis.get_view_interval()
     if "Date" in type(axis.get_converter()).__name__:
         d = mdates.num2date(v, tz=axis.units)   # the axis timezone, as its ticks show it
@@ -601,7 +613,7 @@ def _fmt(axis, v, date=None):
         ticks = axis.get_ticklocs(); labels = lab.format_ticks(ticks)
         if len(ticks):
             i = np.abs(ticks - v).argmin(); t, s = ticks[i], labels[i]
-            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return s
+            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return summary_text(s)
     return f"{v:.4g}"
 
 
@@ -703,7 +715,7 @@ def _heat_at(ax, a, z, k):
         px, py = abs(r - l) / m, abs(t - b) / n
     def tick(axis, v, pitch):
         d, s = min(((abs(tv - v), lab.get_text()) for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if lab.get_text()), default=(np.inf, ""))
-        return s if d <= pitch / 2 else _fmt(axis, v)
+        return summary_text(s) if d <= pitch / 2 else _fmt(axis, v)
     return tick(ax.yaxis, y, py), tick(ax.xaxis, x, px)
 
 
@@ -837,7 +849,7 @@ def describe(fig, meta):
                 v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
                 meta.setdefault('summary_omissions', []).append(dict(
-                    what=_name(a, {}) or 'area',
+                    what=summary_text(_name(a, {}) or 'area'),
                     detail='paired bounds and sample support unavailable in summary; filled geometry is not explicit interval data'))
         for a in [*ax.images, *(c for c in ax.collections if isinstance(c, QuadMesh))]:
             if not a.get_visible(): hidden += 1; continue
