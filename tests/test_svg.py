@@ -164,3 +164,122 @@ def test_text_uses_group_opacity_once():
     assert tsa.render_svg(doc(f'<g opacity="0.03">{label}</g>'), 80) == ""
     assert "visible" in tsa.render_svg(doc(f'<g opacity="0.2">{label}</g>'), 80)  # 0.2 > 0.05; not squared
     assert tsa.render_svg(doc('<g opacity="0.2">' + label.replace('fill="black"', 'fill="black" fill-opacity="0.2"') + '</g>'), 80) == ""
+
+
+@pytest.mark.parametrize("body", [
+    '<text>' + '<tspan/>' * 100_001 + '</text>',
+    '<text>' + '<tspan>' * 2000 + 'label' + '</tspan>' * 2000 + '</text>',
+], ids=["wide-text", "deep-text"])
+def test_text_descendants_obey_limits(body):
+    with pytest.raises(ValueError, match="work budget|deeper than 256"):
+        tsa.render_svg(doc(body), 80)
+
+
+@pytest.mark.parametrize("kind", ["text", "gradient", "clip"])
+def test_repeated_descendant_scans_share_work_budget(kind):
+    if kind == "text":
+        definitions = '<text id="target">' + '<tspan/>' * 1000 + '</text>'
+    elif kind == "gradient":
+        definitions = '<linearGradient id="g">' + '<g/>' * 1000 + '<stop stop-color="red"/></linearGradient>'
+        definitions += '<rect id="target" width="1" height="1" fill="url(#g)"/>'
+    else:
+        definitions = '<clipPath id="c">' + '<circle r="1"/>' * 1000 + '</clipPath>'
+        definitions += '<rect id="target" width="1" height="1" fill="none" clip-path="url(#c)"/>'
+    body = '<defs>' + definitions + '</defs>' + '<use href="#target"/>' * 200
+    with pytest.raises(ValueError, match=r"work budget.*100,001 visited"):
+        tsa.render_svg(doc(body), 80)
+
+
+@pytest.mark.parametrize("kind", ["text", "gradient", "clip"])
+def test_expanded_descendant_scans_obey_depth(kind):
+    if kind == "text":
+        definitions = '<text id="target">' + '<tspan>' * 200 + 'label' + '</tspan>' * 200 + '</text>'
+        levels = 60
+    elif kind == "gradient":
+        definitions = '<linearGradient id="g">' + '<g>' * 200 + '<stop stop-color="red"/>' + '</g>' * 200 + '</linearGradient>'
+        definitions += '<rect id="target" width="1" height="1" fill="url(#g)"/>'
+        levels = 60
+    else:
+        definitions = '<clipPath id="c"><rect width="1" height="1"/></clipPath>'
+        definitions += '<rect id="target" width="1" height="1" clip-path="url(#c)"/>'
+        levels = 254
+    for i in range(levels):
+        definitions += f'<use id="u{i}" href="#{"target" if i == 0 else "u" + str(i - 1)}"/>'
+    body = f'<defs>{definitions}</defs><use href="#u{levels - 1}"/>'
+    with pytest.raises(ValueError, match="deeper than 256"):
+        tsa.render_svg(doc(body), 80)
+
+
+@pytest.mark.parametrize("container", ["text", "tspan", "nested-tspan"])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("prop,ref,what,material", [
+    ("fill", "g", "gradient #g", True),
+    ("stroke", "g", "gradient #g", True),
+    ("fill", "p", "pattern #p", True),
+    ("stroke", "p", "pattern #p", True),
+    ("fill", "missing", "gradient #missing", True),
+    ("stroke", "missing", "gradient #missing", True),
+    ("mask", "m", "mask #m", True),
+    ("filter", "f", "filter #f", True),
+    ("clip-path", "c", "clip-path #c", False),
+])
+def test_text_run_effects_are_reported(container, inline, prop, ref, what, material):
+    defs = ('<defs><linearGradient id="g"><stop stop-color="red"/></linearGradient>'
+            '<pattern id="p"/><mask id="m"/><filter id="f"/>'
+            '<clipPath id="c"><circle cx="150" cy="50" r="1"/></clipPath></defs>')
+    effect = f'style="{prop}: url(#{ref})"' if inline else f'{prop}="url(#{ref})"'
+    if container == "text":
+        label = f'<text x="150" y="50" {effect}>label</text>'
+    else:
+        run = f'<tspan {effect}>label</tspan>'
+        if container == "nested-tspan": run = f'<tspan>{run}</tspan>'
+        label = f'<text x="150" y="50">{run}</text>'
+    source = doc(defs + label)
+    r = tsa.render(source, 80)
+    assert "label" in r.text
+    assert unsupported(r)[what]["material"] is material
+    if material:
+        with pytest.raises(tsa.RenderLossError):
+            tsa.render(source, 80, strict=True)
+    else:
+        assert "drawn unclipped" in tsa.render(source, 80, strict=True).text
+
+
+@pytest.mark.parametrize("body,expected", [
+    ('<text x="150" y="50" fill-opacity="0"><tspan fill-opacity="1">visible</tspan></text>', "visible"),
+    ('<text x="150" y="50" fill-opacity="0"><tspan><tspan style="fill-opacity: 1">visible</tspan></tspan></text>', "visible"),
+    ('<text x="150" y="50" fill-opacity="0" stroke="red">outlined</text>', "outlined"),
+    ('<text x="150" y="50" fill="none" stroke="red" stroke-opacity="0"><tspan stroke-opacity="1">outlined</tspan></text>', "outlined"),
+    ('<text x="150" y="50"><tspan fill-opacity="0">hidden</tspan><tspan>visible</tspan></text>', "visible"),
+    ('<text x="150" y="50"><tspan opacity="0.2"><tspan opacity="0.2">hidden</tspan></tspan><tspan>visible</tspan></text>', "visible"),
+    ('<text x="150" y="50"><tspan style="display: none">hidden</tspan><tspan>visible</tspan></text>', "visible"),
+    ('<text x="150" y="50" fill="none">hidden</text>', ""),
+    ('<text x="150" y="50" fill-opacity="0" stroke="red" stroke-opacity="0">hidden</text>', ""),
+    ('<text x="150" y="50" fill="none" stroke="red" stroke-width="0">hidden</text>', ""),
+    ('<text x="150" y="50" fill="rgba(0,0,0,0)">hidden</text>', ""),
+    ('<text x="150" y="50" fill="none" stroke="rgba(255,0,0,0)">hidden</text>', ""),
+    ('<text x="150" y="50" style="fill-opacity: 0; stroke: red">outlined</text>', "outlined"),
+    ('<g opacity="0.2"><text x="150" y="50" fill="none" stroke="red">outlined</text></g>', "outlined"),
+    ('<g opacity="0.03"><text x="150" y="50" fill="none" stroke="red">hidden</text></g>', ""),
+])
+def test_text_visibility_is_per_run_and_paint(body, expected):
+    text = tsa.render_svg(doc(body), 80)
+    if expected:
+        assert text.strip() == expected
+    else:
+        assert text == ""
+
+
+def test_inherited_text_paints_are_reported():
+    body = '<g style="fill: url(#g); stroke: url(#p)"><text x="150" y="50"><tspan>label</tspan></text></g>'
+    r = tsa.render(doc('<defs><linearGradient id="g"/><pattern id="p"/></defs>' + body), 80)
+    assert "label" in r.text
+    assert set(unsupported(r)) == {"gradient #g", "pattern #p"}
+    with pytest.raises(tsa.RenderLossError):
+        tsa.render(doc(body), 80, strict=True)
+
+
+def test_mathtext_runs_keep_superscript_layout():
+    body = ('<text x="150" y="50"><tspan x="0" y="0" style="font-size: 12px">x</tspan>'
+            '<tspan x="8" y="-4" style="font-size: 8px">2</tspan></text>')
+    assert tsa.render_svg(doc(body), 80).strip() == "x²"
