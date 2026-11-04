@@ -1433,11 +1433,15 @@ def test_heatmap_sampling_compares_normalised_levels(close, spike, lost):
 
 
 @pytest.mark.parametrize("origin, invert", [("upper", False), ("lower", False), ("upper", True)])
-def test_lost_heat_extreme_uses_source_index_value_and_labels(close, origin, invert):
+@pytest.mark.parametrize("visibility", ["normal", "hidden", "both"])
+def test_lost_heat_extreme_uses_source_index_value_and_labels(close, origin, invert, visibility):
     z = np.zeros((100, 100)); z[25, 75] = 42
     def build(ax):
         ax.imshow(z, aspect="auto", origin=origin, vmin=0, vmax=42)
         ax.set_xticks([75], ["east"]); ax.set_yticks([25], ["north"])
+        if visibility != "normal":
+            ax.tick_params(labelbottom=visibility == "both", labeltop=visibility == "both",
+                           labelleft=visibility == "both", labelright=visibility == "both")
         if invert: ax.invert_xaxis(); ax.invert_yaxis()
     r = tsa.render(figure(build), 40, rows=12)
     lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
@@ -1494,7 +1498,8 @@ def test_heatmap_extreme_outside_view_is_not_a_sampling_loss(close):
 @pytest.mark.parametrize("kept_rows", [(2,), (1, 4)])
 @pytest.mark.parametrize("invert_x", [False, True])
 @pytest.mark.parametrize("value", [42, -42])
-def test_collapsed_heatmap_preserves_source_diagnostics(close, mesh, kept_rows, invert_x, value):
+@pytest.mark.parametrize("unique_labels", [False, True])
+def test_collapsed_heatmap_preserves_source_diagnostics(close, mesh, kept_rows, invert_x, value, unique_labels):
     z = np.full((7, 100), np.nan)
     z[list(kept_rows)] = 0
     row = kept_rows[-1]
@@ -1508,7 +1513,7 @@ def test_collapsed_heatmap_preserves_source_diagnostics(close, mesh, kept_rows, 
             ax.imshow(z, aspect="auto", **kw)
         offset = .5 if mesh else 0
         ax.set_xticks([75 + offset], ["east"])
-        ax.set_yticks([i + offset for i in kept_rows], ["north"] * len(kept_rows))
+        ax.set_yticks([i + offset for i in kept_rows], ["south", "north"][-len(kept_rows):] if unique_labels else ["north"] * len(kept_rows))
         if invert_x: ax.invert_xaxis()
     fig = figure(build)
     r = tsa.render(fig, 40, rows=12)
@@ -1517,7 +1522,9 @@ def test_collapsed_heatmap_preserves_source_diagnostics(close, mesh, kept_rows, 
     lost = [loss for loss in r.losses if loss["kind"] == "lost_extreme"]
     extreme = "max" if value > 0 else "min"
     assert len(lost) == 1 and f"heatmap {extreme} {(row, 75)}={value}" in lost[0]["what"], r.losses
-    assert "north/east" in lost[0]["what"]
+    # Colliding aliases use the displayed coordinate; the diagnostic index stays in original source rows.
+    label = f"{len(kept_rows) - 1 + (.5 if mesh else 0):g}" if not unique_labels and len(kept_rows) > 1 else "north"
+    assert f"{label}/east" in lost[0]["what"]
     with pytest.raises(tsa.RenderLossError, match="lost_extreme"):
         tsa.render(fig, 40, rows=12, strict=True)
     artist = fig.axes[0].collections[0] if mesh else fig.axes[0].images[0]

@@ -990,7 +990,7 @@ def losses(fig, meta):
         i, j = e["index"]
         if xy[0, 0] > xy[1, 0]: j = z.shape[1] - 1 - j
         if xy[0, 1] < xy[1, 1]: i = z.shape[0] - 1 - i
-        labels = "/".join(_heat_at(a.axes, a, z, i * z.shape[1] + j))
+        labels = "/".join(_heat_labels(a.axes, a, z, [(i, j)], dimension)[0] for dimension in (0, 1))
         rows = getattr(a, "_tc_heat_rows", None)
         e["index"] = (int(rows[i]) if rows is not None else i, j)
         name = _name(a, {})
