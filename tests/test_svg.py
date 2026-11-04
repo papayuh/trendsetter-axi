@@ -285,6 +285,13 @@ def test_mathtext_runs_keep_superscript_layout():
     assert tsa.render_svg(doc(body), 80).strip() == "x²"
 
 
+@pytest.mark.parametrize("baseline_y", ["", ' y=""'])
+def test_mathtext_falls_back_when_first_visible_run_has_no_y(baseline_y):
+    body = ('<text x="150" y="50"><tspan y="50" opacity="0">hidden</tspan>'
+            f'<tspan{baseline_y}>b</tspan><tspan y="46" style="font-size:8px">2</tspan></text>')
+    assert tsa.render_svg(doc(body), 80).strip() == "b 2"
+
+
 @pytest.mark.parametrize("prop", ["fill", "stroke"])
 @pytest.mark.parametrize("ref", ["g", "p", "missing"])
 @pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])

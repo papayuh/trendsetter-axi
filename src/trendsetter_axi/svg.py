@@ -317,7 +317,7 @@ def render(svg, cols=80, ansi=False, shift=0):
 
         ts = list(runs(el, st, depth))
         fsz = lambda t: float(m.group(1)) if (m := re.search(r"font-size:\s*([\d.]+)", t.get("style") or "")) else 0
-        if len(ts) > 1 and all(t.get("y") for t in ts[1:]) and fsz(ts[1]):  # matplotlib mathtext: one tspan per glyph run
+        if len(ts) > 1 and all(t.get("y") for t in ts) and fsz(ts[1]):  # matplotlib mathtext: one tspan per glyph run
             y0, f0 = float(ts[0].get("y")), fsz(ts[0]) or fsz(ts[1])
             up = lambda t: float(t.get("y")) < y0 - 1 or (fsz(t) < f0 * .85 and float(t.get("y")) <= y0)
             s = "".join(sup(t.text.strip()) if up(t) else t.text.strip() for t in ts)
