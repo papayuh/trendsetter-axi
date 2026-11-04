@@ -6,7 +6,7 @@
 - Add heatmap sampling diagnostics without changing rendered text; see the [loss contract](README.md#what-the-text-lost-render) for `heat_sampled`, `lost_extreme` and mitigation.
 - Validate `render(rows=...)` as `None` or a positive integer excluding booleans; the height remains preferred (minimum 8), not a hard cap.
 - Keep emoji skin-tone modifiers, variation selectors, keycaps and tag sequences with their base when measuring, wrapping and slicing terminal cells.
-- Sanitise artist text and scale labels by removing terminal escape sequences and control characters while preserving layout newlines/tabs and renderer-generated ANSI colour. Summary titles/axis labels flatten newlines and escape colons; series names remain quoted. This is text hygiene, not protection against model prompt injection.
+- Sanitise artist text before layout and escape unquoted source labels throughout summaries; see the [text hygiene contract](README.md#what-the-text-lost-render) for rules and security limitations.
 
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
