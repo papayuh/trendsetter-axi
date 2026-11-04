@@ -95,7 +95,26 @@ class Canvas:
         self.meta = dict(dropped=[], truncated=[], clipped=[], shifted=[], offgrid=0, placed=[], inked=[], guessed=0)
         self.owner = None         # the data artist being drawn (an adapter's index): which series it inks, for loss accounting
         self.owned = {}           # owner -> series ids it drew
-        self.inks = {}            # id(stroke) -> ("ink", owner): a neutral data stroke has no series id, so its own visibility stands in for one
+        self.inks = {}            # id(primitive) -> ("ink", owner), independent of presentation colour
+        self.orders = {}          # id(primitive) -> painter sequence; retained when geometry is snapped
+        self.opaque = {}
+        self.sequence = 0
+
+    def _queue(self, queue, primitive, *, source=None, opaque=True):
+        """Attach painter order and the current owner at enqueue time (including deferred geometry)."""
+        if source is None:
+            self.sequence += 1
+            self.orders[id(primitive)] = self.sequence
+            self.opaque[id(primitive)] = opaque
+            if self.owner is not None: self.inks[id(primitive)] = ("ink", self.owner)
+            else: self.inks.pop(id(primitive), None)
+        else:
+            self.orders[id(primitive)] = self.orders[id(source)]
+            self.opaque[id(primitive)] = self.opaque[id(source)]
+            if id(source) in self.inks: self.inks[id(primitive)] = self.inks[id(source)]
+            else: self.inks.pop(id(primitive), None)
+        if queue is not None: queue.append(primitive)
+        return primitive
 
     @property
     def ninks(self): return len(self.fills) + len(self.marks) + len(self.legend_marks) + len(self.tiny)   # callers diff this to see whether a fill drew anything
@@ -112,7 +131,7 @@ class Canvas:
 
     def bg(self, c): return neutral(c) and (lum(c) < 0.4 if self.dark else lum(c) > 0.8)
 
-    def stroke(self, polylines, rgb, dashes=None, clip=None, role=None, rule=False):
+    def stroke(self, polylines, rgb, dashes=None, clip=None, role=None, rule=False, alpha=1.0):
         data = role == "data"   # a data artist (a curve) is never axis/grid geometry or background, whatever its colour
         if role in ("grid", "background") or self.bg(rgb) and not data or not polylines: return
         pts = np.concatenate([np.asarray(p, float) for p in polylines if len(p)])
@@ -123,11 +142,11 @@ class Canvas:
         (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
         p0 = np.asarray(polylines[0], float)
         if x1 - x0 <= self.cw * 1.2 and y1 - y0 <= self.ch * 0.6 and len(p0) > 3 and np.hypot(*(p0[0] - p0[-1])) < 1e-3:
-            return self.marker([pts.mean(0)], rgb, clip, role)   # hollow marker (open circle etc.)
+            return self.marker([pts.mean(0)], rgb, clip, role, alpha=alpha)   # hollow marker (open circle etc.)
         if neutral(rgb) or role in ("axis", "annotation"):  # neutral ink has no series id; frames and arrows never introduce a series
             ink = ("ink", self.owner) if data and self.owner is not None else None
             if ink: self.owned.setdefault(self.owner, set()).add(ink)
-            put = lambda s: (self.strokes.append(s), ink and self.inks.__setitem__(id(s), ink))
+            put = lambda s: self._queue(self.strokes, s, opaque=alpha >= .95)
             # ponytail: batch neutral data strokes over 32 total points across polylines; short rules keep box glyphs.
             if data and len(pts) > 32:
                 put(("dots", -1, [np.asarray(p, float) for p in polylines], dashes, clip))
@@ -147,8 +166,8 @@ class Canvas:
             return
         p0 = np.asarray(polylines[0], float)
         if (rule or x1 - x0 < 0.6 * self.w) and len(polylines) == 1 and len(p0) == 2 and abs(p0[0, 1] - p0[1, 1]) < 0.5 and abs(p0[0, 0] - p0[1, 0]) >= 2 * self.cw:   # a short flat ax.plot (violin median drawn as a line) is the same rule
-            return self.rules.append((self._sid(rgb, "line"), p0[0], p0[1], clip))   # violin median / cap: always `─`, never a braille pattern that depends on the sub-row
-        self.strokes.append(("dots", self._sid(rgb, "line"), [np.asarray(p, float) for p in polylines], dashes, clip))
+            return self._queue(self.rules, (self._sid(rgb, "line"), p0[0], p0[1], clip), opaque=alpha >= .95)   # violin median / cap: always `─`, never a braille pattern that depends on the sub-row
+        self._queue(self.strokes, ("dots", self._sid(rgb, "line"), [np.asarray(p, float) for p in polylines], dashes, clip), opaque=alpha >= .95)
 
     def fill(self, polygons, rgb, clip=None, role=None, continuous=False, alpha=1.0):
         polygons = [np.asarray(p, float) for p in polygons if len(p) > 2]
@@ -161,21 +180,21 @@ class Canvas:
         if role in HIDDEN or self.bg(rgb) and not continuous and (role != "data" or (lum(rgb) < 0.03 if self.dark else lum(rgb) > 0.97)): return   # a data fill in the page colour (white bar) is not ink: its edge draws
         if role == "legend":
             return self.legend_marks.append((pts.mean(0), self._sid(rgb, None), "fill"))
-        if continuous: return self.cont.append((polygons, rgb, clip))
+        if continuous: return self._queue(self.cont, (polygons, rgb, clip), opaque=alpha >= .95)
         if x1 - x0 <= self.cw * 1.2 and y1 - y0 <= self.ch * 0.6:  # tiny closed shape = marker
-            return self.tiny.append((polygons, rgb, clip, role, self.owner))   # marker unless it is one cell of a tiled heatmap (see render)
-        self.fills.append((polygons, self._sid(rgb, "fill"), clip, alpha < 0.95, (x1 - x0) * (y1 - y0)))
+            return self._queue(self.tiny, (polygons, rgb, clip, role, self.owner), opaque=alpha >= .95)   # marker unless it is one cell of a tiled heatmap (see render)
+        self._queue(self.fills, (polygons, self._sid(rgb, "fill"), clip, alpha < 0.95, (x1 - x0) * (y1 - y0)), opaque=alpha >= .95)
 
     def candle(self, polygons, rgb, clip, kind):
         points = np.concatenate([p for p in polygons if len(p)])
         if not len(points): return
-        self.candles.append((points.min(0), points.max(0), self._sid(rgb, 'line'), clip, kind))
+        self._queue(self.candles, (points.min(0), points.max(0), self._sid(rgb, 'line'), clip, kind))
 
-    def marker(self, points, rgb, clip=None, role=None):
+    def marker(self, points, rgb, clip=None, role=None, alpha=1.0):
         if role in HIDDEN or self.bg(rgb) and role != "data": return
         sid = -1 if neutral(rgb) else self._sid(rgb, None if role == "legend" else "mark")
         if role == "legend": return self.legend_marks.append((np.mean(points, 0), sid, "mark"))
-        self.marks.append((np.asarray(points, float).reshape(-1, 2), sid, clip))
+        self._queue(self.marks, (np.asarray(points, float).reshape(-1, 2), sid, clip), opaque=alpha >= .95)
 
     def image(self, x0, y0, x1, y1, rgb, alpha=None, clip=None):  # rgb: (h, w, 3) floats 0..1, row 0 at top
         if alpha is not None and (alpha < 0.5).mean() > 0.5:
@@ -186,11 +205,11 @@ class Canvas:
             for c in range(max(c0, 0), min(c1, self.cols - 1) + 1):
                 yi = np.clip(np.searchsorted(ys, (r + .5) * self.ch) - 1, 0, rgb.shape[0] - 1)
                 xi = np.clip(np.searchsorted(xs, (c + .5) * self.cw) - 1, 0, rgb.shape[1] - 1)
-                self.cont.append(([np.array([[c * self.cw, r * self.ch], [(c + 1) * self.cw, r * self.ch],
+                self._queue(self.cont, ([np.array([[c * self.cw, r * self.ch], [(c + 1) * self.cw, r * self.ch],
                                              [(c + 1) * self.cw, (r + 1) * self.ch], [c * self.cw, (r + 1) * self.ch]])],
-                                  rgb[yi, xi], clip))
+                                  rgb[yi, xi], clip), opaque=alpha is None or alpha[yi, xi] >= .95)
 
-    def heat_grid(self, xs, ys, t, clip=None, *, values=None):
+    def heat_grid(self, xs, ys, t, clip=None, *, values=None, alpha=1.0):
         """t: (h, w) levels in 0..1, NaN = missing (stays blank); xs (w+1) / ys (h+1) ascending px edges, row 0 at top.
         Sample the data cell under each text-cell centre; wide cells retain a blank seam.
         values: source values aligned with t for extrema selection before normalisation; defaults to t."""
@@ -207,7 +226,9 @@ class Canvas:
             for c in cs:
                 if (ci == ci[c]).sum() >= 4 and (c + 1 == self.cols or ci[c + 1] != ci[c]): continue   # wide cells keep a blank seam column: neighbours read as separate blocks
                 v = t[ri[r], ci[c]]
-                if np.isfinite(v): self.heat.append((int(r), int(c), int(min(self.levels - 1, max(0, v) * self.levels))))
+                if np.isfinite(v):
+                    opacity = alpha if np.ndim(alpha) == 0 else alpha[ri[r], ci[c]]
+                    self._queue(self.heat, (int(r), int(c), int(min(self.levels - 1, max(0, v) * self.levels))), opaque=opacity >= .95)
         if not len(rs) or not len(cs): return
         x0, y0, x1, y1 = (0, 0, self.w, self.h) if clip is None else (max(0, clip[0]), max(0, clip[1]), min(self.w, clip[2]), min(self.h, clip[3]))
         nx = int(((xs[1:] > x0) & (xs[:-1] < x1)).sum())
@@ -249,7 +270,7 @@ class Canvas:
         for i, r in rects:
             r0 = int(round((r[1] + r[3]) / 2 / self.ch - h / 2)); f = list(self.fills[i])
             f[0] = [np.array([[r[0], r0 * self.ch], [r[2], r0 * self.ch], [r[2], (r0 + h) * self.ch], [r[0], (r0 + h) * self.ch]])]
-            self.fills[i] = tuple(f)
+            self.fills[i] = self._queue(None, tuple(f), source=self.fills[i])
         return True
 
     def _snap_bars(self):
@@ -269,14 +290,14 @@ class Canvas:
             for i, r in rects:
                 f = list(self.fills[i]); a, b = snap(r[0]), snap(r[2])
                 if b <= a: b = a + self.cw
-                f[0] = [np.array([[a, r[1]], [b, r[1]], [b, r[3]], [a, r[3]]])]; self.fills[i] = tuple(f)
+                f[0] = [np.array([[a, r[1]], [b, r[1]], [b, r[3]], [a, r[3]]])]; self.fills[i] = self._queue(None, tuple(f), source=self.fills[i])
             return
         w = max(1, min(int(wid), int(p) - 1))
         for i, r in rects:
             c0 = int(round((r[0] + r[2]) / 2 / self.cw - w / 2))
             f = list(self.fills[i])
             f[0] = [np.array([[c0 * self.cw, r[1]], [(c0 + w) * self.cw, r[1]], [(c0 + w) * self.cw, r[3]], [c0 * self.cw, r[3]]])]
-            self.fills[i] = tuple(f)
+            self.fills[i] = self._queue(None, tuple(f), source=self.fills[i])
 
     def _overlay(self, x0, y0, x1, y1, rgb, alpha, clip=None):
         """Mostly-transparent raster = drawn marks: sample at dot resolution, key by color."""
@@ -296,13 +317,13 @@ class Canvas:
                 k = np.unravel_index(a.argmax(), a.shape)
                 col = rgb[ya + k[0], xa + k[1]]
                 if background(col): continue
-                by_color.setdefault(tuple(np.round(col, 1)), []).append((r, c, col))
+                by_color.setdefault(tuple(np.round(col, 1)), []).append((r, c, col, a[k]))
         total = sum(len(v) for v in by_color.values())
         for key, v in sorted(by_color.items(), key=lambda kv: -len(kv[1])):
             if len(v) < 0.02 * total: continue  # antialias fringe
             col = np.mean([x[2] for x in v], 0)
             sid = -1 if neutral(col) else self._sid(col, "line")
-            self.strokes.append(("pts", sid, np.array([(r, c) for r, c, _ in v]), None, clip))
+            self._queue(self.strokes, ("pts", sid, np.array([(r, c) for r, c, _, _ in v]), None, clip), opaque=all(x[3] >= .95 for x in v))
 
     def text(self, x, y, s, ha="left", va="baseline", angle=0, role="other"):
         s = clean_text(str(s)).strip("\n")
@@ -449,9 +470,14 @@ class Canvas:
         """Rasterize queued geometry, keeping dot and fill layers separate."""
         if self.tiny:   # many tiny fills in >8 colours tile a heatmap: continuous ramp, not glyph markers
             rect = lambda ps: len(ps) == 1 and len(ps[0]) in (4, 5) and all(np.ptp(np.round(ps[0][:4, k], 1)) > 0 and len(set(np.round(ps[0][:4, k], 1))) == 2 for k in (0, 1))   # axis-aligned quad: a heatmap cell, not a circle/diamond marker
-            if len(self.tiny) > 50 and len({tuple(np.round(t[1][:3], 2)) for t in self.tiny}) > 8 and sum(rect(t[0]) for t in self.tiny) > 0.9 * len(self.tiny): self.cont += [t[:3] for t in self.tiny]
+            if len(self.tiny) > 50 and len({tuple(np.round(t[1][:3], 2)) for t in self.tiny}) > 8 and sum(rect(t[0]) for t in self.tiny) > 0.9 * len(self.tiny):
+                for t in self.tiny: self._queue(self.cont, t[:3], source=t)
             else:
-                for polys, rgb, clip, role, owner in self.tiny: self.owner = owner; self.marker([np.concatenate(polys).mean(0)], rgb, clip, role)
+                for t in self.tiny:
+                    polys, rgb, clip, role, owner = t
+                    self.owner = owner; before = len(self.marks)
+                    self.marker([np.concatenate(polys).mean(0)], rgb, clip, role)
+                    if len(self.marks) > before: self._queue(None, self.marks[-1], source=t)
             self.tiny = []; self.owner = None
         R_, C_ = self.rows, self.cols
         sx, sy = 2 / self.cw, 4 / self.ch
@@ -463,6 +489,36 @@ class Canvas:
         fill = np.full((R_, C_), -1, int)
         shade = np.full((R_, C_), "", object)
 
+        dot_seq = np.zeros(dots.shape, int)
+        box_seq = np.zeros(box.shape, int)
+        fill_seq = np.zeros(fill.shape, int)
+        fill_opaque = np.zeros(fill.shape, bool)
+        mark_seq = {}
+        primitives, inked = {}, {}
+        seq = 0
+
+        def activate(p, kind, geometry=None):
+            nonlocal seq
+            seq = self.orders[id(p)]
+            primitives[seq] = (kind, geometry, self.opaque[id(p)], self.inks.get(id(p)))
+            inked.setdefault(seq, set())
+            return seq
+
+        def record(rc):
+            inked[seq].update(map(tuple, rc))
+
+        def put_fill(m, sid, g):
+            record(np.argwhere(m))
+            opaque = primitives[seq][2]
+            m = m & ((fill_seq <= seq) | (~fill_opaque & (not opaque)))
+            fill_seq[m] = seq; fill_opaque[m] = opaque; fill[m] = sid; shade[m] = g
+
+        def fill_cell(r, c, sid, g):
+            inked[seq].add((r, c))
+            opaque = primitives[seq][2]
+            if fill_seq[r, c] <= seq or not (opaque or fill_opaque[r, c]):
+                fill_seq[r, c] = seq; fill_opaque[r, c] = opaque; fill[r, c] = sid; shade[r, c] = g
+
         def put_dots(rc, sid, clip):
             if not len(rc): return
             ok = (rc[:, 0] >= 0) & (rc[:, 0] < R_ * 4) & (rc[:, 1] >= 0) & (rc[:, 1] < C_ * 2)
@@ -470,14 +526,18 @@ class Canvas:
             rc = rc[ok]
             if clip is not None:
                 cm = self._clipmask(clip, dots.shape, (sx, sy)); rc = rc[cm[rc[:, 0], rc[:, 1]]]
-            dots[rc[:, 0], rc[:, 1]] = sid
+            record(np.unique(rc // [4, 2], axis=0))
+            keep = dot_seq[rc[:, 0], rc[:, 1]] <= seq
+            on = rc[keep]
+            dots[on[:, 0], on[:, 1]] = sid
+            dot_seq[on[:, 0], on[:, 1]] = seq
             return rc
 
         # fills (painter's order), continuous fills by luminance
         fill_ids = [i for i in range(nser) if "fill" in self.kind.get(i, ())]; shaded = set()
         if len(fill_ids) > 8 and sum(f[3] for f in self.fills) < len(self.fills) / 2:  # a color scale, not categories (translucent fills are overlapping areas): shade by luminance
             inv0 = {v: k for k, v in self.series.items()}
-            self.cont += [(f[0], inv0[f[1]], f[2]) for f in self.fills]
+            for f in self.fills: self._queue(self.cont, (f[0], inv0[f[1]], f[2]), source=f)
             shaded = {f[1] for f in self.fills}; self.fills = []; fill_ids = []
         many = len(fill_ids) > 4   # many stacked series: solid fills, patterns only separate a handful
         flat = lambda ps: not self._rect(ps) and sum(int((np.abs(p[:, 1] - p[:, 1].max()) < 1e-6).sum()) for p in ps) >= 8   # curve standing on a flat baseline (fill_between)
@@ -500,24 +560,28 @@ class Canvas:
             for f in seq:
                 flip = flip ^ 1 if f[1] == prev else 0; prev = f[1]; ids.append(flip)
                 if flip: alt[id(f)] = len(self.series) + len(alt); shade_of[alt[id(f)]] = "█"
-            altsid = set(alt.values()); fills = [(f[0], alt.get(id(f), f[1])) + tuple(f[2:]) for f in self.fills]
+            altsid = set(alt.values()); fills = [self._queue(None, (f[0], alt.get(id(f), f[1])) + tuple(f[2:]), source=f) for f in self.fills]
             seqs = [(f[1], alt.get(id(f), f[1]), fl) for f, fl in zip(seq, ids)]
         lums = [lum(rgb) for _, rgb, _ in self.cont]
         lo, hi = (min(lums), max(lums)) if lums else (0, 1)
         ramp = lambda l: RAMP[min(len(RAMP) - 2, int(((l - lo) / (hi - lo) if hi - lo > 0.05 else l) * (len(RAMP) - 1)))]  # stretch to the full ramp; never blank: blank means "no data"
-        for (polys, rgb, clip), l in zip(self.cont, lums):
+        for primitive, l in zip(self.cont, lums):
+            polys, rgb, clip = primitive
+            activate(primitive, "fill")
             m = self._poly_mask(polys, R_, C_, 1 / self.cw, 1 / self.ch)
             if clip is not None: m &= self._clipmask(clip, m.shape, (1 / self.cw, 1 / self.ch))
-            shade[m] = ramp(l)
+            put_fill(m, -1, ramp(l))
         # opaque fills in painter's order; translucent ones biggest-first so overlaps keep both shapes
-        for polys, sid, clip, _, _ in sorted(fills, key=lambda f: (f[3] and not many and not ridge, -f[4] if f[3] and not many and not ridge else 0, max(p[:, 1].max() for p in f[0]) if ridge else 0)):   # ridge: top row first, so a lower ridge's peak overlaps upward onto it
+        for primitive in sorted(fills, key=lambda f: (f[3] and not many and not ridge, -f[4] if f[3] and not many and not ridge else 0, max(p[:, 1].max() for p in f[0]) if ridge else 0)):   # ridge: top row first, so a lower ridge's peak overlaps upward onto it
+            polys, sid, clip, _, _ = primitive
+            activate(primitive, "fill")
             if not self.solidfills and shade_of[sid] == "█" and self.hbars and self._rect(polys):   # eighth-width ends: the bar's last column is a partial block
                 q = self._poly_mask(polys, R_, C_ * 8, 8 / self.cw, 1 / self.ch)
                 if clip is not None: q &= self._clipmask(clip, q.shape, (8 / self.cw, 1 / self.ch))
                 n = q.reshape(R_, C_, 8).sum(2)
                 for r, c in np.argwhere(n > 0):
                     under[r, c] = fill[r, c] if n[r, c] < 8 and fill[r, c] >= 0 and fill[r, c] != sid else -1
-                    fill[r, c] = sid; shade[r, c] = " ▏▎▍▌▋▊▉█"[n[r, c]]
+                    fill_cell(r, c, sid, " ▏▎▍▌▋▊▉█"[n[r, c]])
                 continue
             if not self.solidfills and shade_of[sid] == "█" and (self._rect(polys) or ridge):   # eighth-height blocks; ridges stand on the row of their label
                 if ridge and flat(polys):
@@ -535,7 +599,7 @@ class Canvas:
                         g = ("▓" if not color and sid in altsid else "█") if k == 8 else "▀" if k >= 4 and qf[r, :k, c].sum() > qf[r, 8 - k:, c].sum() else HEIGHT[k]
                         if fill[r, c] == sid and "▁▂▃▄▅▆▇█▀".find(shade[r, c]) >= "▁▂▃▄▅▆▇█▀".find(g) >= 0 > -2: continue
                         under[r, c] = fill[r, c] if g != "█" and fill[r, c] >= 0 and fill[r, c] != sid else -1
-                        fill[r, c] = sid; shade[r, c] = g
+                        fill_cell(r, c, sid, g)
                     continue
                 q = self._poly_mask(polys, R_ * 8, C_, 1 / self.cw, 8 / self.ch)
                 rc = self._rect(polys)
@@ -551,14 +615,14 @@ class Canvas:
                     if not g: continue
                     if ridge and fill[r, c] == sid and "▁▂▃▄▅▆▇█▀".find(shade[r, c]) >= "▁▂▃▄▅▆▇█▀".find(g) >= 0 > -2: continue   # same colour already stands taller here: a shorter block must not cut a hole
                     under[r, c] = fill[r, c] if g != "█" and fill[r, c] >= 0 and fill[r, c] != sid else -1
-                    fill[r, c] = sid; shade[r, c] = g
+                    fill_cell(r, c, sid, g)
                 continue
             if self.solidfills and self._rect(polys):
                 # One shared boundary quantization for adjacent stack segments.
                 # Coverage >= 1/2 rounds both edges outward and can add >1 cell.
                 hit = self._poly_mask(polys, R_, C_, 1 / self.cw, 1 / self.ch)
                 if clip is not None: hit &= self._clipmask(clip, hit.shape, (1 / self.cw, 1 / self.ch))
-                fill[hit] = sid; shade[hit] = shade_of[sid]
+                put_fill(hit, sid, shade_of[sid])
                 continue
             m = self._poly_mask(polys, R_ * 4, C_ * 2, sx, sy)
             if clip is not None: m &= self._clipmask(clip, m.shape, (sx, sy))
@@ -571,14 +635,14 @@ class Canvas:
                 half = {"▀": (top >= 3) & (bot <= 1), "▄": (bot >= 3) & (top <= 1), "▌": (lef >= 3) & (rig <= 1), "▐": (rig >= 3) & (lef <= 1)}
                 anyhalf = np.zeros_like(hit)
                 for g, hm in half.items():
-                    hm &= ~(cov >= 6) & ~anyhalf; anyhalf |= hm; fill[hm] = sid; shade[hm] = g
+                    hm &= ~(cov >= 6) & ~anyhalf; anyhalf |= hm; put_fill(hm, sid, g)
                 hit = (cov >= 6) | (hit & ~anyhalf)
             # very thin shapes (narrow bars) still deserve one column of ink
             if not hit.any() and cov.any(): hit = cov >= max(1, cov.max() // 2)
-            fill[hit] = sid; shade[hit] = shade_of[sid]
+            put_fill(hit, sid, shade_of[sid])
 
         # strokes
-        stamps = {}; inked = {}   # ("ink", owner) -> dots / cells its neutral strokes were put on
+        stamps = {}
         famsid = {self.series[k]: v for k, v in self.fam.items() if k in self.series}; famruns = {}
         boxes = [(min(p[:, 0].min() for p in f[0]) - 1, min(p[:, 1].min() for p in f[0]) - 1, max(p[:, 0].max() for p in f[0]) + 1, max(p[:, 1].max() for p in f[0]) + 1) for f in self.fills] if ridge else []
         inside = lambda ps: any(all(b[0] <= q[:, 0].min() and q[:, 0].max() <= b[2] and b[1] <= q[:, 1].min() and q[:, 1].max() <= b[3] for q in ps) for b in boxes)
@@ -586,17 +650,18 @@ class Canvas:
             self.strokes = [s for s in self.strokes if not (s[0] == "dots" and inside([np.asarray(p, float) for p in s[2]])) and not (s[0] == "h" and any(b[1] <= s[1][1] <= b[3] for b in boxes))]   # axhline baselines too
             self.marks = [m for m in self.marks if not inside([m[0]])]
         for s in self.strokes:
+            geometry = s[2] if s[0] == "dots" else [np.array([s[1], s[2]])] if s[0] in ("h", "v") else None
+            activate(s, "stroke", geometry)
             if s[0] == "pts":
                 put_dots(s[2], s[1], s[4])
                 if s[1] >= 0: stamps.setdefault(s[1], []).append(s[2][np.lexsort((s[2][:, 0], s[2][:, 1]))])
             elif s[0] == "dots":
                 _, sid, polys, dashes, clip = s
-                if sid in famsid: famruns.setdefault(sid, []).append((polys, clip)); continue
+                if sid in famsid: famruns.setdefault(sid, []).append((polys, clip, seq)); continue
                 if ridge and sid == -1: continue   # a ridge's black outline would float above its scaled-down block
                 for p in polys:
                     rc = self._line_dots(p, dashes, clip)
-                    on = put_dots(rc, sid, clip)
-                    if id(s) in self.inks and on is not None: inked.setdefault(self.inks[id(s)], []).extend(("dot", r, c) for r, c in on)
+                    put_dots(rc, sid, clip)
                     if sid >= 0 and len(rc) > 8: stamps.setdefault(sid, []).append(rc)
             else:
                 kind, a, b, clip, dark = s
@@ -608,39 +673,53 @@ class Canvas:
                     if not 0 <= r < R_: continue
                     c0, c1 = max(c0, 0), min(c1, C_ - 1)
                     for c in range(c0, c1 + 1): box[r, c] |= (L if c > c0 else 0) | (R if c < c1 else 0) | (L | R if c0 == c1 else 0); frame[r, c] |= dark
-                    if id(s) in self.inks: inked.setdefault(self.inks[id(s)], []).extend(("box", r, c) for c in range(c0, c1 + 1))
+                    record([(r, c) for c in range(c0, c1 + 1)])
+                    box_seq[r, c0:c1 + 1] = seq
                 else:
                     c = self._col(a[0]); r0, r1 = sorted((self._row(a[1]), self._row(b[1] - 1e-6)))
                     if not 0 <= c < C_: continue
                     r0, r1 = max(r0, 0), min(r1, R_ - 1)
                     for r in range(r0, r1 + 1): box[r, c] |= (U if r > r0 else 0) | (D if r < r1 else 0) | (U | D if r0 == r1 else 0); frame[r, c] |= dark
-                    if id(s) in self.inks: inked.setdefault(self.inks[id(s)], []).extend(("box", r, c) for r in range(r0, r1 + 1))
+                    record([(r, c) for r in range(r0, r1 + 1)])
+                    box_seq[r0:r1 + 1, c] = seq
 
         # markers: braille dots when only one series, glyph per series otherwise
         glyph = lambda sid: GLYPHS[sid % len(GLYPHS)] if sid < len(GLYPHS) else chr(ord("a") + sid % 26)
         marks, mark_sid = {}, {}
         npts = {}
         for pts, sid, _ in self.marks: npts[sid] = npts.get(sid, 0) + len(pts)
-        for pts, sid, clip in self.marks:
+        for primitive in self.marks:
+            pts, sid, clip = primitive
+            activate(primitive, "mark", pts)
             for x, y in pts:
                 if not (np.isfinite(x) and np.isfinite(y)): continue
                 if clip is not None and not (clip[0] - 1 <= x <= clip[2] + 1 and clip[1] - 1 <= y <= clip[3] + 1): continue
                 if (multi and sid >= 0) or npts[sid] <= 300:  # sparse marks get a glyph, dense scatter stays braille
                     r, c = self._row(y), self._col(x)
-                    if 0 <= r < R_ and 0 <= c < C_: marks[(r, c)] = glyph(sid) if multi and sid >= 0 else "•"; mark_sid[(r, c)] = sid
+                    if 0 <= r < R_ and 0 <= c < C_:
+                        inked[seq].add((r, c))
+                        if mark_seq.get((r, c), 0) <= seq:
+                            marks[(r, c)] = glyph(sid) if multi and sid >= 0 else "•"; mark_sid[(r, c)] = sid; mark_seq[(r, c)] = seq
                     else: self.meta["offgrid"] += 1
                 else:
                     put_dots(np.array([[int(y * sy), int(x * sx)]]), sid, None)
 
+        for primitive in self.heat:
+            r, c, lv = primitive
+            activate(primitive, "fill")
+            fill_cell(r, c, -1, HEAT8[lv][c % 2] if self.levels == 8 else HEAT[lv])
+
         # ponytail: transient buffers stay local to this render, not as new Canvas attributes.
         return dict(dots=dots, box=box, frame=frame, fill=fill, shade=shade, under=under,
-                    stamps=stamps, inked=inked, famsid=famsid, famruns=famruns,
+                    stamps=stamps, inked=inked, primitives=primitives, dot_seq=dot_seq,
+                    box_seq=box_seq, fill_seq=fill_seq, mark_seq=mark_seq,
+                    famsid=famsid, famruns=famruns,
                     marks=marks, mark_sid=mark_sid, glyph=glyph, multi=multi, nser=nser,
                     shaded=shaded, ridge=ridge, rscaled=rscaled, alt=alt, seqs=seqs,
                     shade_of=shade_of, ramp=ramp)
 
     def _compose_cells(self, raster):
-        """Choose geometry glyphs in the existing layer order, before text."""
+        """Choose geometry glyphs with painter order and per-owner ink, before text."""
         R_, C_ = self.rows, self.cols
         dots, box, frame = raster["dots"], raster["box"], raster["frame"]
         fill, shade, under = raster["fill"], raster["shade"], raster["under"]
@@ -650,31 +729,61 @@ class Canvas:
         cell = np.full((R_, C_), "", object)
         sid_at = np.full((R_, C_), -2, int)                # series for color output
 
-        # braille cells
+        dot_seq, box_seq, fill_seq = (raster[k] for k in ("dot_seq", "box_seq", "fill_seq"))
+        primitives, inked = raster["primitives"], raster["inked"]
+        sources = np.empty((R_, C_), object)
+        sources.fill(frozenset())
+        raster["sources"] = sources
+
+        def paint(r, c, order, g, sid, crossing=False):
+            inked[order].add((r, c))
+            old = sources[r, c]
+            # Translucent fills never erase strokes, irrespective of painter order.
+            if old and max(old) > order and any(primitives[k][2] and
+                    (not crossing or primitives[k][0] != "stroke") for k in old): return
+            cell[r, c] = g; sid_at[r, c] = sid; sources[r, c] = frozenset((order,))
+            heatrgb.pop((r, c), None)
+
         for r in range(R_):
             for c in range(C_):
                 blk = dots[r * 4:r * 4 + 4, c * 2:c * 2 + 2]
+                orders = dot_seq[r * 4:r * 4 + 4, c * 2:c * 2 + 2]
                 on = blk > -2
+                fs, bs = fill_seq[r, c], box_seq[r, c]
+                opaque = fs and primitives[fs][2]
+                if opaque: on &= orders > fs
+                data_box = bs and primitives[bs][3] is not None
+                if data_box and (not opaque or bs > fs): on &= orders > bs
                 if on.any():
-                    cell[r, c] = "─" if shade[r, c] and on.any(1).sum() == 1 and 0 < c < C_ - 1 and shade[r, c - 1] and shade[r, c + 1] else chr(0x2800 + int(BITS[on].sum()))   # flat line (violin median) on a fill: a rule, not a dotted hole in the body
+                    cell[r, c] = "─" if shade[r, c] and on.any(1).sum() == 1 and 0 < c < C_ - 1 and shade[r, c - 1] and shade[r, c + 1] else chr(0x2800 + int(BITS[on].sum()))
                     v = blk[on]; sid_at[r, c] = np.bincount(v + 2).argmax() - 2
-                elif frame[r, c]: cell[r, c] = BOX[box[r, c]]
-                elif shade[r, c]: cell[r, c] = shade[r, c]; sid_at[r, c] = fill[r, c]   # fills beat gridlines
-                elif box[r, c]: cell[r, c] = BOX[box[r, c]]
+                    sources[r, c] = frozenset(map(int, np.unique(orders[on])))
+                elif box[r, c] and ((data_box and (not opaque or bs > fs)) or (not data_box and frame[r, c])):
+                    cell[r, c] = BOX[box[r, c]]; sources[r, c] = frozenset((int(bs),))
+                elif shade[r, c]:
+                    cell[r, c] = shade[r, c]; sid_at[r, c] = fill[r, c]; sources[r, c] = frozenset((int(fs),))
+                elif box[r, c]:
+                    cell[r, c] = BOX[box[r, c]]; sources[r, c] = frozenset((int(bs),))
         heatrgb = {}
-        if self.heat:
-            for r, c, lv in self.heat:
-                if cell[r, c] == "" and not (box[r, c] or shade[r, c]):
-                    cell[r, c] = HEAT8[lv][c % 2] if self.levels == 8 else HEAT[lv]; k = ramp_rgb(lv, self.levels)
-                    heatrgb[r, c] = (k, k)   # solid fill: ink = bg, so the glyph never hatches the cell; the glyph still carries the level without colour
+        for primitive in self.heat:
+            r, c, lv = primitive
+            if self.orders[id(primitive)] in sources[r, c]:
+                k = ramp_rgb(lv, self.levels); heatrgb[r, c] = (k, k)
 
-        for sid, a, b, clip in self.rules:   # median / cap rules: one glyph style, beats braille and fills
+        for primitive in self.rules:   # median / cap rules: one glyph style, respecting painter order
+            sid, a, b, clip = primitive
+            order = self.orders[id(primitive)]
+            primitives[order] = ("stroke", [np.array([a, b])], self.opaque[id(primitive)], self.inks.get(id(primitive)))
+            inked[order] = set()
             if clip is not None: a = np.clip(a, clip[:2], clip[2:]); b = np.clip(b, clip[:2], clip[2:])
             r = self._row(a[1]); c0, c1 = sorted((self._col(a[0]), self._col(b[0] - 1e-6)))
             if 0 <= r < R_:
                 for c in range(max(c0, 0), min(c1, C_ - 1) + 1):
                     if shade[r, c] and fill[r, c] >= 0 and fill[r, c] != sid: under[r, c] = fill[r, c]   # solid body behind the rule: no black cut-out
-                    cell[r, c] = "─"; sid_at[r, c] = sid
+                    # A vertical whisker crossing a cap must not turn its centre into braille.
+                    crossing = any(primitives[k][0] == "stroke" and primitives[k][1] is not None and
+                                   all(np.ptp(p[:, 0]) < .5 for p in primitives[k][1]) for k in sources[r, c])
+                    paint(r, c, order, "─", sid, crossing=crossing)
 
         # line stamps so several line series stay apart in plain text
         if multi and self.stamp:
@@ -687,13 +796,17 @@ class Canvas:
                         r, c = rc[k]
                         blk = dots[r * 4:r * 4 + 4, c * 2:c * 2 + 2]
                         if (blk[blk > -2] == sid).all() and (r, c) not in marks and not shade[r, c]:   # not on a fill: there the line is a ─ rule
-                            marks[(r, c)] = glyph(sid); break
+                            marks[(r, c)] = glyph(sid)
+                            raster["mark_seq"][(r, c)] = int(dot_seq[r * 4:r * 4 + 4, c * 2:c * 2 + 2].max())
+                            raster["mark_sid"][(r, c)] = sid
+                            break
                         if k - int(f * len(rc)) > len(rc) * .2: break
-        for (r, c), g in marks.items(): cell[r, c] = g
+        for (r, c), g in marks.items():
+            paint(r, c, raster["mark_seq"][(r, c)], g, raster["mark_sid"][(r, c)])
         for kind in ("dot", "box"):   # glyph staircases (monotone curves): per text column the rows the curve spans, entry from the left at the bottom, exit right at the top
             for sid, runs in famruns.items():
                 if famsid[sid] != kind: continue
-                for polys, clip in runs:
+                for polys, clip, order in runs:
                     span = {}
                     for p in polys:
                         for r_, c_ in self._line_dots(p, None, clip, staircase=True) // [2, 2]:
@@ -704,12 +817,16 @@ class Canvas:
                         top, bot = span[c_]
                         if prev is not None and c_ == prev[0] + 1: bot = max(bot, prev[1])   # entry continues from the previous column's exit row
                         for r_ in range(top, bot + 1):
-                            cell[r_, c_] = "∙" if kind == "dot" else ("─" if top == bot else "╭" if r_ == top else "╯" if r_ == bot else "│"); sid_at[r_, c_] = sid
+                            paint(r_, c_, order, "∙" if kind == "dot" else ("─" if top == bot else "╭" if r_ == top else "╯" if r_ == bot else "│"), sid)
                         prev = (c_, top)
 
         # OHLC geometry: true cell coordinates, wicks first, bodies opaque on top.
         # Filled caps cannot become tiny scatter markers or get hollowed by line stamps.
-        for a, b, sid, clip, kind in sorted(self.candles, key=lambda c: c[4] != 'wick'):
+        for primitive in sorted(self.candles, key=lambda c: c[4] != 'wick'):
+            a, b, sid, clip, kind = primitive
+            order = self.orders[id(primitive)]
+            primitives[order] = ("fill" if kind == "filled" else "stroke", None, self.opaque[id(primitive)], self.inks.get(id(primitive)))
+            inked[order] = set()
             if clip is not None:
                 if (b < clip[:2]).any() or (a > clip[2:]).any(): continue
                 a, b = np.maximum(a, clip[:2]), np.minimum(b, clip[2:])
@@ -728,7 +845,7 @@ class Canvas:
                     elif r == r0: g = '┌' if c == c0 else '┐' if c == c1 else '─'
                     elif r == r1: g = '└' if c == c0 else '┘' if c == c1 else '─'
                     else: g = '│' if c in (c0, c1) else ' '
-                    cell[r, c] = g; sid_at[r, c] = sid
+                    paint(r, c, order, g, sid)
 
         return cell, sid_at, heatrgb
 
@@ -812,10 +929,56 @@ class Canvas:
                 self.meta["placed"].append((role, line)); placed.append((role, line, r, c, yc / self.ch + i - (n - 1) / 2))
 
         back = {alt[id(f)]: f[1] for f in self.fills if id(f) in alt}   # a ridge's alternate shade is still its series
-        self.meta["drawn"] = ({back.get(int(s), int(s)) for s in np.unique(sid_at) if s >= 0} | shaded |
-                              {mark_sid[k] for k, g in marks.items() if k in mark_sid and cell[k] == g and mark_sid[k] >= 0} |
-                              {k for k, at in inked.items() if any(dots[r, c] == -1 and (0x2800 <= ord(cell[r // 4, c // 2][:1] or " ") < 0x2900 or cell[r // 4, c // 2] == "─") if t == "dot" else box[r, c] and cell[r, c] == BOX[box[r, c]] for t, r, c in at)} |
-                              (set(self.inks.values()) if ridge else set()))   # a neutral data stroke is drawn if a cell still shows its ink; a ridge's outline is its fill   # series with a visible cell, before legend keys: a key alone is not the data
+        sources, primitives = raster["sources"], raster["primitives"]
+        visible = set().union(*(sources[r, c] for r, c in np.argwhere(~taken)))
+        tokens = {primitives[k][3] for k in visible if primitives[k][3] is not None}
+        self.meta["owners_drawn"] = {token[1] for token in tokens}
+        # Keep colour-level metadata for SVG presentation; matplotlib verdicts use owners only.
+        self.meta["drawn"] = {back.get(int(s), int(s)) for s in np.unique(sid_at) if s >= 0} | shaded | tokens
+
+        def coincides(lower, upper):
+            """Source geometry, not rounded cells: nearby curves are resolution loss."""
+            lk, a, _, _ = primitives[lower]; uk, b, _, _ = primitives[upper]
+            if uk == "fill": return True
+            if a is None or b is None or lk != uk: return False
+            if lk == "mark": return set(map(tuple, a)) <= set(map(tuple, b))
+            # ponytail: resampled non-monotone paths require identical vertices; uncertain covering remains material loss.
+            for p in a:
+                matched = False
+                for q in b:
+                    if np.array_equal(p, q) or np.array_equal(p, q[::-1]): matched = True; break
+                    for axis in (0, 1):
+                        # Exact piecewise-linear comparison on the union of source knots.
+                        pp, qq = p, q
+                        if (np.diff(pp[:, axis]) < 0).all(): pp = pp[::-1]
+                        if (np.diff(qq[:, axis]) < 0).all(): qq = qq[::-1]
+                        if not ((np.diff(pp[:, axis]) > 0).all() and (np.diff(qq[:, axis]) > 0).all()): continue
+                        x, y = pp[:, axis], qq[:, axis]
+                        if x[0] < y[0] - 1e-7 or x[-1] > y[-1] + 1e-7: continue
+                        knots = np.unique(np.r_[x, y[(y >= x[0]) & (y <= x[-1])]])
+                        if np.allclose(np.interp(knots, x, pp[:, 1 - axis]), np.interp(knots, y, qq[:, 1 - axis]), atol=1e-7, rtol=0): matched = True; break
+                    if matched: break
+                if not matched: return False
+            return True
+
+        covered = {}
+        def overwritten(order, r, c):
+            if taken[r, c]: return False
+            for later in sources[r, c]:
+                if later <= order or not primitives[later][2]: continue
+                pair = (order, later)
+                if pair not in covered: covered[pair] = coincides(*pair)
+                if covered[pair]: return True
+            return False
+
+        by_owner = {}
+        for order, (_, _, _, token) in primitives.items():
+            if token is not None: by_owner.setdefault(token[1], []).append(order)
+        self.meta["occluded"] = {
+            owner for owner, orders in by_owner.items()
+            if owner not in self.meta["owners_drawn"] and any(inked[k] for k in orders)
+            and all(inked[k] and all(overwritten(k, r, c) for r, c in inked[k]) for k in orders)
+        }
         inv = {v: k for k, v in self.series.items()}
         if ridge: inv = {i: (lambda c, t: tuple(x + (1 - x) * t for x in c))(k, max(0, (.55 - lum(k)) / (1 - lum(k)))) for i, k in inv.items()}   # dark ridge ink reads on a dark terminal: lift to luminance .55, hue kept
         if ridge:   # alternate shade: x.6 drops a lifted (lum >= .55) colour by >= .22

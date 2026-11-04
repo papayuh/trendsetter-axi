@@ -97,7 +97,7 @@ class TextRenderer(RendererBase):
         if not filled and gc.get_linewidth() > 0:
             rgb, a = self._rgb(gc.get_rgb())
             if a > 0.05:
-                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, role=role, rule=self._in("LineCollection"))
+                self.cv.stroke(polys, rgb, gc.get_dashes(), clip, role=role, rule=self._in("LineCollection"), alpha=a)
 
     def draw_markers(self, gc, marker_path, marker_trans, path, trans, rgbFace=None):
         if self._in("axis") and not self._in("legend"): return  # tick marks: the frame says enough
@@ -111,7 +111,7 @@ class TextRenderer(RendererBase):
         pts = self._flip(raw)
         c = rgbFace if rgbFace is not None and (len(rgbFace) < 4 or rgbFace[3] > 0.05) else gc.get_rgb()   # hollow marker: face (r,g,b,0), the edge carries the colour
         rgb, a = self._rgb(c)
-        if a > 0.05 and len(pts): self.cv.marker(pts, rgb, self._clip(gc), role=self._role())
+        if a > 0.05 and len(pts): self.cv.marker(pts, rgb, self._clip(gc), role=self._role(), alpha=a)
 
     def _levels(self, shape):
         """0..1 levels (NaN = missing) of the artist being drawn, or None when it has no scalar array of this shape."""
@@ -127,9 +127,15 @@ class TextRenderer(RendererBase):
 
     def _heat_grid(self, xs, ys, t, gc):
         values = np.ma.filled(np.ma.asarray(self.cur.get_array(), float), np.nan).reshape(t.shape)
-        if xs[0] > xs[-1]: xs, t, values = xs[::-1], t[:, ::-1], values[:, ::-1]
-        if ys[0] > ys[-1]: ys, t, values = ys[::-1], t[::-1], values[::-1]
-        return self.cv.heat_grid(xs, ys, t, self._clip(gc), values=values)
+        alpha = self.cur.get_alpha()
+        alpha = 1.0 if alpha is None else np.asarray(alpha)
+        if xs[0] > xs[-1]:
+            xs, t, values = xs[::-1], t[:, ::-1], values[:, ::-1]
+            if np.ndim(alpha): alpha = alpha[:, ::-1]
+        if ys[0] > ys[-1]:
+            ys, t, values = ys[::-1], t[::-1], values[::-1]
+            if np.ndim(alpha): alpha = alpha[::-1]
+        return self.cv.heat_grid(xs, ys, t, self._clip(gc), values=values, alpha=alpha)
 
     def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight, coordinates, offsets,
                        offsetTrans, facecolors, antialiased, edgecolors):
@@ -147,12 +153,12 @@ class TextRenderer(RendererBase):
                 c = fc[k % len(fc)] if len(fc) else (0, 0, 0, 1)
                 if len(c) > 3 and c[3] < 0.05: continue
                 quad = np.array([xy[i, j], xy[i, j + 1], xy[i + 1, j + 1], xy[i + 1, j]])
-                self.cv.fill([quad], c[:3], clip, continuous=True)
+                self.cv.fill([quad], c[:3], clip, continuous=True, alpha=c[3] if len(c) > 3 else 1.0)
 
     def draw_gouraud_triangles(self, gc, points, colors, transform):
         clip = self._clip(gc)
         for tri, col in zip(np.asarray(points, float), np.asarray(colors, float)):
-            self.cv.fill([self._flip(transform.transform(tri))], col[:, :3].mean(0), clip, continuous=True)
+            self.cv.fill([self._flip(transform.transform(tri))], col[:, :3].mean(0), clip, continuous=True, alpha=col[:, 3].mean() if col.shape[1] > 3 else 1.0)
 
     def draw_image(self, gc, x, y, im, transform=None):
         t = self._levels(None) if self.cur is not None and getattr(self.cur, "get_array", None) and np.ndim(self.cur.get_array()) == 2 else None
@@ -872,8 +878,7 @@ def describe(fig, meta):
 
 
 def losses(fig, meta):
-    """Return artist/clipping losses and enrich canvas heat diagnostics with original source shapes, indices and labels.
-    ponytail: series are keyed by colour, so an artist sharing its colour with a drawn one counts as drawn; per-artist ink ids if that matters."""
+    """Return owner-level visibility/clipping losses and enrich source heat diagnostics."""
     for k, (owner, shape, shown, sampled) in enumerate(meta.get("heat_sampled", [])):
         a = meta["owners"][owner][0]
         meta["heat_sampled"][k] = (owner, getattr(a, "_tc_heat_shape", shape), shown, sampled)
@@ -907,12 +912,15 @@ def losses(fig, meta):
             if out:
                 k = (kind(a), _name(a, bars)); o, t = clipped.get(k, (0, 0)); clipped[k] = (o + out, t + len(pts))
             if out == len(pts): continue   # wholly outside: clipped, not lost
-        sids = meta["owned"].get(i, set())
-        if n == 0 or sids and not sids & meta["drawn"]:
+        if n == 0 or i not in meta["owners_drawn"]:
             if pts is not None and not len(pts) or isinstance(a, Collection) and not any(np.isfinite(p.vertices).all(1).any() for p in a.get_paths()): continue   # no data to draw
-            k = (kind(a), _name(a, bars), "drew nothing" if n == 0 else "hidden: no visible cell"); lost[k] = lost.get(k, 0) + 1
-    out = [dict(kind="lost_artist", what=f"{k} {name!r}" if name else k, detail=f"{c} {why}" if c > 1 else why)
-           for (k, name, why), c in lost.items()]
+            if hasattr(a, "get_path") and np.ptp(a.get_transform().transform(a.get_path().vertices), axis=0).max(initial=0) == 0: continue   # zero-size legend proxies on data axes carry no geometry
+            occluded = i in meta["occluded"]
+            k = ("occluded" if occluded else "lost_artist", kind(a), _name(a, bars),
+                 "covered by later opaque ink" if occluded else "drew nothing" if n == 0 else "hidden: no visible cell")
+            lost[k] = lost.get(k, 0) + 1
+    out = [dict(kind=loss, what=f"{k} {name!r}" if name else k, detail=f"{c} {why}" if c > 1 else why)
+           for (loss, k, name, why), c in lost.items()]
     out += [dict(kind="clipped_data", what=f"{k} {name!r}" if name else k, detail=f"{o} of {t} points outside the axes view")
             for (k, name), (o, t) in clipped.items()]
     return out

@@ -164,7 +164,9 @@ def test_hidden_series_is_lost(close):
         ax.plot([1, 3, 2, 4], color="tab:blue", label="actual")
         ax.plot([1, 3, 2, 4], color="tab:orange", label="forecast")   # drawn on top of every cell of "actual"
     r = tsa.render(figure(build), 60)
-    assert [(l["kind"], l["what"]) for l in r.losses] == [("lost_artist", "Line2D 'actual'")], r.losses
+    # Source-identical overplotting is occlusion, not resolution loss (T9).
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [("occluded", "Line2D 'actual'", False)], r.losses
+    assert tsa.render(figure(build), 60, strict=True).losses == r.losses
 
 
 def test_clipped_data_is_reported_but_not_material(close):
@@ -292,15 +294,14 @@ def test_svg_marks_values_unavailable(close):
 
 @pytest.mark.parametrize("under", ["black", "0.3"])
 def test_hidden_neutral_series_is_lost(close, under):
-    """A black or gray curve drawn over by another series is as lost as a coloured one."""
+    """Source-identical neutral and coloured curves receive the same non-material occlusion verdict."""
     def build(ax):
         x = np.linspace(0, 6, 200)
         ax.plot(x, np.sin(x), color=under, label="baseline")
         ax.plot(x, np.sin(x), color="tab:red", lw=3, label="model")
     r = tsa.render(figure(build), 60)
-    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [("lost_artist", "Line2D 'baseline'", True)], r.losses
-    with pytest.raises(tsa.RenderLossError, match="baseline"):
-        tsa.render(figure(build), 60, strict=True)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [("occluded", "Line2D 'baseline'", False)], r.losses
+    assert tsa.render(figure(build), 60, strict=True).losses == r.losses
 
 
 def test_visible_neutral_series_is_not_lost(close):
@@ -1143,4 +1144,58 @@ def test_repeated_colour_across_subplots_is_accounted_per_artist(close):
     r = tsa.render(fig, 80, strict=True)
     assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [
         ("occluded", "Line2D 'line1'", False)
+    ], r.losses
+
+
+@pytest.mark.parametrize("kind", ["line", "markers", "fill"])
+@pytest.mark.parametrize("colour", ["C0", "C1", "black"])
+@pytest.mark.parametrize("alpha", [1, .5])
+def test_only_opaque_covering_is_occlusion(close, kind, colour, alpha):
+    x = np.linspace(1, 9, 200)
+    def draw(ax, colour, label, alpha):
+        if kind == "line": ax.plot(x, np.sin(x), color=colour, label=label, alpha=alpha)
+        elif kind == "markers": ax.scatter([2, 5, 8], [2, 5, 2], color=colour, label=label, alpha=alpha)
+        else: ax.fill_between([1, 9], 2, 8, color=colour, label=label, alpha=alpha)
+    def build(ax):
+        draw(ax, "C0", "bottom", 1)
+        draw(ax, colour, "top", alpha)
+    r = tsa.render(figure(build), 60)
+    lower = [l for l in r.losses if "'bottom'" in l["what"]]
+    assert [(l["kind"], l["material"]) for l in lower] == [
+        ("occluded", False) if alpha >= .95 else ("lost_artist", True)
+    ], r.losses
+
+
+@pytest.mark.parametrize("alpha", [.949, .95, 1])
+@pytest.mark.parametrize("kind", ["line", "markers", "image"])
+def test_opaque_fill_threshold_and_later_images(close, alpha, kind):
+    def build(ax):
+        if kind == "line": ax.plot([1, 9], [5, 5], color="red", label="bottom", zorder=1)
+        elif kind == "markers": ax.scatter([2, 5, 8], [5, 5, 5], color="red", label="bottom", zorder=1)
+        else: ax.imshow(np.ones((2, 2)), extent=(2, 8, 3, 7), aspect="auto", label="bottom", zorder=1)
+        ax.fill_between([0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+    r = tsa.render(figure(build), 60)
+    lower = [l for l in r.losses if "'bottom'" in l["what"]]
+    # Images are fill layers, unlike dots: even translucent fills can replace them.
+    assert [(l["kind"], l["material"]) for l in lower] == (
+        [("occluded", False)] if alpha >= .95 else [("lost_artist", True)] if kind == "image" else []
+    ), r.losses
+
+
+def test_gallery_histogram_loss_is_newly_detected_not_source_occlusion(close):
+    pytest.importorskip("seaborn")
+    from trendsetter_axi.gallery import c25
+    fig = c25()
+    fig.canvas.draw()
+    pixels = np.asarray(fig.canvas.buffer_rgba()).copy()
+    for index in (0, 18, 19):
+        bar = fig.axes[0].containers[0][index]
+        assert bar.get_height() > 0
+        bar.set_visible(False); fig.canvas.draw()
+        assert np.any(pixels != np.asarray(fig.canvas.buffer_rgba()))
+        bar.set_visible(True)
+    r = tsa.render(fig, 80)
+    assert [(l["kind"], l["what"], l["detail"], l["material"]) for l in r.losses] == [
+        ("lost_artist", "bar", "3 hidden: no visible cell", True)
     ], r.losses
