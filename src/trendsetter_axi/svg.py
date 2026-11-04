@@ -15,7 +15,7 @@ INHERIT = ("fill", "stroke", "fill-opacity", "stroke-opacity", "stroke-width", "
            "font-size", "text-anchor", "visibility", "dominant-baseline")
 # ponytail: fixed ceilings, no limits API: element inspections share one budget (each <use> expansion counts again),
 # nesting depth also stops <use> cycles, and pixels per embedded PNG are checked before decoding. Exceeding raises ValueError.
-MAX_ELEMENTS = 100_000
+MAX_ELEMENTS = 50_000   # leave headroom for the fan-out rejection's 2-second wall-clock budget on CI
 MAX_DEPTH = 256
 MAX_PIXELS = 16_000_000
 URL = re.compile(r"url\(\s*['\"]?#([^)'\"\s]+)")

@@ -44,7 +44,18 @@ def test_use_fanout_hits_the_work_budget():
     assert p.returncode == 0, (p.returncode, p.stderr[-2000:])   # never a signal exit
     elapsed, msg = p.stdout.split("\n", 1)
     assert float(elapsed) < 2, elapsed
-    assert "100,000" in msg and "100,001 visited" in msg and "work budget" in msg, msg
+    assert "50,000" in msg and "50,001 visited" in msg and "work budget" in msg, msg
+
+
+@pytest.mark.parametrize("extra", [0, 1], ids=["at-budget", "over-budget"])
+def test_element_work_budget_boundary(extra):
+    # ID indexing visits root, defs and each child; drawing visits root and defs again.
+    source = doc('<defs>' + '<g/>' * (50_000 - 4 + extra) + '</defs>')
+    if extra:
+        with pytest.raises(ValueError, match=r"work budget of 50,000 elements \(50,001 visited"):
+            tsa.render_svg(source, 80)
+    else:
+        assert tsa.render_svg(source, 80) == ""
 
 
 @pytest.mark.parametrize("body", ['<g id="a"><use href="#a"/></g>', "<g>" * 2000 + RECT.format("") + "</g>" * 2000],
@@ -167,7 +178,7 @@ def test_text_uses_group_opacity_once():
 
 
 @pytest.mark.parametrize("body", [
-    '<text>' + '<tspan/>' * 100_001 + '</text>',
+    '<text>' + '<tspan/>' * 50_001 + '</text>',
     '<text>' + '<tspan>' * 2000 + 'label' + '</tspan>' * 2000 + '</text>',
 ], ids=["wide-text", "deep-text"])
 def test_text_descendants_obey_limits(body):
@@ -186,7 +197,7 @@ def test_repeated_descendant_scans_share_work_budget(kind):
         definitions = '<clipPath id="c">' + '<circle r="1"/>' * 1000 + '</clipPath>'
         definitions += '<rect id="target" width="1" height="1" fill="none" clip-path="url(#c)"/>'
     body = '<defs>' + definitions + '</defs>' + '<use href="#target"/>' * 200
-    with pytest.raises(ValueError, match=r"work budget.*100,001 visited"):
+    with pytest.raises(ValueError, match=r"work budget.*50,001 visited"):
         tsa.render_svg(doc(body), 80)
 
 
