@@ -485,12 +485,32 @@ def test_disabled_paints_do_not_fail_strict(ref, inline, container, channel, dis
         assert r.text.strip() == "label"
 
 
-@pytest.mark.parametrize("ref", ["g", "p", "missing"])
-def test_filled_shapes_do_not_resolve_unused_outline_paints(ref):
+@pytest.mark.parametrize("ref,what", [("g", "gradient #g"), ("p", "pattern #p"), ("missing", "gradient #missing")])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("enabled", [True, False], ids=["enabled", "disabled"])
+@pytest.mark.parametrize("geometry", [
+    '<rect x="150" y="20" width="100" height="60"/>',
+    '<path d="M150 20 L250 20 L250 80 L150 80 Z"/>',
+    '<polygon points="150,20 250,20 250,80 150,80"/>',
+    '<circle cx="200" cy="50" r="30"/>',
+    '<ellipse cx="200" cy="50" rx="50" ry="30"/>',
+    '<g class="legend"><rect x="150" y="20" width="10" height="10"/></g>',
+])
+def test_filled_shapes_report_enabled_outline_paints(ref, what, inline, enabled, geometry):
     defs = '<defs><linearGradient id="g"/><pattern id="p"/></defs>'
-    r = tsa.render(doc(defs + RECT.format(f' stroke="url(#{ref})"')), 80, strict=True)
-    assert unsupported(r) == {}
-    assert r.text == RECT_TEXT
+    sw = 20 if enabled else 0
+    attrs = f'style="stroke: url(#{ref}); stroke-width: {sw}"' if inline else f'stroke="url(#{ref})" stroke-width="{sw}"'
+    source = doc(defs + f'<g fill="#d62728" {attrs}>{geometry}</g>')
+    r = tsa.render(source, 80)
+    if enabled:
+        assert unsupported(r)[what]["material"] is True
+        with pytest.raises(tsa.RenderLossError):
+            tsa.render(source, 80, strict=True)
+    else:
+        assert unsupported(r) == {}
+        assert tsa.render(source, 80, strict=True).text == r.text
+    if geometry.startswith(('<rect', '<path', '<polygon')):
+        assert (r.text.rsplit("\n", 1)[0] if enabled else r.text) == RECT_TEXT
 
 
 def test_mixed_filled_and_open_path_reports_consumed_stroke():
@@ -500,6 +520,64 @@ def test_mixed_filled_and_open_path_reports_consumed_stroke():
     r = tsa.render(source, 80)
     assert unsupported(r)["gradient #g"]["material"] is True
     assert any(s["color"] == "#0000ff" for s in r.series)
+    with pytest.raises(tsa.RenderLossError):
+        tsa.render(source, 80, strict=True)
+
+
+@pytest.mark.parametrize("ref", ["g", "p", "missing"])
+@pytest.mark.parametrize("transform", ["", "rotate(45 200 50)", "matrix(0 1 -1 0 250 -150)"])
+@pytest.mark.parametrize("geometry", [
+    '<polyline points="150,50 200,50 250,50"/>',
+    '<polyline points="200,20 200,50 200,80"/>',
+    '<polyline points="150,20 200,50 250,80"/>',
+    '<path d="M150 50 L150 50 L200 50 L250 50"/>',
+    '<path d="M150 50 L200 50 L250 50 Z"/>',
+    '<polygon points="150,50 200,50 250,50"/>',
+    '<ellipse cx="200" cy="50" rx="50" ry="0"/>',
+    '<ellipse cx="200" cy="50" rx="0" ry="30"/>',
+    '<rect x="150" y="20" width="100" height="60" transform="matrix(1 0 0 0 0 50)"/>',
+])
+def test_collinear_contours_keep_strokes_without_fill_losses(ref, transform, geometry):
+    defs = '<defs><linearGradient id="g"/><pattern id="p"/></defs>'
+    source = doc(defs + f'<g transform="{transform}" fill="url(#{ref})" stroke="red">{geometry}</g>')
+    r = tsa.render(source, 80, strict=True)
+    assert unsupported(r) == {}
+    assert r.text
+    assert len(r.series) == 1
+    assert r.series[0]["color"] == "#ff0000"
+    assert r.series[0]["kind"] == "line"
+
+
+@pytest.mark.parametrize("geometry", [
+    '<circle cx="200" cy="50" r="0"/>',
+    '<polyline points="200,50 200,50 200,50"/>',
+    '<polygon points="200,50 200,50 200,50"/>',
+])
+def test_point_contours_do_not_consume_fill(geometry):
+    source = doc('<g fill="url(#missing)" stroke="none">' + geometry + '</g>')
+    r = tsa.render(source, 80, strict=True)
+    assert r.text == ""
+    assert r.losses == []
+    assert r.series == []
+
+
+def test_mixed_filled_and_collinear_contours_keep_strokes():
+    defs = '<defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient></defs>'
+    body = '<path fill="url(#g)" stroke="red" d="M150 20 L250 20 L250 80 L150 80 Z M150 50 L200 50 L250 50"/>'
+    r = tsa.render(doc(defs + body), 80)
+    assert unsupported(r)["gradient #g"]["material"] is True
+    assert any(s["color"] == "#0000ff" and s["kind"] == "fill" for s in r.series)
+    assert any(s["color"] == "#ff0000" and s["kind"] == "line" for s in r.series)
+    assert r.text
+
+
+def test_self_intersecting_contour_still_consumes_fill():
+    defs = '<defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient></defs>'
+    body = '<polygon points="150,20 250,80 150,80 250,20" fill="url(#g)"/>'
+    source = doc(defs + body)
+    r = tsa.render(source, 80)
+    assert unsupported(r)["gradient #g"]["material"] is True
+    assert any(s["color"] == "#0000ff" and s["kind"] == "fill" for s in r.series)
     with pytest.raises(tsa.RenderLossError):
         tsa.render(source, 80, strict=True)
 
