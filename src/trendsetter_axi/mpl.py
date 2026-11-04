@@ -866,7 +866,7 @@ def describe(fig, meta):
 
 
 def losses(fig, meta):
-    """Data the text does not show, measured on the drawn figure: data artists that left no visible cell, and points outside the axes view.
+    """Return artist/clipping losses and enrich canvas heat diagnostics with original source shapes, indices and labels.
     ponytail: series are keyed by colour, so an artist sharing its colour with a drawn one counts as drawn; per-artist ink ids if that matters."""
     for k, (owner, shape, shown, sampled) in enumerate(meta.get("heat_sampled", [])):
         a = meta["owners"][owner][0]

@@ -77,7 +77,7 @@ class RenderResult:
 
 
 def build(text, meta, cols, series, scales, losses, features):
-    """The RenderResult of a render: `losses` from the adapter (artists, clipping) plus what the text layout dropped."""
+    """Build a RenderResult from adapter losses, canvas heat diagnostics and text-layout omissions."""
     seen = set()
     for role, s, why in [(r, s, f"dropped ({w})") for r, s, w in meta["dropped"]] + [(r, s, "truncated") for r, s in meta["truncated"]]:
         if (role, s, why) in seen: continue

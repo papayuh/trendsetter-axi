@@ -203,7 +203,8 @@ class Canvas:
 
     def heat_grid(self, xs, ys, t, clip=None, *, values=None):
         """t: (h, w) levels in 0..1, NaN = missing (stays blank); xs (w+1) / ys (h+1) ascending px edges, row 0 at top.
-        One text cell per data cell or the nearest data cell when a text cell spans several."""
+        Sample the data cell under each text-cell centre; wide cells retain a blank seam.
+        values: source values aligned with t for extrema selection before normalisation; defaults to t."""
         xs, ys, t = (np.asarray(a, float) for a in (xs, ys, t))
         ci = np.searchsorted(xs, (np.arange(self.cols) + .5) * self.cw) - 1
         ri = np.searchsorted(ys, (np.arange(self.rows) + .5) * self.ch) - 1
@@ -230,7 +231,7 @@ class Canvas:
         values = t if values is None else np.asarray(values, float)
         finite = np.isfinite(values) & np.isfinite(t)
         if not finite.any(): return
-        # ponytail: only global min/max levels are audited, not skipped interior cells or spatial patterns.
+        # ponytail: only global source min/max are audited, not skipped interior cells or spatial patterns.
         for kind, fill, arg in (("min", np.inf, np.argmin), ("max", -np.inf, np.argmax)):
             i, j = map(int, np.unravel_index(arg(np.where(finite, values, fill)), t.shape))
             value = t[i, j]; level = int(min(self.levels - 1, max(0, value) * self.levels))
