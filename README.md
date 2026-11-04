@@ -170,7 +170,7 @@ SVG traversal has a fixed work budget of 100,000 element visits, counting ID ind
 | Filter | Drawn unfiltered | Yes |
 | Clip other than one axis-aligned rectangle, or any tspan-local clip | Drawn unclipped | No |
 
-Both presentation attributes and inline `style` effects are reported for shapes, text and consumed tspans. Fill and stroke paint references are resolved and reported only for enabled, geometrically consumed channels on shapes and nonempty text runs, including inherited paints, not on non-painting containers whose descendants override them. Text visibility is checked per run using its effective fill and stroke opacities. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
+Both presentation attributes and inline `style` effects are reported for shapes, text and consumed tspans. Fill and stroke paint references are resolved and reported only for enabled, geometrically applicable channels on shapes and nonempty text runs, including inherited paints, not on non-painting containers whose descendants override them. Enabled URL strokes are reported even when the renderer's filled-shape shortcut omits outline ink; disabled strokes are not. Collinear contours do not consume fill paints. Text visibility is checked per run using its effective fill and stroke opacities. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
 
 Everything else is unknown and judged by appearance: its strokes are all kept, short segments included, except that a light gray axis-aligned stroke is taken for a gridline; a big neutral fill is taken for the page or panel; a shape the colour of the page is dropped.
 

@@ -247,6 +247,13 @@ def render(svg, cols=80, ansi=False, shift=0):
         p = np.asarray(p, float)
         return p @ M[:2, :2].T + M[:2, 2]
 
+    def noncollinear(p):
+        if len(p) < 3: return False
+        d = p - p[0]
+        v = d[np.argmax(np.max(np.abs(d), axis=1))]
+        a, b = d[:, 0] * v[1], d[:, 1] * v[0]
+        return np.any(np.abs(a - b) > 4 * np.finfo(float).eps * (np.abs(a) + np.abs(b)))
+
     def paint(v, depth):
         """A fill or stroke colour. A url(#id) paint server is drawn flat and reported: a gradient (or unknown id) in its
         first stop colour, else mid-grey; a pattern in mid-grey."""
@@ -263,19 +270,21 @@ def render(svg, cols=80, ansi=False, shift=0):
         fo = float(st.get("fill-opacity", 1) or 1) * st["opacity"]
         so = float(st.get("stroke-opacity", 1) or 1) * st["opacity"]
         sw = float(re.sub("[a-z]", "", st.get("stroke-width", "1") or "1") or 1)
-        fill = paint(st.get("fill", "black"), depth) if fo > 0.05 and any(len(p) > 2 for p, c in shapes) else None
-        if fill is not None and len(fill) > 3: fo *= fill[3]
         closed = [tf(M, p) for p, c in shapes]
+        fillable = [noncollinear(p) for p, c in shapes] if fo > 0.05 and M[0, 0] * M[1, 1] != M[0, 1] * M[1, 0] else []
+        polygons = [p for p, area in zip(closed, fillable) if area]
+        fill = paint(st.get("fill", "black"), depth) if polygons else None
+        if fill is not None and len(fill) > 3: fo *= fill[3]
         drawn = False
         if fill is not None and fo > 0.05:
             before = cv.ninks
-            cv.fill(closed, fill[:3], clip, role=role, alpha=fo)
+            cv.fill(polygons, fill[:3], clip, role=role, alpha=fo)
             drawn = cv.ninks > before
+        stroke = paint(st.get("stroke"), depth) if so > 0.05 and sw > 0 and any(len(p) > 1 for p in closed) else None
         if drawn:
-            seg = [tf(M, p) for p, c in shapes if not c and len(p) == 2] if role != "legend" else []
+            seg = [p for p, area in zip(closed, fillable) if not area and len(p) > 1] if role != "legend" else []
         else:
             seg = [p for p in closed if len(p) > 1]
-        stroke = paint(st.get("stroke"), depth) if so > 0.05 and sw > 0 and seg else None
         if stroke is not None and len(stroke) > 3: so *= stroke[3]
         if stroke is None or so <= 0.05: return
         if drawn:
