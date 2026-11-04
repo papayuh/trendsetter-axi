@@ -160,7 +160,7 @@ SVG carries no artist information. The supported subset:
 
 #### SVG limits
 
-SVG traversal has a fixed work budget of 100,000 visited elements (each `<use>` expansion counts again) and a maximum nesting depth of 256 (the root is depth 0), including `<use>` references, so cycles stop at the depth limit. Exceeding either raises `ValueError` naming the limit; the work-budget error also gives the visited count. Root width and height, taken from `viewBox` when present or otherwise `width`/`height`, must be finite and positive, checked before canvas allocation. Embedded PNGs are limited to 16,000,000 pixels per image: dimensions are checked in the PNG header before decoding; larger images raise `ValueError`. Non-PNG base64 images and unresolved `<use>` references are skipped with `warnings`. No external resources are fetched. Group opacity multiplies into child opacity; shapes and text with effective opacity at or below 0.05 are not drawn.
+SVG traversal has a fixed work budget of 100,000 element visits, counting ID indexing, each `<use>` expansion, text descendants, paint-server scans and clip-child collection. Repeated inspections count again. The maximum nesting depth is 256 (the root is depth 0), including expanded text and effect references, so cycles stop at the depth limit. Exceeding either raises `ValueError` naming the limit; the work-budget error also gives the visited count. Root width and height, taken from `viewBox` when present or otherwise `width`/`height`, must be finite and positive, checked before canvas allocation. Embedded PNGs are limited to 16,000,000 pixels per image: dimensions are checked in the PNG header before decoding; larger images raise `ValueError`. Non-PNG base64 images and unresolved `<use>` references are skipped with `warnings`. No external resources are fetched. Group opacity multiplies into child opacity; shapes and text with effective opacity at or below 0.05 are not drawn.
 
 | SVG effect | Approximation (reported as `unsupported` in losses and the text) | Material (`strict=True` raises) |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ SVG traversal has a fixed work budget of 100,000 visited elements (each `<use>` 
 | Filter | Drawn unfiltered | Yes |
 | Clip other than one axis-aligned rectangle | Drawn unclipped | No |
 
-Both presentation attributes and inline `style` effects are reported. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
+Both presentation attributes and inline `style` effects are reported for shapes, text and consumed tspans, including inherited fill and stroke paints. Text visibility is checked per run using its effective fill and stroke opacities. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
 
 Everything else is unknown and judged by appearance: its strokes are all kept, short segments included, except that a light gray axis-aligned stroke is taken for a gridline; a big neutral fill is taken for the page or panel; a shape the colour of the page is dropped.
 

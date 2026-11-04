@@ -169,16 +169,34 @@ def render(svg, cols=80, ansi=False, shift=0):
         raise ValueError(f"SVG size must be finite and positive, got {W} x {H}")
     # pt-sized root (matplotlib) vs viewBox: scale from user units to viewBox units
     cv = Canvas(W, H, cols)
-    ids = {el.get("id"): el for el in root.iter() if el.get("id")}
+    visited = 0
+
+    def visit(depth):
+        nonlocal visited
+        visited += 1
+        if visited > MAX_ELEMENTS: raise ValueError(f"SVG exceeds its work budget of {MAX_ELEMENTS:,} elements ({visited:,} visited, each <use> expansion counted)")
+        if depth > MAX_DEPTH: raise ValueError(f"SVG nests deeper than {MAX_DEPTH} levels (runaway nesting or a <use> cycle)")
+
+    def scan(el, depth):
+        visit(depth)
+        yield el
+        for ch in el: yield from scan(ch, depth + 1)
+
+    ids = {el.get("id"): el for el in scan(root, 0) if el.get("id")}
     k = (cols - shift) / cols   # shift > 0: squeeze the drawing right by `shift` columns so left tick labels fit
     base = np.array([[k, 0, shift * cv.cw - x0 * k], [0, 1, -y0], [0, 0, 1]])
 
-    def clip_rect(st, M):
+    def clip_rect(st, M, depth):
         """The pixel rect of an element's clip-path, False when the clip cannot be honoured (recorded in cv.meta), None when it has none."""
         ref = URL.search(st.get("clip-path") or "")
         if not ref: return None
         cp = ids.get(ref.group(1))
-        kids = [k for k in cp] if cp is not None else []
+        kids = []
+        if cp is not None:
+            visit(depth + 1)
+            for ch in cp:
+                visit(depth + 2)
+                kids.append(ch)
         shapes = shape(NS.sub("", kids[0].tag), kids[0]) if len(kids) == 1 else None
         if cp is not None and cp.get("clipPathUnits") != "objectBoundingBox" and shapes and len(shapes) == 1:
             Mc = M @ parse_transform(cp.get("transform")) @ parse_transform(kids[0].get("transform"))
@@ -187,22 +205,20 @@ def render(svg, cols=80, ansi=False, shift=0):
         cv.meta.setdefault("unsupported", []).append("clip-path #" + ref.group(1))   # not one axis-aligned rect: drawn unclipped, and the output says so
         return False
 
-    visited = 0
+    def effects(st, M, depth):
+        for k in ("mask", "filter"):
+            if ref := URL.search(st.get(k) or ""): cv.meta.setdefault("unsupported", []).append(f"{k} #{ref.group(1)}")
+        return paint(st.get("fill", "black"), depth), paint(st.get("stroke"), depth), clip_rect(st, M, depth)
 
     def walk(el, M, st, classes, clip=None, depth=0):
-        nonlocal visited
-        visited += 1
-        if visited > MAX_ELEMENTS: raise ValueError(f"SVG exceeds its work budget of {MAX_ELEMENTS:,} elements ({visited:,} visited, each <use> expansion counted)")
-        if depth > MAX_DEPTH: raise ValueError(f"SVG nests deeper than {MAX_DEPTH} levels (runaway nesting or a <use> cycle)")
+        visit(depth)
         tag = NS.sub("", el.tag)
         if tag in ("defs", "clipPath", "mask", "style", "title", "desc", "metadata", "marker", "pattern", "linearGradient", "radialGradient"):
             return
         st = styles(el, st)
         if st.get("display") == "none" or st.get("visibility") == "hidden" or st["opacity"] == 0: return
-        for k in ("mask", "filter"):   # ponytail: effects are reported, not rendered; draw without them
-            if ref := URL.search(st.get(k) or ""): cv.meta.setdefault("unsupported", []).append(f"{k} #{ref.group(1)}")
         if el.get("transform"): M = M @ parse_transform(el.get("transform"))
-        r = clip_rect(st, M)
+        fill, stroke, r = effects(st, M, depth)
         if r:   # nested clips intersect; an empty intersection draws nothing
             clip = r if clip is None else (max(clip[0], r[0]), max(clip[1], r[1]), min(clip[2], r[2]), min(clip[3], r[3]))
             if clip[0] >= clip[2] or clip[1] >= clip[3]: return
@@ -216,7 +232,7 @@ def render(svg, cols=80, ansi=False, shift=0):
             else: cv.meta.setdefault("warnings", []).append(f"<use> of {href or 'nothing'} not found, skipped")
             return
         if tag == "text":
-            return draw_text(el, M, st, classes, clip)
+            return draw_text(el, M, st, classes, fill, stroke, clip, depth)
         if tag == "image":
             return draw_image(el, M, clip)
         shapes = shape(tag, el)
@@ -224,14 +240,14 @@ def render(svg, cols=80, ansi=False, shift=0):
         if shapes is not None and not any(c.startswith(("text_", "xtick_", "ytick_")) or "annotation" in c for c in ids_):  # text bbox, annotation boxes, gridlines: not data
             legend = "legend" in " ".join(classes) or (  # matplotlib/plotnine: figure-level artists outside any axes_N group are legend keys
                 not any(c.startswith("axes_") for c in ids_) and any(c.startswith(("line2d_", "patch_", "PathCollection_")) for c in ids_))
-            draw_shape(shapes, M, st, "legend" if legend else shape_role(ids_), "violin" in " ".join(classes), clip)
+            draw_shape(shapes, M, st, fill, stroke, "legend" if legend else shape_role(ids_), "violin" in " ".join(classes), clip)
         for ch in el: walk(ch, M, st, classes, clip, depth + 1)
 
     def tf(M, p):
         p = np.asarray(p, float)
         return p @ M[:2, :2].T + M[:2, 2]
 
-    def paint(v):
+    def paint(v, depth):
         """A fill or stroke colour. A url(#id) paint server is drawn flat and reported: a gradient (or unknown id) in its
         first stop colour, else mid-grey; a pattern in mid-grey."""
         ref = URL.match((v or "").strip())
@@ -239,11 +255,10 @@ def render(svg, cols=80, ansi=False, shift=0):
         el = ids.get(ref.group(1))
         kind = "pattern" if el is not None and NS.sub("", el.tag) == "pattern" else "gradient"   # ponytail: paint servers are flat, never real gradients/patterns
         cv.meta.setdefault("unsupported", []).append(f"{kind} #{ref.group(1)}")
-        stop = next((s for s in (el.iter() if el is not None and kind == "gradient" else ()) if NS.sub("", s.tag) == "stop"), None)
+        stop = next((s for s in (scan(el, depth + 1) if el is not None and kind == "gradient" else ()) if NS.sub("", s.tag) == "stop"), None)
         return (color(styles(stop, {}).get("stop-color")) if stop is not None else None) or (.5, .5, .5)
 
-    def draw_shape(shapes, M, st, role, violin=False, clip=None):
-        fill = paint(st.get("fill", "black")); stroke = paint(st.get("stroke"))
+    def draw_shape(shapes, M, st, fill, stroke, role, violin=False, clip=None):
         fo = float(st.get("fill-opacity", 1) or 1) * st["opacity"]
         so = float(st.get("stroke-opacity", 1) or 1) * st["opacity"]
         if fill is not None and len(fill) > 3: fo *= fill[3]
@@ -265,9 +280,23 @@ def render(svg, cols=80, ansi=False, shift=0):
                 dashes = (0, [float(x) for x in re.split(r"[\s,]+", da.replace("px", "").strip()) if x])
             cv.stroke(closed, stroke[:3], dashes, clip, role=role)
 
-    def draw_text(el, M, st, classes, clip=None):
-        if st["opacity"] * float(st.get("fill-opacity", 1) or 1) <= 0.05: return
-        ts = [t for t in el.iter() if NS.sub("", t.tag) in ("text", "tspan") and t.text and t.text.strip()]
+    def draw_text(el, M, st, classes, fill, stroke, clip=None, depth=0):
+        def runs(node, style, fill, stroke, depth):
+            fo = style["opacity"] * float(style.get("fill-opacity", 1) or 1)
+            so = style["opacity"] * float(style.get("stroke-opacity", 1) or 1)
+            if fill is not None and len(fill) > 3: fo *= fill[3]
+            if stroke is not None and len(stroke) > 3: so *= stroke[3]
+            sw = float(re.sub("[a-z]", "", style.get("stroke-width", "1") or "1") or 1)
+            if ((fill is not None and fo > 0.05) or (stroke is not None and so > 0.05 and sw > 0)) and NS.sub("", node.tag) in ("text", "tspan") and node.text and node.text.strip():
+                yield node
+            for ch in node:
+                visit(depth + 1)
+                child_st = styles(ch, style)
+                if child_st.get("display") == "none" or child_st.get("visibility") == "hidden" or child_st["opacity"] == 0: continue
+                child_fill, child_stroke, _ = effects(child_st, M, depth + 1)
+                yield from runs(ch, child_st, child_fill, child_stroke, depth + 1)
+
+        ts = list(runs(el, st, fill, stroke, depth))
         fsz = lambda t: float(m.group(1)) if (m := re.search(r"font-size:\s*([\d.]+)", t.get("style") or "")) else 0
         if len(ts) > 1 and all(t.get("y") for t in ts[1:]) and fsz(ts[1]):  # matplotlib mathtext: one tspan per glyph run
             y0, f0 = float(ts[0].get("y")), fsz(ts[0]) or fsz(ts[1])
