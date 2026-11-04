@@ -607,6 +607,7 @@ def test_distinct_instants_stay_distinct(close):
     local = [datetime(2026, 10, 27, 9, 0, k, tzinfo=east) for k in range(3)]
     assert at(local) == [t.strftime("%Y-%m-%d 09:00:%S") for t in local]   # the hour the test set, not UTC's 14
     assert at(secs, tz=east) == [t.astimezone(east).strftime("%Y-%m-%d 07:00:%S") for t in secs]
+    assert at(secs, tz="Etc/GMT+5") == [t.astimezone(east).strftime("%Y-%m-%d 07:00:%S") for t in secs]
 
 
 def bar_values(build):
@@ -626,3 +627,31 @@ def test_explicit_tick_labels_name_positions(close):
     def spare(ax):
         ax.barh([0, 1], [3, 4]); ax.set_yticks([0, 1, 2], ["a", "b", "c"])
     assert bar_values(spare) == ["a=3", "b=4"]
+
+
+@pytest.mark.parametrize("scale, view", [(1, (-1e10, 1e10)), (1e-10, (-1e-10, 3e-10))])
+def test_explicit_labels_only_name_matching_positions(close, scale, view):
+    def build(ax):
+        ax.bar([0, scale], [3, 4], width=.8 * scale)
+        ax.set_xticks([0, 2 * scale], ["north", "spare"]); ax.set_xlim(*view)
+    assert bar_values(build) == ["north=3", f"{scale:.4g}=4"]
+
+
+def test_fixed_formatter_names_positions_without_a_fixed_locator(close):
+    from matplotlib.ticker import FixedFormatter, MultipleLocator
+    def build(ax):
+        ax.bar([0, 1, 2], [3, 4, 5]); ax.set_xlim(-.5, 2.5)
+        ax.xaxis.set_major_locator(MultipleLocator(1))
+        with pytest.warns(UserWarning, match="FixedFormatter"):
+            ax.xaxis.set_major_formatter(FixedFormatter(["", "north", "south", "east", ""]))
+    assert bar_values(build) == ["north=3", "south=4", "east=5"]
+
+
+def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):
+    def build(ax):
+        ax.imshow([[1, 2], [3, 4]], extent=[0, .4, 0, .4], origin="lower")
+        ax.set_xticks([-.1, .5], ["left", "right"])
+        ax.set_yticks([-.1, .5], ["bottom", "top"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["cols"] == "0.1 0.3"
+    assert heat["grid"] == ["0.1: 1 2", "0.3: 3 4"]

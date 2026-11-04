@@ -4,8 +4,6 @@ Trick over mpl_ascii: the renderer's text metrics *are* character cells, and the
 layout engine is pointed at this renderer, so matplotlib itself lays out ticks,
 legends and margins for the terminal grid instead of us patching collisions later.
 """
-from datetime import tzinfo
-
 import numpy as np
 from matplotlib.backend_bases import RendererBase
 from matplotlib.transforms import ScaledTranslation
@@ -586,13 +584,13 @@ def _fmt(axis, v, date=None):
         if np.isclose(v, round(v)) and round(v) in names: return str(names[round(v)])
     lo, hi = axis.get_view_interval()
     if "Date" in type(axis.get_converter()).__name__:
-        d = mdates.num2date(v, tz=axis.units if isinstance(axis.units, tzinfo) else None)   # the axis timezone, as its ticks show it
+        d = mdates.num2date(v, tz=axis.units)   # the axis timezone, as its ticks show it
         date = date or ("%Y-%m-%d" if (d.hour, d.minute) == (0, 0) or abs(hi - lo) > 3 else "%Y-%m-%d %H:%M")   # time of day only on a short view
         return d.strftime(date).rstrip("0").rstrip(".") if date.endswith("%f") else d.strftime(date)
     loc, lab = axis.get_major_locator(), axis.get_major_formatter()
-    if isinstance(loc, mticker.FixedLocator) and isinstance(lab, (mticker.FixedFormatter, mticker.FuncFormatter)):   # set_xticks(ticks, labels): a tick at v names it, unless its label is shared or blank; not numeric formatters (offsets, unicode minus)
-        labels = lab.format_ticks(loc.locs)
-        at = [s for t, s in zip(loc.locs, labels) if abs(t - v) <= 1e-9 * max(abs(v), abs(hi - lo))]
+    if isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter):   # explicit labels, not numeric formatters (offsets, unicode minus)
+        ticks = axis.get_ticklocs(); labels = lab.format_ticks(ticks)
+        at = [s for t, s in zip(ticks, labels) if abs(t - v) <= 1e-9 * max(abs(v), abs(t))]
         if at and at[0].strip() and labels.count(at[0]) == 1: return at[0]
     return f"{v:.4g}"
 
@@ -601,7 +599,7 @@ def _datefmt(axis, v):
     """strftime format telling a series' instants v apart on a date axis (None off one): the coarsest from the day down to microseconds, never coarser than _fmt's own.
     ponytail: formats each distinct instant up to 4 times; sample them if long date series get slow."""
     if "Date" not in type(axis.get_converter()).__name__: return None
-    d = mdates.num2date(np.unique(v), tz=axis.units if isinstance(axis.units, tzinfo) else None); lo, hi = axis.get_view_interval()
+    d = mdates.num2date(np.unique(v), tz=axis.units); lo, hi = axis.get_view_interval()
     fs = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
     if abs(hi - lo) <= 3 and any((x.hour, x.minute) != (0, 0) for x in d): fs = fs[1:]
     return next((f for f in fs if len({x.strftime(f) for x in d}) == len(d)), fs[-1])
@@ -687,7 +685,7 @@ def _heat_at(ax, a, z, k):
         px, py = abs(r - l) / m, abs(t - b) / n
     def tick(axis, v, pitch):
         d, s = min(((abs(tv - v), lab.get_text()) for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if lab.get_text()), default=(np.inf, ""))
-        return s if d < pitch / 2 else _fmt(axis, v)
+        return s if d <= pitch / 2 else _fmt(axis, v)
     return tick(ax.yaxis, y, py), tick(ax.xaxis, x, px)
 
 
