@@ -1087,3 +1087,60 @@ def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):
     heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
     assert heat["cols"] == "0.1 0.3"
     assert heat["grid"] == ["0.1: 1 2", "0.3: 3 4"]
+
+
+@pytest.mark.parametrize("colour", ["C0", "C1", "black"])
+def test_colour_never_changes_the_verdict(close, colour):
+    x = np.linspace(1, 9, 200)
+    def build(ax):
+        ax.plot(x, np.sin(x), color="C0", label="bottom", zorder=1)
+        ax.plot(x, np.sin(x), color=colour, label="top", zorder=2)
+        ax.set(xlim=(0, 10), ylim=(-2, 2))
+    r = tsa.render(figure(build), 60, strict=True)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [
+        ("occluded", "Line2D 'bottom'", False)
+    ], r.losses
+
+
+@pytest.mark.parametrize("colour", ["C0", "C1", "black"])
+def test_partial_overlap_keeps_both_owners(close, colour):
+    x = np.linspace(1, 9, 200)
+    def build(ax):
+        ax.plot(x, np.sin(x), color="C0", label="bottom")
+        ax.plot(x[:100], np.sin(x[:100]), color=colour, label="top")
+    r = tsa.render(figure(build), 60, strict=True)
+    assert not [l for l in r.losses if l["kind"] in ("occluded", "lost_artist")]
+
+
+def test_quantisation_is_loss_not_occlusion(close):
+    x = np.linspace(1, 9, 200)
+    def build(ax):
+        ax.plot(x, np.full_like(x, 4.8), color="C0", label="bottom")
+        ax.plot(x, np.full_like(x, 4.9), color="C1", label="top")
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+    fig = figure(build)
+    # These are genuinely different source pixels, not a painter-order occlusion.
+    fig.canvas.draw()
+    with_both = np.asarray(fig.canvas.buffer_rgba()).copy()
+    fig.axes[0].lines[0].set_visible(False)
+    fig.canvas.draw()
+    assert not np.array_equal(with_both, np.asarray(fig.canvas.buffer_rgba()))
+    fig.axes[0].lines[0].set_visible(True)
+    r = tsa.render(fig, 60)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [
+        ("lost_artist", "Line2D 'bottom'", True)
+    ], r.losses
+    with pytest.raises(tsa.RenderLossError, match="bottom"):
+        tsa.render(fig, 60, strict=True)
+
+
+def test_repeated_colour_across_subplots_is_accounted_per_artist(close):
+    fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+    for i, ax in enumerate(axes):
+        ax.plot([1, 9], [5, 5], color="C0", label=f"line{i}", zorder=1)
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+    axes[1].fill_between([0, 10], 2, 8, color="C1", zorder=5)
+    r = tsa.render(fig, 80, strict=True)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [
+        ("occluded", "Line2D 'line1'", False)
+    ], r.losses

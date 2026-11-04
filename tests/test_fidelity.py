@@ -395,3 +395,76 @@ def test_missing_observations_stay_missing():
     grid = np.array([[1, np.nan, 3], [np.nan, 2, np.nan]])
     cells = heat(grid / 4)   # levels 1 2 3 of 0..3
     assert heat_cells(cells) == ["▒ █", " ▓ "], cells   # a blank cell where an observation is missing, never a filled one
+
+
+@pytest.mark.parametrize("line_z,alpha,hidden", [(1, 1, True), (6, 1, False), (1, .5, False)])
+@pytest.mark.parametrize("colour", ["red", "black"])
+def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour):
+    def make(line):
+        fig, ax = plt.subplots(figsize=(6, 3))
+        if line: ax.plot([1, 9], [5, 5], color=colour, label="line", zorder=line_z)
+        ax.fill_between([0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+        return fig
+    fig, control = make(True), make(False)
+    try:
+        def pixels(f):
+            buf = io.BytesIO(); f.savefig(buf, format="png")
+            return plt.imread(io.BytesIO(buf.getvalue()))
+        assert np.array_equal(pixels(fig), pixels(control)) == hidden
+        r, fill = tsa.render(fig, 60), tsa.render(control, 60)
+        assert tsa.render_figure(fig, 60) == r.text
+        assert (r.text == fill.text) == hidden
+        losses = [l for l in r.losses if l["kind"] == "occluded"]
+        assert [(l["what"], l["material"]) for l in losses] == ([("Line2D 'line'", False)] if hidden else [])
+        if not hidden:
+            assert any(BRAILLE.search(row) or "───" in row for row in body(r.text) if BLOCKS.search(row)), r.text
+    finally:
+        plt.close(fig); plt.close(control)
+
+
+@pytest.mark.parametrize("kind", ["markers", "image"])
+def test_markers_and_images_keep_order(kind):
+    fig, ax = plt.subplots(figsize=(6, 3))
+    try:
+        if kind == "markers":
+            ax.fill_between([0, 10], 2, 8, color="blue", zorder=1)
+            ax.scatter([3, 5, 7], [5, 5, 5], color="red", zorder=5, label="marks")
+        else:
+            ax.imshow(np.full((2, 2, 3), [.1, .2, .8]), extent=(0, 10, 2, 8), aspect="auto", zorder=1)
+            ax.plot([1, 9], [5, 5], color="red", zorder=5, label="line")
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+        r = tsa.render(fig, 60, strict=True)
+        assert tsa.render_figure(fig, 60) == r.text
+        inside = "".join(body(r.text))
+        assert BLOCKS.search(inside)
+        assert (any(ch in inside for ch in "•●×▲◆") if kind == "markers" else bool(BRAILLE.search(inside) or "───" in inside))
+        assert not [l for l in r.losses if l["kind"] in ("lost_artist", "occluded")]
+    finally:
+        plt.close(fig)
+
+
+# Material loss counts on main before T9, at 80 columns (all 50 gallery charts).
+GALLERY_MATERIAL_BASELINE = {'01_mpl_line': 0, '02_mpl_line2': 0, '03_mpl_scatter': 0, '04_mpl_bar': 0, '05_mpl_groupbar': 0, '06_mpl_stackbar': 0, '07_mpl_hist': 0, '08_mpl_box': 0, '09_mpl_violin': 0, '10_mpl_imshow': 0, '11_mpl_fill_between': 0, '12_mpl_pie': 0, '13_mpl_step': 0, '14_mpl_errorbar': 0, '15_mpl_semilogy': 0, '16_mpl_dates': 0, '17_mpl_subplots': 0, '18_mpl_annotate': 0, '19_mpl_4line': 0, '20_mpl_barh': 0, '21_sns_line': 0, '22_sns_scatter': 0, '23_sns_heatmap': 0, '24_sns_box': 0, '25_sns_hist_kde': 0, '26_pd_line': 0, '27_pd_stackbar': 0, '28_pd_area': 0, '29_pn_facet': 0, '30_pn_line': 0, '31_plotly_line': 0, '32_plotly_groupbar': 0, '33_plotly_scatter': 0, '34_plotly_heatmap': 1, '35_plotly_pie': 0, '36_plotly_facet': 0, '37_plotly_box': 0, '38_alt_line': 0, '39_alt_stackbar': 0, '40_alt_scatter': 0, '41_alt_area': 0, '42_alt_rect': 1, '43_mpl_empty': 0, '44_mpl_longtitle': 0, '45_mpl_negbar': 0, '46_mpl_spaghetti': 0, '47_mpl_point': 0, '48_mpl_nan': 0, '49_mpl_huge': 0, '50_mpl_twinx': 0}
+
+
+@pytest.mark.parametrize("cid", list(GALLERY_MATERIAL_BASELINE))
+def test_gallery_material_losses_do_not_increase(cid):
+    from trendsetter_axi.gallery import CHARTS
+    chart = next(c for c in CHARTS if c["id"] == cid)
+    pytest.importorskip(chart["lib"] if chart["lib"] != "matplotlib" else "matplotlib")
+    try:
+        obj = chart["make"]()
+        if chart["lib"] == "plotnine": obj = obj.draw()
+        if chart["lib"] == "plotly":
+            pytest.importorskip("kaleido")
+            obj = obj.to_image(format="svg").decode()
+        elif chart["lib"] == "altair":
+            vlc = pytest.importorskip("vl_convert")
+            obj = vlc.vegalite_to_svg(obj.to_dict())
+        r = tsa.render(obj, 80)
+        assert (tsa.render_svg(obj, 80) if isinstance(obj, str) else tsa.render_figure(obj, 80)) == r.text
+        count = sum(l["material"] for l in r.losses)
+        assert count <= GALLERY_MATERIAL_BASELINE[cid], (cid, r.losses)
+    finally:
+        plt.close("all")
