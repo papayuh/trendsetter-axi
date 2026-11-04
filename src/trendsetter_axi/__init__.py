@@ -57,12 +57,16 @@ def _figure(fig, cols, color, result, rows=None):
 
 def render_figure(fig, cols=80, color=False):
     """Render a matplotlib Figure at most `cols` terminal cells wide per line. The figure itself is left unchanged.
+    Shortcut for render(fig, cols=cols, color=color).text, without building a report.
     color=True adds 24-bit ANSI colour; it never changes the cell width."""
     return _figure(fig, cols, color, False)
 
 
 def render_svg(svg_text, cols=80, color=False):
-    """Render SVG source (plain text, e.g. from matplotlib with svg.fonttype='none') as text."""
+    """Shortcut for render(svg_text, cols=cols, color=color).text, without building a report.
+
+    SVG source is plain text, e.g. from matplotlib with svg.fonttype='none'.
+    """
     from . import svg as _svg
 
     return _svg.render(svg_text, cols, ansi=color)[0]
