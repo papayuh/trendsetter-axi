@@ -418,7 +418,7 @@ def _collapse(fig):
             if np.ndim(a) != 2 or a.shape[0] < 2: continue
             if mesh:   # unit-cell mesh, y axis inverted (row 0 on top) like an upper-origin image
                 lo, hi = ax.get_ylim(); co = im.get_coordinates()
-                if not (lo > hi and np.allclose(co[:, 0, 1], np.arange(a.shape[0] + 1)) and np.allclose(co[0, :, 0], np.arange(a.shape[1] + 1))): continue
+                if not (co.shape[:2] == (a.shape[0] + 1, a.shape[1] + 1) and lo > hi and np.allclose(co[:, 0, 1], np.arange(a.shape[0] + 1)) and np.allclose(co[0, :, 0], np.arange(a.shape[1] + 1))): continue
             elif im.origin != "upper": continue
             keep = np.isfinite(np.ma.filled(np.ma.masked_invalid(a).astype(float), np.nan)).any(1)
             if keep.all() or not keep.any(): continue
@@ -577,24 +577,48 @@ def render(fig, cols=80, color=False, rows=None):
     return text, rend.cv.meta
 
 
-def _fmt(axis, v):
-    """A data value as the axis means it: a date, a category name, else 4 significant digits."""
+def _fmt(axis, v, date=None):
+    """A data value as the axis means it: a date (in strftime format `date`, else to the minute on a short view), a category name, the explicit tick label at v, else 4 significant digits."""
     if isinstance(axis.units, UnitData):
         names = {i: k for k, i in axis.units._mapping.items()}
         if np.isclose(v, round(v)) and round(v) in names: return str(names[round(v)])
+    lo, hi = axis.get_view_interval()
     if "Date" in type(axis.get_converter()).__name__:
-        d = mdates.num2date(v); lo, hi = axis.get_view_interval()
-        return d.strftime("%Y-%m-%d" if (d.hour, d.minute) == (0, 0) or abs(hi - lo) > 3 else "%Y-%m-%d %H:%M")   # time of day only on a short view
+        d = mdates.num2date(v, tz=axis.units)   # the axis timezone, as its ticks show it
+        date = date or ("%Y-%m-%d" if (d.hour, d.minute) == (0, 0) or abs(hi - lo) > 3 else "%Y-%m-%d %H:%M")   # time of day only on a short view
+        return d.strftime(date).rstrip("0").rstrip(".") if date.endswith("%f") else d.strftime(date)
+    loc, lab = axis.get_major_locator(), axis.get_major_formatter()
+    if isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter):   # explicit labels, not numeric formatters (offsets, unicode minus)
+        ticks = axis.get_ticklocs(); labels = lab.format_ticks(ticks)
+        if len(ticks):
+            i = np.abs(ticks - v).argmin(); t, s = ticks[i], labels[i]
+            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return s
     return f"{v:.4g}"
 
 
-def _compact(axis, lo, hi):
-    """Data values on one axis (None: a colour scale), on a step near 1/60 of their span (3 significant digits on a log axis): within ~2.5% of the span, few tokens."""
-    if axis is not None and (isinstance(axis.units, UnitData) or "Date" in type(axis.get_converter()).__name__): return lambda v: _fmt(axis, v)
+def _datefmt(axis, v):
+    """Choose a date format from all distinct instants v (None off a date axis).
+    Inspect the whole series, not just output samples, so sampling cannot hide a collision.
+    See README.md's summary contract for precision and timezone policy."""
+    if "Date" not in type(axis.get_converter()).__name__: return None
+    d = mdates.num2date(np.unique(v), tz=axis.units); lo, hi = axis.get_view_interval()
+    fs = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
+    if abs(hi - lo) <= 3 and any((x.hour, x.minute) != (0, 0) for x in d): fs = fs[1:]
+    return next((f for f in fs if len({x.strftime(f) for x in d}) == len(d)), fs[-1] + " %z")
+
+
+def _compact(axis, lo, hi, v=None):
+    """Data values on one axis (None: a colour scale), on a step near 1/60 of the smaller of the view span lo..hi and the span of the series' values v
+    (4 significant digits for a constant series, 3 on a log axis): within ~2.5% of the span, few tokens."""
+    if axis is not None and (isinstance(axis.units, UnitData) or "Date" in type(axis.get_converter()).__name__):
+        date = _datefmt(axis, v) if v is not None else None
+        return lambda x: _fmt(axis, x, date)
     if axis is not None and axis.get_scale() == "log":
         return lambda v: (s if "e" not in (s := f"{v:.3g}") or abs(v) >= 1e15 or abs(v) < 1e-3 else f"{float(s):.0f}" if abs(v) >= 1 else s)
     span = abs(hi - lo) or abs(hi) or 1
-    d = max(0, -int(np.round(np.log10(span / 60))))
+    if v is not None and len(v): span = min(span, np.ptp(v))
+    if span == 0: return lambda v: (t if (t := f"{v:.4g}") != "-0" else "0")
+    d = max(0, -int(np.round(np.log10(span) - np.log10(60))))
     return lambda v: (t if (t := f"{v:.{d}f}".rstrip("0").rstrip(".") if d else f"{v:.0f}") not in ("-0", "") else "0")
 
 
@@ -652,14 +676,26 @@ def _points(a, bars):
 
 
 def _heat_at(ax, a, z, k):
-    """(row, column) labels of flat heat cell k: the tick label at the cell centre, else the centre value."""
+    """(row, column) labels of flat heat cell k, falling back to axis formatting.
+    Gouraud values belong to vertices; other meshes and images use cell centres."""
     i, j = divmod(int(k), z.shape[1])
-    if isinstance(a, QuadMesh): x, y = a.get_coordinates()[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
+    if isinstance(a, QuadMesh):
+        c = a.get_coordinates()
+        if c.shape[:2] == z.shape:
+            x, y = c[i, j]
+            px = min(abs(np.diff(c[i, max(0, j - 1):j + 2, 0])), default=0)
+            py = min(abs(np.diff(c[max(0, i - 1):i + 2, j, 1])), default=0)
+        else:
+            x, y = c[i:i + 2, j:j + 2].reshape(-1, 2).mean(0)
+            px, py = abs(c[i, j + 1, 0] - c[i, j, 0]), abs(c[i + 1, j, 1] - c[i, j, 1])
     else:
         l, r, b, t = a.get_extent(); n, m = z.shape
         x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
-    tick = lambda axis, v: next((lab.get_text() for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if abs(tv - v) < .5 and lab.get_text()), None) or _fmt(axis, v)
-    return tick(ax.yaxis, y), tick(ax.xaxis, x)
+        px, py = abs(r - l) / m, abs(t - b) / n
+    def tick(axis, v, pitch):
+        d, s = min(((abs(tv - v), lab.get_text()) for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if lab.get_text()), default=(np.inf, ""))
+        return s if d <= pitch / 2 else _fmt(axis, v)
+    return tick(ax.yaxis, y, py), tick(ax.xaxis, x, px)
 
 
 def describe(fig, meta):
@@ -756,7 +792,8 @@ def describe(fig, meta):
             if not len(xy):   # no data at all (a legend proxy): nothing to say; all of it missing: say so
                 if miss: series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=0, missing=miss, points=xy, values=[], **{k: [] for k in errors}))
                 continue
-            cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
+            cx, cy = _compact(ax.xaxis, *ax.get_xlim(), xy[:, 0]), _compact(ax.yaxis, *ax.get_ylim(), xy[:, 1])
+            dx, dy = _datefmt(ax.xaxis, xy[:, 0]), _datefmt(ax.yaxis, xy[:, 1])
             sampled = len(xy) > 16
             indices = _samples(xy[:, 0], np.arange(len(xy)))[1].astype(int) if sampled else np.arange(len(xy))
             px, py = xy[indices].T
@@ -767,7 +804,7 @@ def describe(fig, meta):
                 bounds[k] = [('?' if not np.isfinite(v).all() else f'{v[0]:.4g}' if np.isclose(*v, rtol=1e-10, atol=0) else f'-{v[0]:.4g}/+{v[1]:.4g}') for v in values[eligible][indices]]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
-            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
+            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(lambda v: _fmt(ax.xaxis, v, dx), xy[:, 0]), y=rng(lambda v: _fmt(ax.yaxis, v, dy), xy[:, 1]),
                                at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext, **bounds,
                                **({'drawstyle': a.get_drawstyle()} if a is not None and a.get_drawstyle() != 'default' else {})))
         for a in ax.collections:
@@ -777,10 +814,12 @@ def describe(fig, meta):
             if isinstance(a, PathCollection):
                 handled.add(id(a))
                 xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
-                cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
+                mean = xy.mean(0) if len(xy) else None
+                displayed = [np.append(xy[:, k], mean[k]) if len(xy) and "Date" in type(axis.get_converter()).__name__ else xy[:, k] for k, axis in enumerate((ax.xaxis, ax.yaxis))]
+                cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[0]), _compact(ax.yaxis, *ax.get_ylim(), displayed[1])
                 out = _outliers(xy) if len(xy) else []
                 rest = np.delete(xy, out, 0)
-                stats = dict(mean=f"{cx(xy[:, 0].mean())},{cy(xy[:, 1].mean())}") if len(xy) else {}
+                stats = dict(mean=f"{cx(mean[0])},{cy(mean[1])}") if len(xy) else {}
                 if len(xy) > 2 and np.ptp(xy[:, 0]) and np.ptp(xy[:, 1]): stats["r"] = f"{np.corrcoef(xy.T)[0, 1]:.2f}"
                 if out: stats.update(outliers=" ".join(f"({cx(xy[i, 0])},{cy(xy[i, 1])})" for i in out), rest=f"x={cx(rest[:, 0].min())}..{cx(rest[:, 0].max())} y={cy(rest[:, 1].min())}..{cy(rest[:, 1].max())}")
                 series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), missing=miss, points=xy, x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))

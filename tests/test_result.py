@@ -523,3 +523,255 @@ def test_hidden_errorbar_members_are_not_extra_series(close):
     assert len(r.series) == 1 and r.series[0]["kind"] == "bar"
     assert r.not_described == [] and r.summary_omissions == []
     assert r.warnings == ["4 hidden artists not described"]
+
+
+@pytest.mark.parametrize("w", [.4, 400, 4])
+@pytest.mark.parametrize("origin, invert, rows", [("lower", False, ["C", "D"]), ("upper", False, ["D", "C"]), ("lower", True, ["C", "D"])])
+def test_heat_labels_are_scale_invariant(close, w, origin, invert, rows):
+    """Cell labels come from the tick at the cell centre whatever the data units: rows[i] is the y tick label of array row i."""
+    z = np.array([[1, 2], [3, 4]])
+    def build(ax):
+        ax.imshow(z, extent=[0, w, 0, w], origin=origin)
+        ax.set_xticks([w / 4, 3 * w / 4], ["A", "B"]); ax.set_yticks([w / 4, 3 * w / 4], ["C", "D"])
+        if invert: ax.invert_yaxis()
+    s = tsa.render(figure(build), 60).summary()
+    cols = ["A", "B"]
+    (i, j), (k, l) = np.unravel_index(z.argmin(), z.shape), np.unravel_index(z.argmax(), z.shape)
+    assert f"min {rows[i]}/{cols[j]}=1" in s and f"max {rows[k]}/{cols[l]}=4" in s, s
+    assert f"  cols: A B\n  {rows[0]}: 1 2\n  {rows[1]}: 3 4" in s, s
+
+
+@pytest.mark.parametrize("scale", [1, .1])
+def test_heat_labels_on_a_nonuniform_mesh(close, scale):
+    z = np.array([[1, 2, 3], [4, 6, 5]])
+    xe, ye = np.array([0, 1, 3, 7]) * scale, np.array([0, 1, 2]) * scale
+    cols, rows = ["A", "B", "C"], ["lo", "hi"]
+    def build(ax):
+        ax.pcolormesh(xe, ye, z)
+        ax.set_xticks((xe[:-1] + xe[1:]) / 2, cols); ax.set_yticks((ye[:-1] + ye[1:]) / 2, rows)
+    s = tsa.render(figure(build), 60).summary()
+    (i, j), (k, l) = np.unravel_index(z.argmin(), z.shape), np.unravel_index(z.argmax(), z.shape)
+    assert f"min {rows[i]}/{cols[j]}=1" in s and f"max {rows[k]}/{cols[l]}=6" in s, s
+    assert "  cols: A B C\n  lo: 1 2 3\n  hi: 4 6 5" in s, s
+
+
+def line_series(build):
+    return [s for s in tsa.render(figure(build), 60).series if s["kind"] == "line"]
+
+
+@pytest.mark.parametrize("y, view", [([1e-8, 2e-8, 1e-8], (0, 1)), (1e6 + np.array([1, 2, 3]), (0, 2e6)), ([-.001, 5, 10], None)])
+def test_small_values_keep_their_magnitude(close, y, view):
+    """Values keep 1/60 of the series' own span, not of a far wider view."""
+    y = np.asarray(y, float)
+    def build(ax):
+        ax.plot([0, 1, 2], y, label="s")
+        if view: ax.set_ylim(*view)
+    ys = line_series(build)[0]["ys"]
+    assert len(set(ys)) == len(set(y)) and "-0" not in ys, ys
+    assert all(abs(float(v) - t) <= np.ptp(y) / 60 for v, t in zip(ys, y)), ys
+
+
+@pytest.mark.parametrize("kind", ["line", "scatter"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("tiny", [[1e-323, 2e-323], [-2e-323, -1e-323, -0.0]])
+def test_subnormal_values_keep_their_magnitude(close, kind, axis, tiny):
+    other = np.zeros(len(tiny))
+    x, y = (tiny, other) if axis == "x" else (other, tiny)
+    def build(ax):
+        ax.plot(x, y) if kind == "line" else ax.scatter(x, y)
+        ax.set_xlim(-1, 1); ax.set_ylim(-1, 1)
+    s = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == kind)
+    assert s["n"] == len(tiny) and s["missing"] == 0
+    assert np.array_equal(s["points"], np.column_stack([x, y]))
+    assert [float(v) for v in s[axis].split("..")] == [min(tiny), max(tiny)]
+    if kind == "line":
+        values = s["at" if axis == "x" else "ys"]
+        assert [float(v) for v in values] == tiny
+        if tiny[-1] == 0:
+            assert values[-1] == "0"
+    else:
+        assert float(s["mean"].split(",")[0 if axis == "x" else 1]) == np.mean(tiny)
+
+
+def test_constant_series_print_their_value(close):
+    def build(ax):
+        ax.plot([0, 1, 2], [5, 5, 5]); ax.plot([0, 1, 2], [-0.0, -0.0, -0.0]); ax.set_ylim(0, 100)
+    assert [s["ys"] for s in line_series(build)] == [["5", "5", "5"], ["0", "0", "0"]]
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_constant_scatter_precision_uses_observations(close, axis):
+    constant, varying = [0.1] * 3, [1, 2, 3]
+    x, y = (constant, varying) if axis == "x" else (varying, constant)
+    s, _ = scatter_of(lambda ax: ax.scatter(x, y))
+    assert s[axis] == "0.1..0.1"
+    assert s["mean"].split(",")[0 if axis == "x" else 1] == "0.1"
+    assert s["n"] == 3 and s["missing"] == 0
+    assert np.array_equal(s["points"], np.column_stack([x, y]))
+
+
+def test_scatter_values_keep_their_magnitude(close):
+    y = np.array([1e-8, 2e-8, 3e-8, 1.5e-8])
+    def build(ax):
+        ax.scatter([0, 1, 2, 3], y); ax.set_ylim(0, 1)
+    s = tsa.render(figure(build), 60).series[0]
+    lo, hi = (float(v) for v in s["y"].split(".."))
+    assert abs(lo - y.min()) <= np.ptp(y) / 60 and abs(hi - y.max()) <= np.ptp(y) / 60, s
+    assert abs(float(s["mean"].split(",")[1]) - y.mean()) <= np.ptp(y) / 60, s
+
+
+def test_distinct_instants_stay_distinct(close):
+    from datetime import datetime, timedelta, timezone
+    def at(times, tz=None):
+        def build(ax):
+            if tz: ax.xaxis_date(tz)   # before plotting: the axis keeps the first timezone it is given
+            ax.plot(times, range(len(times)))
+        s = line_series(build)[0]
+        assert s["x"] == f"{s['at'][0]}..{s['at'][-1]}", s
+        return s["at"]
+    t0 = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
+    secs = [t0 + timedelta(seconds=k) for k in range(3)]
+    assert at(secs) == [t.strftime("%Y-%m-%d %H:%M:%S") for t in secs]
+    ms = at([t0 + timedelta(milliseconds=100 * k) for k in range(3)])
+    assert len(set(ms)) == 3 and ms[1].endswith("12:00:00.1"), ms
+    days = [datetime(2026, 10, 27 + k) for k in range(3)]
+    assert at(days) == [t.strftime("%Y-%m-%d") for t in days]
+    east = timezone(timedelta(hours=-5))
+    local = [datetime(2026, 10, 27, 9, 0, k, tzinfo=east) for k in range(3)]
+    assert at(local) == [t.strftime("%Y-%m-%d 09:00:%S") for t in local]   # the hour the test set, not UTC's 14
+    assert at(secs, tz=east) == [t.astimezone(east).strftime("%Y-%m-%d 07:00:%S") for t in secs]
+    assert at(secs, tz="Etc/GMT+5") == [t.astimezone(east).strftime("%Y-%m-%d 07:00:%S") for t in secs]
+
+
+def bar_values(build):
+    return next(s for s in tsa.render(figure(build), 60).series if s["kind"] in ("bar", "barh"))["values"]
+
+
+def test_explicit_tick_labels_name_positions(close):
+    def named(ax):
+        ax.bar([0, 1, 2], [3, 4, 5], label="sales"); ax.set_xticks([0, 1, 2], ["north", "south", "east"])
+    assert bar_values(named) == ["north=3", "south=4", "east=5"]
+
+    def dup(ax):
+        ax.bar([0, 1], [3, 4]); ax.set_xticks([0, 1], ["A", "A"])
+    v = bar_values(dup)
+    assert [p.split("=")[1] for p in v] == ["3", "4"] and len({p.split("=")[0] for p in v}) == 2, v   # both bars, told apart
+
+    def spare(ax):
+        ax.barh([0, 1], [3, 4]); ax.set_yticks([0, 1, 2], ["a", "b", "c"])
+    assert bar_values(spare) == ["a=3", "b=4"]
+
+
+@pytest.mark.parametrize("scale, view", [(1, (-1e10, 1e10)), (1e-10, (-1e-10, 3e-10))])
+def test_explicit_labels_only_name_matching_positions(close, scale, view):
+    def build(ax):
+        ax.bar([0, scale], [3, 4], width=.8 * scale)
+        ax.set_xticks([0, 2 * scale], ["north", "spare"]); ax.set_xlim(*view)
+    assert bar_values(build) == ["north=3", f"{scale:.4g}=4"]
+
+
+def test_fixed_formatter_names_positions_without_a_fixed_locator(close):
+    from matplotlib.ticker import FixedFormatter, MultipleLocator
+    def build(ax):
+        ax.bar([0, 1, 2], [3, 4, 5]); ax.set_xlim(-.5, 2.5)
+        ax.xaxis.set_major_locator(MultipleLocator(1))
+        with pytest.warns(UserWarning, match="FixedFormatter"):
+            ax.xaxis.set_major_formatter(FixedFormatter(["", "north", "south", "east", ""]))
+    assert bar_values(build) == ["north=3", "south=4", "east=5"]
+
+
+@pytest.mark.parametrize("invert", [False, True])
+def test_gouraud_mesh_labels_use_vertex_positions(close, invert):
+    def build(ax):
+        ax.pcolormesh([0, 2, 7], [0, 3, 8], np.arange(1, 10).reshape(3, 3), shading="gouraud")
+        ax.set_xticks([0, 2, 7], ["A", "B", "C"])
+        ax.set_yticks([0, 3, 8], ["lo", "mid", "hi"])
+        if invert:
+            ax.invert_xaxis(); ax.invert_yaxis()
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["values"] == ["min lo/A=1", "max hi/C=9"]
+    assert heat["cols"] == "A B C"
+    assert heat["grid"] == ["lo: 1 2 3", "mid: 4 5 6", "hi: 7 8 9"]
+
+
+def test_gouraud_mesh_labels_respect_boundary_pitch(close):
+    def build(ax):
+        ax.pcolormesh([0, 2], [0, 4], [[1, 2], [3, 4]], shading="gouraud")
+        ax.set_xticks([-2, 4], ["left", "right"])
+        ax.set_yticks([-3, 7], ["bottom", "top"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["values"] == ["min 0/0=1", "max 4/2=4"]
+    assert heat["cols"] == "0 2"
+    assert heat["grid"] == ["0: 1 2", "4: 3 4"]
+
+
+@pytest.mark.parametrize("horizontal", [False, True])
+@pytest.mark.parametrize("positions", [[1e9, 1e9 + 1], [1e9 + .25, 1e9 + .75]])
+def test_close_explicit_ticks_use_nearest_alias(close, horizontal, positions):
+    def build(ax):
+        if horizontal:
+            ax.barh(positions, [3, 4]); ax.set_yticks([1e9, 1e9 + 1], ["A", "B"])
+        else:
+            ax.bar(positions, [3, 4]); ax.set_xticks([1e9, 1e9 + 1], ["A", "B"])
+    assert bar_values(build) == ["A=3", "B=4"]
+
+
+def test_close_explicit_ticks_name_line_ranges(close):
+    def build(ax):
+        ax.plot([1e9, 1e9 + 1], [1e9, 1e9 + 1])
+        ax.set_xticks([1e9, 1e9 + 1], ["A", "B"])
+        ax.set_yticks([1e9, 1e9 + 1], ["C", "D"])
+    s = line_series(build)[0]
+    assert s["x"] == "A..B" and s["y"] == "C..D"
+
+
+def test_close_explicit_ticks_name_heat_fallback(close):
+    def build(ax):
+        ax.imshow([[1, 2], [3, 4]], extent=[1e9, 1e9 + 1, 1e9, 1e9 + 1], origin="lower")
+        ax.set_xticks([1e9 - .1, 1e9 + 1.1], ["A", "B"])
+        ax.set_yticks([1e9 - .1, 1e9 + 1.1], ["C", "D"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["values"] == ["min C/A=1", "max D/B=4"]
+    assert heat["cols"] == "A B"
+    assert heat["grid"] == ["C: 1 2", "D: 3 4"]
+
+
+def test_dst_fold_instants_stay_distinct(close):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/New_York")
+    times = [datetime(2026, 11, 1, h, 30, tzinfo=timezone.utc) for h in (5, 6)]
+    expected = [t.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S.%f %z") for t in times]
+    def build(ax):
+        ax.xaxis_date(tz); ax.yaxis_date(tz)
+        ax.plot(times, times)
+        ax.scatter(times, times)
+    r = tsa.render(figure(build), 60)
+    line, scatter = (next(s for s in r.series if s["kind"] == k) for k in ("line", "scatter"))
+    assert line["at"] == line["ys"] == expected
+    assert line["x"] == line["y"] == scatter["x"] == scatter["y"] == "..".join(expected)
+    mean = datetime(2026, 11, 1, 6, tzinfo=timezone.utc).astimezone(tz).strftime("%Y-%m-%d %H:%M:%S.%f %z")
+    assert scatter["mean"] == f"{mean},{mean}"
+    assert np.array_equal(line["points"], scatter["points"])
+
+
+@pytest.mark.parametrize("horizontal", [False, True])
+def test_scatter_date_mean_keeps_time_of_day(close, horizontal):
+    from datetime import datetime
+    times = [datetime(2026, 10, d) for d in (27, 28)]
+    def build(ax):
+        ax.scatter([1, 3], times) if horizontal else ax.scatter(times, [1, 3])
+    s, _ = scatter_of(build)
+    date_range = "2026-10-27 00:00..2026-10-28 00:00"
+    assert s["y" if horizontal else "x"] == date_range
+    assert s["mean"] == ("2,2026-10-27 12:00" if horizontal else "2026-10-27 12:00,2")
+
+
+def test_heat_labels_outside_half_a_cell_use_the_numeric_centre(close):
+    def build(ax):
+        ax.imshow([[1, 2], [3, 4]], extent=[0, .4, 0, .4], origin="lower")
+        ax.set_xticks([-.1, .5], ["left", "right"])
+        ax.set_yticks([-.1, .5], ["bottom", "top"])
+    heat = next(s for s in tsa.render(figure(build), 60).series if s["kind"] == "heatmap")
+    assert heat["cols"] == "0.1 0.3"
+    assert heat["grid"] == ["0.1: 1 2", "0.3: 3 4"]

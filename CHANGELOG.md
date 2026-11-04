@@ -4,7 +4,7 @@
 
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
-
+- Fix `summary()` identity and precision for heatmaps, small numeric series, timestamps, scatter means and explicit tick labels; see the [summary contract](README.md#what-the-text-lost-render).
 - Defer format-specific imports: package import, native rankings and scalar responses load neither NumPy nor Matplotlib; vector SVG does not load Matplotlib. Default dependencies are unchanged.
 - Opt-in `render_ranking` and `render_compact` enforce hard row and cell budgets, with exact signed values, wrapped table fallback and structured display omissions; legacy `render(rows=...)` remains a preference.
 - `present` resolves explicit/session/saved/automatic display preferences against a caller-supplied surface, bypasses rendering for scalars and requires a confirmed user-visible callback for images. The harness owns persistence and delivery.
