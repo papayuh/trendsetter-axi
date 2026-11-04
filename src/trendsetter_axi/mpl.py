@@ -601,8 +601,10 @@ def render(fig, cols=80, color=False, rows=None):
 def _fmt(axis, v, date=None):
     """A data value as the axis means it: a date (in strftime format `date`, else to the minute on a short view), a category name, the explicit tick label at v, else 4 significant digits."""
     if isinstance(axis.units, UnitData):
-        names = {i: k for k, i in axis.units._mapping.items()}
-        if np.isclose(v, round(v)) and round(v) in names: return summary_text(str(names[round(v)]))
+        names = {i: summary_text(str(k)) for k, i in axis.units._mapping.items()}
+        if np.isclose(v, round(v)) and round(v) in names:
+            s = names[round(v)]
+            return s if s.strip() and list(names.values()).count(s) == 1 else f"{v:.4g}"
     lo, hi = axis.get_view_interval()
     if "Date" in type(axis.get_converter()).__name__:
         d = mdates.num2date(v, tz=axis.units)   # the axis timezone, as its ticks show it
@@ -610,10 +612,10 @@ def _fmt(axis, v, date=None):
         return d.strftime(date).rstrip("0").rstrip(".") if date.endswith("%f") else d.strftime(date)
     loc, lab = axis.get_major_locator(), axis.get_major_formatter()
     if isinstance(lab, mticker.FixedFormatter) or isinstance(loc, mticker.FixedLocator) and isinstance(lab, mticker.FuncFormatter):   # explicit labels, not numeric formatters (offsets, unicode minus)
-        ticks = axis.get_ticklocs(); labels = lab.format_ticks(ticks)
+        ticks = axis.get_ticklocs(); labels = [summary_text(s) for s in lab.format_ticks(ticks)]
         if len(ticks):
             i = np.abs(ticks - v).argmin(); t, s = ticks[i], labels[i]
-            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return summary_text(s)
+            if abs(t - v) <= 1e-9 * max(abs(v), abs(t)) and s.strip() and labels.count(s) == 1: return s
     return f"{v:.4g}"
 
 
@@ -714,8 +716,9 @@ def _heat_at(ax, a, z, k):
         x = l + (j + .5) * (r - l) / m; y = (t + (i + .5) * (b - t) / n) if a.origin == "upper" else b + (i + .5) * (t - b) / n
         px, py = abs(r - l) / m, abs(t - b) / n
     def tick(axis, v, pitch):
-        d, s = min(((abs(tv - v), lab.get_text()) for tv, lab in zip(axis.get_ticklocs(), axis.get_ticklabels()) if lab.get_text()), default=(np.inf, ""))
-        return summary_text(s) if d <= pitch / 2 else _fmt(axis, v)
+        labels = [summary_text(lab.get_text()) for lab in axis.get_ticklabels()]
+        d, s = min(zip(abs(axis.get_ticklocs() - v), labels), default=(np.inf, ""))
+        return s if d <= pitch / 2 and s.strip() and labels.count(s) == 1 else _fmt(axis, v)
     return tick(ax.yaxis, y, py), tick(ax.xaxis, x, px)
 
 

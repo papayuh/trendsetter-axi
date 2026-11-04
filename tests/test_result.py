@@ -886,6 +886,77 @@ def bar_values(build):
     return next(s for s in tsa.render(figure(build), 60).series if s["kind"] in ("bar", "barh"))["values"]
 
 
+@pytest.mark.parametrize("labels, expected", [(["A\nB", "A / B"], ["0", "1"]),
+                                             (["\x1b[31mA", "A"], ["0", "1"]),
+                                             (["\x00", "\x01"], ["0", "1"]),
+                                             (["\x00", "B"], ["0", "B"])])
+@pytest.mark.parametrize("source", ["category", "fixed", "function"])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_summary_aliases_are_validated_after_hygiene(close, labels, expected, source, axis, inverted):
+    from matplotlib.ticker import FixedFormatter
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    positions = labels if source == "category" else [0, 1]
+    if axis == "x": ax.bar(positions, [3, 4], label="quoted\nseries")
+    else: ax.barh(positions, [3, 4], label="quoted\nseries")
+    if source != "category":
+        getattr(ax, "set_" + axis + "ticks")([0, 1], labels)
+        if source == "fixed": getattr(ax, axis + "axis").set_major_formatter(FixedFormatter(labels))
+    if inverted: getattr(ax, "invert_" + axis + "axis")()
+    result = tsa.render(fig, 60)
+    assert result.series[0]["values"] == [f"{name}={value}" for name, value in zip(expected, [3, 4])]
+    assert repr("quoted\nseries") in result.summary()
+    if source == "category": assert list(getattr(ax, axis + "axis").units._mapping) == labels
+    else: assert [t.get_text() for t in getattr(ax, "get_" + axis + "ticklabels")()] == labels
+
+
+@pytest.mark.parametrize("labels", [["A\nB", "A / B"], ["\x00", "\x01"]])
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_categorical_series_keep_distinct_positions_after_hygiene(close, labels, axis):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    for label, value in zip(labels, [3, 4]):
+        ax.plot([label], [value]) if axis == "x" else ax.plot([value], [label])
+    result = tsa.render(fig, 60)
+    assert [s["at" if axis == "x" else "ys"] for s in result.series] == [["0"], ["1"]]
+    expected = [[[0, 3]], [[1, 4]]] if axis == "x" else [[[3, 0]], [[4, 1]]]
+    for series, points in zip(result.series, expected):
+        assert np.array_equal(series["points"], points)
+    if axis == "x": assert result.summary().count("lines at x:") == 2
+
+
+@pytest.mark.parametrize("labels", [["A\nB", "A / B"], ["\x00", "\x01"]])
+@pytest.mark.parametrize("kind", ["image", "flat", "gouraud"])
+@pytest.mark.parametrize("size", [2, 7])
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("inverted", [False, True])
+def test_heatmap_aliases_are_validated_after_hygiene(close, labels, kind, size, axis, inverted):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    z = np.arange(size * size).reshape(size, size)
+    if kind == "image": ax.imshow(z)
+    else: ax.pcolormesh(z, shading=kind)
+    positions = np.arange(size) + (0.5 if kind == "flat" else 0)
+    cols, rows = [f"c{i}" for i in range(size)], [f"r{i}" for i in range(size)]
+    candidates = labels + [f"p{i}" for i in range(2, size)]
+    expected = [f"{v:g}" for v in positions[:2]] + candidates[2:]
+    ax.set_xticks(positions, candidates if axis == "x" else cols)
+    ax.set_yticks(positions, candidates if axis == "y" else rows)
+    if axis == "x": cols = expected
+    else: rows = expected
+    if inverted:
+        ax.invert_xaxis(); ax.invert_yaxis()
+    result = tsa.render(fig, 60)
+    heat = next(s for s in result.series if s["kind"] == "heatmap")
+    assert heat["values"] == [f"min {rows[0]}/{cols[0]}=0", f"max {rows[-1]}/{cols[-1]}={size * size - 1}"]
+    if size == 2:
+        assert heat["cols"] == " ".join(cols)
+        assert heat["grid"] == [f"{r}: {2 * i} {2 * i + 1}" for i, r in enumerate(rows)]
+    else:
+        assert heat["row_means"] == " ".join(f"{r}={size * i + 3}" for i, r in enumerate(rows))
+        assert heat["col_means"] == " ".join(f"{c}={21 + i}" for i, c in enumerate(cols))
+    assert np.array_equal(ax.images[0].get_array() if kind == "image" else ax.collections[0].get_array(), z)
+
+
 def test_explicit_tick_labels_name_positions(close):
     def named(ax):
         ax.bar([0, 1, 2], [3, 4, 5], label="sales"); ax.set_xticks([0, 1, 2], ["north", "south", "east"])
