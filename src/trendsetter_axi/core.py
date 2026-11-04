@@ -143,6 +143,10 @@ class Canvas:
             ink = ("ink", self.owner) if data and self.owner is not None else None
             if ink: self.owned.setdefault(self.owner, set()).add(ink)
             put = lambda s: (self.strokes.append(s), ink and self.inks.__setitem__(id(s), ink))
+            # ponytail: only data paths over 32 points batch; short rules keep box glyphs.
+            if data and len(pts) > 32:
+                put(("dots", -1, [np.asarray(p, float) for p in polylines], dashes, clip))
+                return
             grid = role is None and (lum(rgb) > 0.6 and not self.dark or self.panel is not None and lum(rgb) > self.panel)   # unknown light gray axis-aligned strokes (or lighter than the panel) are taken for gridlines: skip
             for p in polylines:
                 p = np.asarray(p, float)

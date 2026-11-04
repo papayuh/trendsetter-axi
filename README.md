@@ -67,6 +67,8 @@ print(render_figure(fig, cols=80))
 
 Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
 
+Dense black and grey data lines use the same batched dot sampler as coloured lines. Neutral data paths over 32 points are batched; short neutral rules keep their box-drawing glyphs.
+
 ### Bounded displays and preferences
 
 ```python
