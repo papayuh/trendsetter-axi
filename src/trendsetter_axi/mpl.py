@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D, CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE,
 from matplotlib.container import BarContainer, ErrorbarContainer
 from matplotlib.image import _ImageBase
 from .core import Canvas
-from .cells import truncate, width, wrap
+from .cells import clean_text, truncate, width, wrap
 
 CW, CH = 7.0, 14.0  # one cell in points (dpi 72 => pixels)
 
@@ -35,7 +35,6 @@ class TextRenderer(RendererBase):
     def points_to_pixels(self, p): return p
     def flipy(self): return False
     def get_text_width_height_descent(self, s, prop, ismath):
-        from .core import clean_text
         lines = clean_text(s).split("\n")
         return max(width(l) for l in lines) * self.cv.cw, self.cv.ch / 1.2, 0
     def open_group(self, s, gid=None): self.groups.append(gid if gid and gid.startswith('trendsetter_axi-candle-') else s or "")
@@ -459,7 +458,10 @@ def _ramp(fig, cols=80):
 
 
 def prepare(fig, cols, rows=None):
-    """Resize the figure to the cell grid (`rows` lines high, else from the figure's aspect). Returns (w_px, h_px)."""
+    """Resize to preferred `rows` (minimum 8), else the figure's aspect; return (w_px, h_px).
+
+    Heatmaps and bar charts may need more rows. Only `cols` is a hard budget.
+    """
     _ramp(fig, cols); _collapse(fig); fig._tc_ytop = False
     w_in, h_in = fig.get_size_inches()
     rows = max(8, rows) if rows else max(10, min(36, round(cols * (h_in / w_in) * CW / CH)))
@@ -471,8 +473,10 @@ def prepare(fig, cols, rows=None):
         for l in ax.get_xticklabels(): l.set_horizontalalignment("center")
     # Wrap titles/xlabels in cells now, so layout reserves their extra lines.
     for t, w, role in [(getattr(fig, "_suptitle", None), cols, "title")] + [(t, max(12, int(ax.get_position().width * cols)), role) for ax in fig.axes for t, role in ((ax.title, "title"), (ax.xaxis.label, "label"))]:
-        if t is not None and any(width(line) > w for line in t.get_text().split("\n")):
-            t.set_text("\n".join(wrap(t.get_text(), w))); fig._wrapped.update({l: role for l in t.get_text().split("\n")})
+        if t is not None:
+            t.set_text(clean_text(t.get_text()))
+            if any(width(line) > w for line in t.get_text().split("\n")):
+                t.set_text("\n".join(wrap(t.get_text(), w))); fig._wrapped.update({l: role for l in t.get_text().split("\n")})
     nl = lambda t: len(t.get_text().split("\n")) * bool(t.get_text()) if t is not None else 0
     over = nl(getattr(fig, "_suptitle", None)) + max([nl(ax.title) + nl(ax.xaxis.label) for ax in fig.axes], default=0) + 5   # title/label lines + tick row + tight_layout pads
     min_plotrows = max(6, getattr(fig, '_tc_min_plotrows', 6))
@@ -646,7 +650,7 @@ def _outliers(xy):
 def _scale(ax, k):
     axis = getattr(ax, k + "axis")
     kind = "category" if isinstance(axis.units, UnitData) else "date" if "Date" in type(axis.get_converter()).__name__ else axis.get_scale()
-    d = dict(label=axis.label.get_text(), scale=kind)
+    d = dict(label=clean_text(axis.label.get_text()), scale=kind)
     if kind == "category": d["categories"] = len(axis.units._mapping)
     else: d["range"] = "..".join(_fmt(axis, v) for v in getattr(ax, f"get_{k}lim")())
     return d
@@ -711,7 +715,7 @@ def describe(fig, meta):
     handled = set()
     hidden = sum(not ax.get_visible() for ax in fig.axes if not hasattr(ax, "_colorbar"))   # hidden axes and artists: not drawn, so not described
     for j, ax in enumerate(_data_axes(fig)):
-        scales.append(dict(axes=j, title=ax.get_title(), x=_scale(ax, "x"), y=_scale(ax, "y")))
+        scales.append(dict(axes=j, title=clean_text(ax.get_title()), x=_scale(ax, "x"), y=_scale(ax, "y")))
         fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
         data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""

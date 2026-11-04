@@ -6,7 +6,7 @@ part that would move to Rust.
 """
 import re
 import numpy as np
-from .cells import clusters, pack_entries, slice_cells, truncate, width, wrap
+from .cells import clean_text, clusters, pack_entries, slice_cells, sup as sup, truncate, width, wrap
 
 HEIGHT = ' ▁▂▃▄▅▆▇█'   # eighth-height block glyphs
 
@@ -66,21 +66,6 @@ def background(c): return neutral(c) and lum(c) > 0.8
 # What a mark is, when the source knows (the matplotlib adapter asks each artist; SVG reads classes):
 # data | axis | grid | annotation | legend | background. None means unknown: guessed from colour and shape.
 HIDDEN = ("grid", "annotation", "background")   # never filled or marked: gridlines like matplotlib's, text boxes, page/panel fills; annotation arrows are drawn as strokes
-
-
-SUP = dict(zip("0123456789-+−", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺⁻"))
-def sup(t): return "".join(SUP[ch] for ch in t) if all(ch in SUP for ch in t) else "^" + t
-
-
-def clean_text(s):
-    if s.count("$") >= 2 and s.count("$") % 2 == 0:  # mathtext: drop the markup, keep the words
-        s = re.sub(r"\\?mathdefault", "", s)
-        s = re.sub(r"\^\{([^}]*)\}|\^(.)", lambda m: sup(m.group(1) if m.group(1) is not None else m.group(2)), s)
-        for a, b in [("\\times", "×"), ("\\cdot", "·"), ("\\alpha", "α"), ("\\beta", "β"), ("\\mu", "µ"),
-                     ("\\sigma", "σ"), ("\\pm", "±"), ("\\degree", "°"), ("_{", "_"), ("\\", "")]:
-            s = s.replace(a, b)
-        s = s.replace("$", "").replace("{", "").replace("}", "")
-    return s.replace("−", "-")
 
 
 class Canvas:
@@ -869,7 +854,7 @@ class Canvas:
             NL = self.levels; gl = HEAT8 if NL == 8 else HEAT
             cellk = lambda i, g: "\x1b[48;2;%d;%d;%d;38;2;%sm%s\x1b[0m" % (*ramp_rgb(i, NL), "%d;%d;%d" % ramp_rgb(i, NL), g) if color else g
             ents = [f"{cellk(i, g)} {edges[i]}-{edges[i + 1]}" for i, g in enumerate(gl)]
-            rows.extend(pack_entries(lab, ents, C_))
+            rows.extend(pack_entries(clean_text(lab), ents, C_))
         while rows and not rows[0].strip(): rows.pop(0)
         if self.ytop and rows:   # y title sits on the title row's free left, over its axis
             for i, (side, s) in enumerate(self.side):

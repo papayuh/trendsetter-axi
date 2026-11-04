@@ -45,11 +45,12 @@ class RenderResult:
         lines, shared = [], {}
         for sc in self.scales:
             p = f"axes {sc['axes']} " if multi else ""
-            if sc["title"]: lines.append(f"{p}title: {sc['title']}")
+            # Escape label colons so embedded words cannot reproduce diagnostic field markers.
+            if sc["title"]: lines.append(f"{p}title: " + " / ".join(sc["title"].splitlines()).replace(":", r"\:"))
             for k in "xy":
                 a = sc.get(k)
                 if a and (a["label"] or a["scale"] not in ("linear", "category")):   # linear and category axes: the label alone; the values say the rest
-                    lines.append(f"{p}{k}: " + ", ".join(v for v in (a["label"], a["scale"] != "linear" and a["scale"], a["scale"] not in ("linear", "category") and a.get("range")) if v))
+                    lines.append(f"{p}{k}: " + ", ".join(v for v in (" / ".join(a["label"].splitlines()).replace(":", r"\:"), a["scale"] != "linear" and a["scale"], a["scale"] not in ("linear", "category") and a.get("range")) if v))
         if not self.supported_features["source_values"]: lines.append("values unavailable: SVG input carries shapes, not data")
         for s in self.series:
             head = " ".join(v for v in ('bars' if s['kind'] == 'histogram' else s["kind"], s["name"] and repr(s["name"]), multi and f"axes {s['axes']}", s["key"] and f"key {s['key']}", s["values"] is None and s["color"]) if v)
