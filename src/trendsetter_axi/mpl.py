@@ -597,8 +597,9 @@ def _fmt(axis, v, date=None):
 
 
 def _datefmt(axis, v):
-    """strftime format telling a series' instants v apart on a date axis (None off one): the coarsest from the day down to microseconds, never coarser than _fmt's own.
-    ponytail: formats each distinct instant up to 4 times; sample them if long date series get slow."""
+    """Choose a date format from all distinct instants v (None off a date axis).
+    Inspect the whole series, not just output samples, so sampling cannot hide a collision.
+    See README.md's summary contract for precision and timezone policy."""
     if "Date" not in type(axis.get_converter()).__name__: return None
     d = mdates.num2date(np.unique(v), tz=axis.units); lo, hi = axis.get_view_interval()
     fs = ["%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
@@ -675,7 +676,8 @@ def _points(a, bars):
 
 
 def _heat_at(ax, a, z, k):
-    """(row, column) labels of flat heat cell k: the labelled tick nearest the cell centre when within half the cell pitch, else the centre value."""
+    """(row, column) labels of flat heat cell k, falling back to axis formatting.
+    Gouraud values belong to vertices; other meshes and images use cell centres."""
     i, j = divmod(int(k), z.shape[1])
     if isinstance(a, QuadMesh):
         c = a.get_coordinates()
