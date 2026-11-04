@@ -9,7 +9,7 @@ More analysis now happens in a terminal, next to an agent, with no IDE or notebo
 ```python
 from trendsetter_axi import render
 
-r = render(fig, cols=80, strict=True)   # your existing figure; raises RenderLossError for lost data, heatmap extremes or cut legend entries
+r = render(fig, cols=80, strict=True)   # your existing figure; see the strict-mode contract below
 print(r.text)                           # for the person: every line fits 80 cells
 context = r.summary()                   # for the agent: scales, series values from the figure's data, what was lost
 
@@ -160,7 +160,7 @@ SVG carries no artist information. The supported subset:
 
 #### SVG limits
 
-SVG traversal has a fixed work budget of 100,000 element visits, counting ID indexing, each `<use>` expansion, text descendants, paint-server scans and clip-child collection. Repeated inspections count again. The maximum nesting depth is 256 (the root is depth 0), including expanded text and effect references, so cycles stop at the depth limit. Exceeding either raises `ValueError` naming the limit; the work-budget error also gives the visited count. Root width and height, taken from `viewBox` when present or otherwise `width`/`height`, must be finite and positive, checked before canvas allocation. Embedded PNGs are limited to 16,000,000 pixels per image: dimensions are checked in the PNG header before decoding; larger images raise `ValueError`. Duplicate or noninitial PNG IHDR chunks and truncated chunks are rejected before decoding. Non-PNG base64 images and unresolved `<use>` references are skipped with `warnings`. No external resources are fetched. Group opacity multiplies into child opacity; shapes and text with effective opacity at or below 0.05 are not drawn.
+SVG traversal has a fixed work budget of 100,000 element visits per rendering pass, counting ID indexing, each `<use>` expansion, text descendants, paint-server scans and clip-child collection. Repeated inspections count again; a layout retry for overflowing left labels starts a new pass. The maximum nesting depth is 256 (the root is depth 0), including expanded text and effect references, so cycles stop at the depth limit. Exceeding either raises `ValueError` naming the limit; the work-budget error also gives the visited count. Root width and height, taken from `viewBox` when present or otherwise `width`/`height`, must be finite and positive, checked before canvas allocation. Embedded PNGs are limited to 16,000,000 pixels per image: dimensions are checked in the PNG header before decoding; larger images raise `ValueError`. Duplicate or noninitial PNG IHDR chunks and truncated chunks are rejected before decoding. Non-PNG base64 images and unresolved `<use>` references are skipped with `warnings`. No external resources are fetched. Group opacity multiplies into child opacity; shapes and text with effective opacity at or below 0.05 are not drawn.
 
 A clip containing one axis-aligned rectangle in user space is honoured outside tspans; text is kept or dropped whole by its anchor.
 
@@ -201,7 +201,7 @@ ax.plot(frame["week"], frame["units"])
 print(render_figure(ax.figure, cols=60))
 ```
 
-Importing `trendsetter_axi` itself now loads neither NumPy nor Matplotlib. SVG rendering loads NumPy but not Matplotlib; figure rendering loads its normal plotting dependencies. The default install is unchanged. See [startup/compact measurements](benchmarks/first-three-changes.md).
+Importing `trendsetter_axi` itself now loads neither NumPy nor Matplotlib. Vector SVG rendering loads NumPy but not Matplotlib; embedded PNG decoding loads Matplotlib, as does figure rendering. The default install is unchanged. See [startup/compact measurements](benchmarks/first-three-changes.md).
 
 ## Examples
 
