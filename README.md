@@ -9,7 +9,7 @@ More analysis now happens in a terminal, next to an agent, with no IDE or notebo
 ```python
 from trendsetter_axi import render
 
-r = render(fig, cols=80, strict=True)   # your existing figure; raises RenderLossError for lost data, heatmap extremes or cut legend entries
+r = render(fig, cols=80, strict=True)   # your existing figure; see the strict-mode contract below
 print(r.text)                           # for the person: every line fits 80 cells
 context = r.summary()                   # for the agent: scales, series values from the figure's data, what was lost
 
@@ -18,7 +18,7 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 ```
 
 - Output size: `render` bounds every line with `cols`; its `rows` remains a preferred height, which heatmaps and bar charts can exceed. The opt-in [`render_compact`](#bounded-displays-and-preferences) also enforces a hard `max_rows`, titles and omissions included. `ascii=True` uses cheaper drawing glyphs; `dimensions` reports cells and lines used.
-- Diagnostics: `r.losses` lists what the renderer detects the text does not show, and `strict=True` raises when a data artist or series left no visible cell, a heatmap extreme level was lost to sampling, or a legend entry was cut or dropped. It does not catch everything: see [known limits of `strict`](#known-limits-of-strict).
+- Diagnostics: `r.losses` lists what the renderer detects the text does not show. See [loss reporting and strict mode](#what-the-text-lost-render) for materiality and known limits.
 
 What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
 
@@ -63,7 +63,7 @@ ax.set(title="Example", xlabel="x", ylabel="y")
 print(render_figure(fig, cols=80))
 ```
 
-`render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text. A `clip-path` that is one axis-aligned rectangle is honoured; any other clip is drawn unclipped and the output ends with an `unsupported: ...` line saying so.
+`render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text. See [SVG limits](#svg-limits) for work and image-decode limits, clipping and unsupported effects.
 
 Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
 
@@ -103,7 +103,7 @@ Short guide: use a line or difference from a meaningful reference for evolution/
 
 ### What the text lost: `render`
 
-`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard budget.
+`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard output-size budget; SVG also has fixed [work and image-decode limits](#svg-limits).
 
 ```python
 from trendsetter_axi import render
@@ -132,13 +132,13 @@ Fields:
 - `dimensions`: `cols` (the budget), `width` (widest line) and `height` (lines), in terminal cells.
 - `series`: one dict per series: `name`, `kind` (line, errorbar, scatter, bar, barh, histogram, area, heatmap), `axes`, `key` (its glyph in the text, when there are several), `color`, `n` and key values read from the figure's own data, never from the text. Lines and scatters exclude masked and non-finite rows and count them in `missing`; their `points` field holds all eligible rows in data coordinates as an unrounded `(n, 2)` float ndarray, including points outside the axes view. All-missing lines and scatters remain listed with `n=0`, their `missing` count and empty `values` and `points`. Hidden artists (including individual bars) and hidden axes are excluded. A line lists all its points up to 16, else its first and last point and observations nearest about 10 nice x positions, in source order, plus its exact min and max; bars list every bar up to 40, else min and max; seven or more equal-width bars edge to edge retain kind `histogram` for API stability (bins, heights, peak bin), presented as `bars` with `heights:` rather than claiming counts or statistical provenance; a heatmap gives its shape, missing cells and the labelled min and max cells, the whole grid up to 36 cells, else row and column means up to 12 of each; a scatter gives its mean, Pearson r and up to 3 points far off its trend line. Line samples and scatter presentation values are rounded to a step near 1/60 of the smaller of the axis view span and the series' own span (3 significant digits on a log axis, 4 for a constant linear series); numeric line range endpoints retain 4 significant digits. Presentation values are stored as strings; `points` retains the numeric data. Line and scatter timestamps print the precision needed to tell the series' instants apart (day, minute, second or fraction of a second) in the axis timezone, appending the UTC offset only when those formats still collide across a daylight-saving fold. Scatter timestamp precision also includes the displayed mean, while numeric spans use only observations. Axis-formatted positions honour matching explicit tick labels unless two ticks share a label. Heatmap cells first take the tick label nearest their centre within half the local cell pitch, otherwise use axis formatting at the centre; Gouraud meshes use vertex positions and neighbouring vertex spacing instead. For every drawstyle, sampled `(at, ys)` pairs are rounded source observations, never interpolated across gaps or between knots. Step lines retain `drawstyle` to state their pre/post/mid convention. Errorbar containers retain their label; a visible data line stays kind `line`, otherwise the series is `errorbar`. `xerr`/`yerr` list sampled uncertainty strings (symmetric `3`, asymmetric `-1/+2`, unknown `?`), formatted to four significant digits and aligned with `at`/`ys`; missing bounds do not increase the central points' `missing`. Endpoints are converted to data coordinates before computing bounds or inferring centers. Without a data line (`fmt="none"`), centers are segment midpoints, not recoverable asymmetric source centers. One-sided limits (`lolims`, `uplims`, `xlolims`, `xuplims`) are unsupported: all bounds on each affected axis in that container are `?`, with a summary omission; line-free containers with limits are omitted because their centers are unavailable. Sparse errorbars with ambiguous duplicate perpendicular coordinates also have unknown bounds. `not_described` lists `(artist type, count)` pairs for visible unsupported artists; the summary prints a `not described:` coverage line, e.g. `2 Wedge`, without changing render losses or supported features. Pies and contours receive coverage counts, not values; annotations and axes decorations are outside this coverage audit.
 - `scales`: per visible data axes (excluding colorbar axes), the title and each axis's label, kind (linear, log, date, category) and range.
-- `losses`: what the renderer detects the text does not show (see [known limits](#known-limits-of-strict)), as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an SVG clip drawn unclipped), and for SVG `lost_series`. Heatmaps also report `heat_sampled` (non-material: original source shape, sampled text-grid size in rows × columns, and approximate source-cell count per distinct sampled source cell; repeated text cells do not count as extra source samples) and `lost_extreme` (material: an unsampled finite source min/max cell inside the view whose quantised level differs from the cell shown at its position and is absent from the sampled grid). Extreme cells include original source row/column indices, values and axis labels when available, even when empty rows are collapsed for display. Masked and non-finite cells are excluded. Min/max selection uses source values before colour normalisation; loss comparisons use quantised levels after normalisation, so an extreme is not lost if its level is shown elsewhere. Increase `cols` and/or `rows` to reduce sampling; no pooling or display-mode change is applied.
+- `losses`: what the renderer detects the text does not show (see [known limits](#known-limits-of-strict)), as dicts with `kind`, `what`, `detail` and `material`. Kinds: `lost_artist` (a data artist that drew nothing or ended with no visible cell, such as a line hidden under another), `clipped_data` (points outside the axes view; matplotlib hides them too, so not material), `series_label` (a legend entry dropped or cut), `text` (a title, label or tick dropped or cut), `unsupported` (an approximated SVG effect; see [SVG limits](#svg-limits)), and for SVG `lost_series`. Heatmaps also report `heat_sampled` (non-material: original source shape, sampled text-grid size in rows × columns, and approximate source-cell count per distinct sampled source cell; repeated text cells do not count as extra source samples) and `lost_extreme` (material: an unsampled finite source min/max cell inside the view whose quantised level differs from the cell shown at its position and is absent from the sampled grid). Extreme cells include original source row/column indices, values and axis labels when available, even when empty rows are collapsed for display. Masked and non-finite cells are excluded. Min/max selection uses source values before colour normalisation; loss comparisons use quantised levels after normalisation, so an extreme is not lost if its level is shown elsewhere. Increase `cols` and/or `rows` to reduce sampling; no pooling or display-mode change is applied.
 - `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour. One entry counts skipped hidden artists and axes; a hidden axes counts once, not once per child artist.
 - `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
 
 `summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line still lists render losses only. Step lines now carry `drawstyle` (e.g. `steps-post`, right-continuous) so straight and step controls differ. Separate `summary_omissions` disclose unavailable sample support for errorbars (and midpoint-inferred centers without a data line), unsupported one-sided limits and paired bounds/sample support for filled areas; global extrema are not per-x bounds. Sample denominators and risk sets are not inferred from geometry. Counts such as line `n` count plotted points, not subjects. See `series` above for errorbar bounds and unsupported-artist coverage.
 
-`strict=True` raises `RenderLossError` when a loss is material. A loss is material for a data artist or series that left no visible cell, a legend entry that was cut or dropped, or a heatmap extreme level lost to sampling (`lost_extreme`). Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
+`strict=True` raises `RenderLossError` when a loss is material. Material losses include a data artist or series with no visible cell, a cut or dropped legend entry, a heatmap extreme level lost to sampling (`lost_extreme`), and the unsupported SVG effects marked material in [SVG limits](#svg-limits). Dropped tick labels and points outside the axes view (`clipped_data`, which matplotlib hides as well) are not material, so the example above passes `strict=True`. The error's `result` holds the full `RenderResult`.
 
 #### Known limits of `strict`
 
@@ -147,7 +147,7 @@ Fields:
 - Lost artists are found by series colour: same-colour series that fully overlap count as drawn (T9).
 - A line under an opaque fill at a higher zorder still shows through the fill in the text (T9).
 - A heatmap larger than the text grid uses centre sampling (`heat_sampled`). `lost_extreme` checks min/max levels only: skipped non-extreme cells, spatial patterns and the positions of tied extrema can still be lost without a material diagnostic.
-- SVG masks, gradients and non-rectangular clips are approximated: a non-rectangular clip is reported as `unsupported`, masks and gradients are not reported (T5).
+- SVG clipping approximations do not fail strict mode; see the [SVG effects table](#svg-limits).
 
 ### What a mark means
 
@@ -157,8 +157,24 @@ SVG carries no artist information. The supported subset:
 
 - shapes: `path` (all commands, curves and arcs flattened), `rect`, `line`, `polyline`, `polygon`, `circle`, `ellipse`, `use`, `text`/`tspan`, and base64 PNG `image`
 - presentation attributes and inline `style`: fill, stroke, their opacities, `stroke-width`, `stroke-dasharray`, `font-size`, `text-anchor`, `dominant-baseline`, `display`, `visibility`, inherited through groups; `transform` with translate, scale, rotate and matrix (skew is ignored)
-- `clip-path` as described above; gradients, patterns, masks, markers, filters and `<style>` sheets are skipped
+- clipping and effect approximations as described in [SVG limits](#svg-limits); markers and `<style>` sheets are skipped
 - meaning from classes and ids: `legend` marks legend keys; plotly `gridlayer`/`minor-gridlayer` and vega `role-axis-grid` are gridlines (not drawn); plotly axis and zero-line layers and vega `role-axis` are the frame; vega `background` is background; shapes inside matplotlib text, tick and annotation groups are skipped
+
+#### SVG limits
+
+SVG traversal has a fixed work budget of 50,000 element visits per rendering pass, counting ID indexing, each `<use>` expansion, text descendants, paint-server scans and clip-child collection. Repeated inspections count again; a layout retry for overflowing left labels starts a new pass. The maximum nesting depth is 256 (the root is depth 0), including expanded text and effect references, so cycles stop at the depth limit. Exceeding either raises `ValueError` naming the limit; the work-budget error also gives the visited count. Root width and height, taken from `viewBox` when present or otherwise `width`/`height`, must be finite and positive, checked before canvas allocation. Embedded PNGs are limited to 16,000,000 pixels per image: dimensions are checked in the PNG header before decoding; larger images raise `ValueError`. Duplicate or noninitial PNG IHDR chunks and truncated chunks are rejected before decoding. Non-PNG base64 images and unresolved `<use>` references are skipped with `warnings`. No external resources are fetched. Group opacity multiplies into child opacity; shapes and text with effective opacity at or below 0.05 are not drawn.
+
+A clip containing one axis-aligned rectangle in user space is honoured outside tspans; text is kept or dropped whole by its anchor.
+
+| SVG effect | Approximation (reported as `unsupported` in losses and the text) | Material (`strict=True` raises) |
+| --- | --- | --- |
+| Mask | Drawn unmasked | Yes |
+| Gradient | Flat first stop colour, or mid-grey when absent; unknown paint references also use this fallback | Yes |
+| Pattern | Flat mid-grey | Yes |
+| Filter | Drawn unfiltered | Yes |
+| Clip other than one axis-aligned user-space rectangle, or any tspan-local clip | Drawn unclipped | No |
+
+Mask, filter and unsupported clip-path references in presentation attributes or inline `style` are reported on traversed shapes, containers, text and tspans, independently of paint-channel consumption. Fill and stroke paint references in either form are resolved and reported only for enabled, geometrically applicable channels on shapes and nonempty text runs, including inherited paints, not on non-painting containers whose descendants override them. Enabled URL strokes are reported even when the renderer's filled-shape shortcut omits outline ink; disabled strokes are not. Collinear contours do not consume fill paints. Text visibility is checked per run using its effective fill and stroke opacities. Real mask, gradient, pattern and filter rendering and `<style>` sheet parsing remain unsupported.
 
 Everything else is unknown and judged by appearance: its strokes are all kept, short segments included, except that a light gray axis-aligned stroke is taken for a gridline; a big neutral fill is taken for the page or panel; a shape the colour of the page is dropped.
 
@@ -187,7 +203,7 @@ ax.plot(frame["week"], frame["units"])
 print(render_figure(ax.figure, cols=60))
 ```
 
-Importing `trendsetter_axi` itself now loads neither NumPy nor Matplotlib. SVG rendering loads NumPy but not Matplotlib; figure rendering loads its normal plotting dependencies. The default install is unchanged. See [startup/compact measurements](benchmarks/first-three-changes.md).
+Importing `trendsetter_axi` itself now loads neither NumPy nor Matplotlib. Vector SVG rendering loads NumPy but not Matplotlib; embedded PNG decoding loads Matplotlib, as does figure rendering. The default install is unchanged. See [startup/compact measurements](benchmarks/first-three-changes.md).
 
 ## Examples
 
