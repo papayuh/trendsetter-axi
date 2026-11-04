@@ -4,8 +4,7 @@
 
 - Expand summaries to describe errorbar bounds and disclose unsupported artists; see the [summary contract](README.md#what-the-text-lost-render) for coverage and limitations.
 - Replace statistical claims in compact touching-bar summaries with neutral wording; compatibility details are in the [summary contract](README.md#what-the-text-lost-render).
-- Bound SVG traversal to 100,000 visited elements and 256 nesting levels, reject non-finite/non-positive root sizes before canvas allocation, and check embedded PNGs against a 16,000,000-pixel limit before decoding. Non-PNG images and unresolved `<use>` references produce warnings.
-- Report approximated SVG masks, gradients, patterns and filters as material unsupported effects (`strict=True` raises); gradients use a flat first-stop colour or mid-grey and patterns use mid-grey. Non-rectangular clips remain reported, drawn unclipped and non-material. Group opacity now multiplies into child shape/text opacity.
+- Bound SVG traversal and PNG decoding, validate root sizes, report unsupported effects and skipped resources, and propagate group opacity. See [SVG limits](README.md#svg-limits) for budgets, approximations and strict-mode materiality.
 
 - Defer format-specific imports: package import, native rankings and scalar responses load neither NumPy nor Matplotlib; vector SVG does not load Matplotlib. Default dependencies are unchanged.
 - Opt-in `render_ranking` and `render_compact` enforce hard row and cell budgets, with exact signed values, wrapped table fallback and structured display omissions; legacy `render(rows=...)` remains a preference.
@@ -14,7 +13,7 @@
 - Documentation: strict mode, `rows`, summary rounding and the benchmark threshold now state exactly what is checked and measured.
 - `render(source, cols=80, *, color=False, strict=False)` returns a `RenderResult`: `text`, `dimensions`, `series`, `scales`, `warnings`, `losses` and `supported_features`. `render_figure` and `render_svg` still return the same string.
 - Losses count data artists that drew nothing or ended with no visible cell, data points outside the axes view, cut legend entries and dropped or cut text.
-- `strict=True` raises `RenderLossError` on a material loss: a lost data artist or series, or a cut legend entry. Points outside the axes view are reported but not material, since matplotlib hides them too.
+- Add `strict=True` and `RenderLossError` for material losses; see [loss reporting](README.md#what-the-text-lost-render).
 - `summary()` maps reference lines and shading drawn in axes or blended coordinates (`axhline`, `axvline`) back to data values.
 - `RenderResult.summary()`: compact scales, series values and losses read from the figure's data; SVG input says values are unavailable.
 - `color=True` on `render_figure` and `render_svg` adds 24-bit ANSI colour.

@@ -69,9 +69,8 @@ def render_svg(svg_text, cols=80, color=False):
 def render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None):
     """Render a matplotlib Figure or SVG source (str or bytes) and report what the text lost, as a RenderResult.
 
-    strict=True raises RenderLossError on two checks only: a data artist or series with no visible cell, or a legend
-    entry dropped or cut. It does not catch every misleading render; README.md lists the known limits. Points outside
-    the axes view are reported as losses but matplotlib hides them too, so they never fail strict mode.
+    strict=True raises RenderLossError on material losses. See README.md, "What the text lost: render", for
+    materiality and known limits.
 
     ascii=True draws the same cells in ASCII (lines in ' - _ / \\ |, bars in #, heat levels in . : = #, series keys
     o x ^ ...): coarser than braille, a fraction of the tokens for a model to read. Frame and labels are unchanged.
