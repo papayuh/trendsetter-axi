@@ -399,3 +399,128 @@ def test_text_visibility_does_not_override_other_pruning(restriction):
     else:
         body = f'<text x="150" y="50"><tspan {restriction}><tspan visibility="visible">hidden</tspan></tspan></text>'
     assert tsa.render_svg(doc(body), 80) == ""
+
+
+@pytest.mark.parametrize("href", ["href", "xlink:href"])
+@pytest.mark.parametrize("malformation", ["duplicate-before-idat", "duplicate-after-idat", "noninitial", "wrong-ihdr-length", "truncated-chunk"])
+def test_malformed_png_headers_are_rejected_before_decode(monkeypatch, href, malformation):
+    import matplotlib.image as mimg
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+    small = png(1, 1)
+    if malformation == "duplicate-before-idat":
+        data = small[:33] + png(5000, 5000)[8:]
+    elif malformation == "duplicate-after-idat":
+        data = small[:-12] + png(5000, 5000)[8:]
+    elif malformation == "noninitial":
+        data = small[:8] + chunk(b"tEXt", struct.pack(">II", 1, 1)) + small[8:]
+    elif malformation == "wrong-ihdr-length":
+        data = small[:8] + chunk(b"IHDR", small[16:29] + b"\0") + small[33:]
+    else:
+        data = small[:-1]
+    monkeypatch.setattr(mimg, "imread", lambda *a, **k: pytest.fail("imread called on malformed PNG headers"))
+    with pytest.raises(ValueError, match="SVG PNG.*(IHDR|truncated chunk)"):
+        tsa.render_svg(image(data).replace(" href=", f" {href}="), 80)
+
+
+def test_png_chunk_payload_may_contain_ihdr_bytes():
+    data = png(40, 10)
+    payload = b"label\0IHDR"
+    ancillary = struct.pack(">I", len(payload)) + b"tEXt" + payload + struct.pack(">I", zlib.crc32(b"tEXt" + payload))
+    r = tsa.render(image(data[:33] + ancillary + data[33:]), 80)
+    assert r.warnings == []
+    assert r.text
+
+
+@pytest.mark.parametrize("ref", ["g", "p", "missing"])
+@pytest.mark.parametrize("geometry,visible", [
+    ('<line x1="150" y1="50" x2="250" y2="50" stroke="red"/>', True),
+    ('<polyline points="150,50 250,50" stroke="red"/>', True),
+    ('<path d="M150 50 L250 50" stroke="red"/>', True),
+    ('<path d="M150 50 Z" stroke="none"/>', False),
+])
+def test_unfillable_geometry_does_not_consume_fill_paints(ref, geometry, visible):
+    defs = '<defs><linearGradient id="g"/><pattern id="p"/></defs>'
+    r = tsa.render(doc(defs + f'<g fill="url(#{ref})">{geometry}</g>'), 80, strict=True)
+    assert unsupported(r) == {}
+    if visible:
+        assert r.text
+        assert r.series[0]["color"] == "#ff0000"
+    else:
+        assert r.text == ""
+        assert r.series == []
+
+
+@pytest.mark.parametrize("ref", ["g", "p", "missing"])
+@pytest.mark.parametrize("inline", [False, True], ids=["attribute", "inline-style"])
+@pytest.mark.parametrize("container", ["shape", "text", "tspan", "nested-tspan", "group-shape", "group-text"])
+@pytest.mark.parametrize("channel,disabled", [
+    ("fill", {"fill-opacity": "0"}),
+    ("fill", {"fill-opacity": "0.05"}),
+    ("fill", {"opacity": "0.2", "fill-opacity": "0.2"}),
+    ("stroke", {"stroke-opacity": "0"}),
+    ("stroke", {"stroke-opacity": "0.05"}),
+    ("stroke", {"opacity": "0.2", "stroke-opacity": "0.2"}),
+    ("stroke", {"stroke-width": "0"}),
+])
+def test_disabled_paints_do_not_fail_strict(ref, inline, container, channel, disabled):
+    props = {"fill": "red", "stroke": "red", channel: f"url(#{ref})", **disabled}
+    attrs = 'style="' + '; '.join(f'{k}: {v}' for k, v in props.items()) + '"' if inline else ' '.join(f'{k}="{v}"' for k, v in props.items())
+    if container == "shape":
+        body = f'<rect x="150" y="20" width="100" height="60" {attrs}/>'
+    elif container == "text":
+        body = f'<text x="150" y="50" {attrs}>label</text>'
+    elif container in ("tspan", "nested-tspan"):
+        run = 'label' if container == "tspan" else '<tspan>label</tspan>'
+        body = f'<text x="150" y="50"><tspan {attrs}>{run}</tspan></text>'
+    else:
+        mark = '<rect x="150" y="20" width="100" height="60"/>' if container == "group-shape" else '<text x="150" y="50">label</text>'
+        body = f'<g {attrs}>{mark}</g>'
+    defs = '<defs><linearGradient id="g"/><pattern id="p"/></defs>'
+    r = tsa.render(doc(defs + body), 80, strict=True)
+    assert unsupported(r) == {}
+    if "shape" in container:
+        assert r.text
+        assert r.series[0]["color"] == "#ff0000"
+    else:
+        assert r.text.strip() == "label"
+
+
+@pytest.mark.parametrize("ref", ["g", "p", "missing"])
+def test_filled_shapes_do_not_resolve_unused_outline_paints(ref):
+    defs = '<defs><linearGradient id="g"/><pattern id="p"/></defs>'
+    r = tsa.render(doc(defs + RECT.format(f' stroke="url(#{ref})"')), 80, strict=True)
+    assert unsupported(r) == {}
+    assert r.text == RECT_TEXT
+
+
+def test_mixed_filled_and_open_path_reports_consumed_stroke():
+    defs = '<defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient></defs>'
+    body = '<path fill="red" stroke="url(#g)" d="M150 20 L250 20 L250 80 L150 80 Z M150 50 L250 50"/>'
+    source = doc(defs + body)
+    r = tsa.render(source, 80)
+    assert unsupported(r)["gradient #g"]["material"] is True
+    assert any(s["color"] == "#0000ff" for s in r.series)
+    with pytest.raises(tsa.RenderLossError):
+        tsa.render(source, 80, strict=True)
+
+
+@pytest.mark.parametrize("prop,ref,material", [("mask", "m", True), ("filter", "f", True), ("clip-path", "c", False)])
+@pytest.mark.parametrize("container", ["shape", "text", "tspan"])
+def test_disabled_paint_does_not_suppress_other_effects(prop, ref, material, container):
+    defs = '<defs><linearGradient id="g"/><mask id="m"/><filter id="f"/><clipPath id="c"><circle r="1"/></clipPath></defs>'
+    attrs = f'fill="url(#g)" fill-opacity="0" stroke="red" {prop}="url(#{ref})"'
+    if container == "shape":
+        body = f'<rect x="150" y="20" width="100" height="60" {attrs}/>'
+    elif container == "text":
+        body = f'<text x="150" y="50" {attrs}>label</text>'
+    else:
+        body = f'<text x="150" y="50"><tspan {attrs}>label</tspan></text>'
+    source = doc(defs + body)
+    r = tsa.render(source, 80)
+    assert set(unsupported(r)) == {f"{prop} #{ref}"}
+    assert unsupported(r)[f"{prop} #{ref}"]["material"] is material
+    if material:
+        with pytest.raises(tsa.RenderLossError):
+            tsa.render(source, 80, strict=True)
+    else:
+        assert tsa.render(source, 80, strict=True).text == r.text

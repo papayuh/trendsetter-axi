@@ -260,38 +260,44 @@ def render(svg, cols=80, ansi=False, shift=0):
 
     def draw_shape(shapes, M, st, role, depth, violin=False, clip=None):
         if not shapes: return
-        fill = paint(st.get("fill", "black"), depth); stroke = paint(st.get("stroke"), depth)
         fo = float(st.get("fill-opacity", 1) or 1) * st["opacity"]
         so = float(st.get("stroke-opacity", 1) or 1) * st["opacity"]
-        if fill is not None and len(fill) > 3: fo *= fill[3]
-        if stroke is not None and len(stroke) > 3: so *= stroke[3]
         sw = float(re.sub("[a-z]", "", st.get("stroke-width", "1") or "1") or 1)
+        fill = paint(st.get("fill", "black"), depth) if fo > 0.05 and any(len(p) > 2 for p, c in shapes) else None
+        if fill is not None and len(fill) > 3: fo *= fill[3]
         closed = [tf(M, p) for p, c in shapes]
         drawn = False
-        if fill is not None and fo > 0.05 and any(c or len(p) > 2 for p, c in shapes):
+        if fill is not None and fo > 0.05:
             before = cv.ninks
             cv.fill(closed, fill[:3], clip, role=role, alpha=fo)
             drawn = cv.ninks > before
-        if drawn and role != "legend" and stroke is not None and so > 0.05 and sw > 0:  # plotly box: one path = box + median + whiskers; the fill only takes the closed part
-            seg = [tf(M, p) for p, c in shapes if not c and len(p) == 2]
-            if seg: cv.stroke(seg, (.5, .5, .5) if violin else stroke[:3], clip=clip)   # a violin's inner box is ink on the body, not a line series: mid-grey box-drawing under the fill, no glyph stamps
-        if not drawn and stroke is not None and so > 0.05 and sw > 0:
+        if drawn:
+            seg = [tf(M, p) for p, c in shapes if not c and len(p) == 2] if role != "legend" else []
+        else:
+            seg = [p for p in closed if len(p) > 1]
+        stroke = paint(st.get("stroke"), depth) if so > 0.05 and sw > 0 and seg else None
+        if stroke is not None and len(stroke) > 3: so *= stroke[3]
+        if stroke is None or so <= 0.05: return
+        if drawn:
+            cv.stroke(seg, (.5, .5, .5) if violin else stroke[:3], clip=clip)
+        else:
             da = st.get("stroke-dasharray")
             dashes = None
             if da and da != "none":
                 dashes = (0, [float(x) for x in re.split(r"[\s,]+", da.replace("px", "").strip()) if x])
-            cv.stroke(closed, stroke[:3], dashes, clip, role=role)
+            cv.stroke(seg, stroke[:3], dashes, clip, role=role)
 
     def draw_text(el, M, st, classes, depth, clip=None):
         def runs(node, style, depth):
             if style.get("visibility") != "hidden" and NS.sub("", node.tag) in ("text", "tspan") and node.text and node.text.strip():
-                fill = paint(style.get("fill", "black"), depth); stroke = paint(style.get("stroke"), depth)
                 fo = style["opacity"] * float(style.get("fill-opacity", 1) or 1)
                 so = style["opacity"] * float(style.get("stroke-opacity", 1) or 1)
+                sw = float(re.sub("[a-z]", "", style.get("stroke-width", "1") or "1") or 1)
+                fill = paint(style.get("fill", "black"), depth) if fo > 0.05 else None
+                stroke = paint(style.get("stroke"), depth) if so > 0.05 and sw > 0 else None
                 if fill is not None and len(fill) > 3: fo *= fill[3]
                 if stroke is not None and len(stroke) > 3: so *= stroke[3]
-                sw = float(re.sub("[a-z]", "", style.get("stroke-width", "1") or "1") or 1)
-                if (fill is not None and fo > 0.05) or (stroke is not None and so > 0.05 and sw > 0):
+                if (fill is not None and fo > 0.05) or (stroke is not None and so > 0.05):
                     yield node
             for ch in node:
                 visit(depth + 1)
@@ -326,8 +332,17 @@ def render(svg, cols=80, ansi=False, shift=0):
         data = base64.b64decode(href.split("base64,", 1)[1])
         if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 24:
             return cv.meta.setdefault("warnings", []).append("unsupported image: not a PNG, skipped")
+        if len(data) < 33 or data[8:16] != b"\x00\x00\x00\rIHDR":
+            raise ValueError("SVG PNG must start with a single 13-byte IHDR chunk")
         iw, ih = struct.unpack(">II", data[16:24])   # IHDR width and height, read before decoding anything
         if iw * ih > MAX_PIXELS: raise ValueError(f"SVG image {iw} x {ih} exceeds the {MAX_PIXELS:,} pixel decode budget")
+        pos = 33
+        while pos < len(data):
+            if pos + 12 > len(data): raise ValueError("SVG PNG has a truncated chunk")
+            size = struct.unpack(">I", data[pos:pos + 4])[0]
+            if data[pos + 4:pos + 8] == b"IHDR": raise ValueError("SVG PNG must contain only one initial IHDR chunk")
+            pos += size + 12
+            if pos > len(data): raise ValueError("SVG PNG has a truncated chunk")
         import matplotlib.image as mimg
         im = mimg.imread(io.BytesIO(data), format="png")
         if im.ndim == 2: im = np.stack([im] * 3, -1)
