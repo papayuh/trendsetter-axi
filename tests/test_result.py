@@ -353,7 +353,6 @@ def test_errorbar_only_plot_is_described(close, kw, field, values):
 @pytest.mark.parametrize("kind", ["pie", "contour", "patch", "empty"])
 def test_unsupported_artists_are_listed(close, kind):
     from matplotlib.patches import Rectangle
-    from trendsetter_axi.mpl import describe
     from trendsetter_axi.result import FIGURE
     fig, ax = plt.subplots(figsize=(8, 3))
     expected = []
@@ -372,10 +371,7 @@ def test_unsupported_artists_are_listed(close, kind):
     assert r.supported_features == FIGURE
     coverage = [line for line in r.summary().splitlines() if line.startswith("not described:")]
     assert coverage == (["not described: " + ", ".join(f"{n} {name}" for name, n in expected)] if expected else [])
-    losses = [loss.copy() for loss in r.losses]
-    meta = dict(series=[], losses=losses)
-    describe(fig, meta)
-    assert meta["losses"] == losses and all(loss["kind"] != "not_described" for loss in losses)
+    assert r.losses == []   # fixture artists all draw; coverage is not a render loss
 
 
 @pytest.mark.parametrize("kind", ["density", "weighted", "bar", "stacked", "barh", "six", "seven"])
@@ -401,3 +397,32 @@ def test_bar_bins_claim_no_statistics(close, kind):
         rows = [line for line in r.summary().splitlines() if line.startswith("bars ")]
         assert len(rows) == len(r.series) and all("heights:" in line for line in rows)
         if kind == "bar": assert "bars 'price' 8 bins of 1 from -0.5 to 7.5 peak 6.5-7.5=8 heights: 1 2 3 4 5 6 7 8" in rows[0]
+
+
+def test_errorbar_bounds_follow_eligible_sampled_rows(close):
+    x, y, errors = np.arange(40.0), np.arange(40.0) + 4, np.arange(40.0) + 1
+    y[10:30] = np.nan
+    r = tsa.render(figure(lambda ax: ax.errorbar(x, y, yerr=errors)), 60)
+    s = r.series[0]
+    assert s["n"] == 20 and s["missing"] == 20 and s["sampled"]
+    assert s["yerr"] == [str(int(errors[int(v)])) for v in s["at"]]
+    assert np.array_equal(s["points"], np.column_stack([x, y])[np.isfinite(y)])
+
+
+def test_errorbar_sparse_segments_do_not_shift_bounds(close):
+    x, y, errors = np.arange(4), np.arange(4) + 4, np.arange(4) + 1
+    r = tsa.render(figure(lambda ax: ax.errorbar(x, y, yerr=errors, errorevery=2)), 60)
+    assert r.series[0]["yerr"] == ["1", "?", "3", "?"]
+    assert r.series[0]["missing"] == 0
+    assert "4±1 5±? 6±3 7±?" in r.summary()
+
+
+def test_hidden_errorbar_members_are_not_extra_series(close):
+    def build(ax):
+        c = ax.errorbar([0, 1, 2], [4, 5, 6], yerr=3, capsize=3)
+        for member in c.get_children(): member.set_visible(False)
+        ax.bar([0, 1, 2], [1, 2, 3])
+    r = tsa.render(figure(build), 60)
+    assert len(r.series) == 1 and r.series[0]["kind"] == "bar"
+    assert r.not_described == [] and r.summary_omissions == []
+    assert r.warnings == ["4 hidden artists not described"]

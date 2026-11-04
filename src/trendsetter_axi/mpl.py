@@ -666,18 +666,57 @@ def describe(fig, meta):
     """Scales and visible series of visible data axes, read from the figure's own data (never from the text)."""
     keys = {tuple(s["rgb"]): s["key"] for s in meta["series"]}
     key = lambda c: keys.get(tuple(round(float(v), 2) for v in to_rgb(c)))
-    scales, series = [], []
+    scales, series, not_described = [], [], {}
+    handled = set()
     hidden = sum(not ax.get_visible() for ax in fig.axes if not hasattr(ax, "_colorbar"))   # hidden axes and artists: not drawn, so not described
     for j, ax in enumerate(_data_axes(fig)):
         scales.append(dict(axes=j, title=ax.get_title(), x=_scale(ax, "x"), y=_scale(ax, "y")))
         fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
         data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
+        errorbars = []
         for c in ax.containers:
-            if isinstance(c, ErrorbarContainer) and any(a.get_visible() for a in c.lines[2]):
+            if isinstance(c, ErrorbarContainer):
+                a, _, cols = c.lines
+                members = c.get_children()
+                handled.update(id(v) for v in members)
+                hidden += sum(not v.get_visible() for v in members)
+                if not any(v.get_visible() for v in members): continue
+                segments = {k: col.get_segments() for k, col in zip([k for k, yes in zip('xy', (c.has_xerr, c.has_yerr)) if yes], cols) if col.get_visible()}
+                if a is not None:
+                    xy = data(a.get_transform(), a.get_xydata())
+                else:
+                    # ponytail: fmt='none' retains endpoints, not asymmetric centers; midpoints are the geometry-only ceiling.
+                    n = max((len(v) for v in segments.values()), default=0)
+                    xy = np.full((n, 2), np.nan)
+                    for segs in segments.values():
+                        for i, seg in enumerate(segs):
+                            if len(seg) == 2:
+                                mid = np.mean(seg, axis=0)
+                                xy[i] = np.where(np.isfinite(xy[i]), xy[i], mid)
+                    for k, segs in segments.items():
+                        other = 1 - 'xy'.index(k)
+                        for i, seg in enumerate(segs):
+                            if len(seg) == 2: xy[i, other] = seg[0, other]
+                errors = {}
+                for k, segs in segments.items():
+                    axis = 'xy'.index(k)
+                    bounds = np.full((len(xy), 2), np.nan)
+                    for i, seg in enumerate(segs):
+                        if len(seg) != 2: continue
+                        # ponytail: sparse segments (errorevery) with duplicate perpendicular coordinates cannot be aligned uniquely; leave those bounds unknown.
+                        matches = [i] if len(segs) == len(xy) else np.flatnonzero(xy[:, 1 - axis] == seg[0, 1 - axis])
+                        if len(matches) == 1:
+                            row = matches[0]
+                            bounds[row] = xy[row, axis] - seg[0, axis], seg[1, axis] - xy[row, axis]
+                    errors[k + 'err'] = bounds
+                errorbars.append((a, c, xy, errors))
                 meta.setdefault('summary_omissions', []).append(dict(
-                    what='errorbar', detail='interval endpoints and sample support unavailable in summary; use source arrays'))
+                    what='errorbar', detail='sample support unavailable in summary; use source arrays' +
+                    ('; centers inferred from segment midpoints without a data line' if a is None else '')))
+                continue
             if not isinstance(c, BarContainer) or not len(c): continue
+            handled.update(id(b) for b in c)
             bs = [b for b in c if b.get_visible()]; hidden += len(c) - len(bs)
             if not bs: continue
             h = c.orientation == "horizontal"
@@ -685,7 +724,7 @@ def describe(fig, meta):
             fp, fv = (fy, fx) if h else (fx, fy)
             wid = np.array([b.get_height() if h else b.get_width() for b in bs], float); edge = np.array([b.get_y() if h else b.get_x() for b in bs], float)
             hist = len(bs) > 6 and np.allclose(wid, wid[0]) and np.allclose(np.diff(edge), wid[0]) and not isinstance((ax.yaxis if h else ax.xaxis).units, UnitData)
-            if hist:   # equal-width, edge-to-edge bars: one header and the counts, cheaper than a label per bar
+            if hist:   # equal-width, edge-to-edge bars: one header and heights, with no statistical claim
                 fe, fc = _compact(ax.yaxis if h else ax.xaxis, edge[0], edge[-1] + wid[0]), _compact(ax.xaxis if h else ax.yaxis, 0, np.nanmax(val))
                 k = int(np.nanargmax(val))
                 series.append(dict(name=_name(c, {}), kind="histogram", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs),
@@ -696,26 +735,37 @@ def describe(fig, meta):
             pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
             if len(pairs) > 40: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
             series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs), values=pairs))
-        for a in ax.lines:
-            if not a.get_visible(): hidden += 1; continue
-            xy, miss = _valid(a.get_xydata()); xy = data(a.get_transform(), xy)
+        for a, container, raw, errors in [*((a, None, a.get_xydata(), {}) for a in ax.lines if id(a) not in handled), *errorbars]:
+            if container is None and not a.get_visible(): hidden += 1; continue
+            if a is not None: handled.add(id(a))
+            xy, miss = _valid(raw)
+            if container is None: xy = data(a.get_transform(), xy)
+            kind = 'line' if a is not None and a.get_visible() else 'errorbar'
+            name = _name(container if container is not None else a, {})
+            color = a.get_color() if a is not None else next((col.get_colors()[0] for col in container.lines[2] if len(col.get_colors())), 'k')
             if not len(xy):   # no data at all (a legend proxy): nothing to say; all of it missing: say so
-                if miss: series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=0, missing=miss, points=xy, values=[]))
+                if miss: series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=0, missing=miss, points=xy, values=[], **{k: [] for k in errors}))
                 continue
             cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
             sampled = len(xy) > 16
-            px, py = _samples(xy[:, 0], xy[:, 1]) if sampled else (xy[:, 0], xy[:, 1])
+            indices = _samples(xy[:, 0], np.arange(len(xy)))[1].astype(int) if sampled else np.arange(len(xy))
+            px, py = xy[indices].T
             at, ys = [cx(v) for v in px], [cy(v) for v in py]
+            bounds = {}
+            for k, values in errors.items():
+                eligible = np.isfinite(np.ma.filled(np.ma.asarray(raw, float), np.nan)).all(1)
+                bounds[k] = [('?' if not np.isfinite(v).all() else f'{v[0]:.4g}' if np.isclose(*v, rtol=1e-10, atol=0) else f'-{v[0]:.4g}/+{v[1]:.4g}') for v in values[eligible][indices]]
             lo, hi = xy[xy[:, 1].argmin()], xy[xy[:, 1].argmax()]
             ext = [f"min {cx(lo[0])}={cy(lo[1])}", f"max {cx(hi[0])}={cy(hi[1])}"] if sampled else []
-            series.append(dict(name=_name(a, {}), kind="line", axes=j, key=key(a.get_color()), color=to_hex(a.get_color()), n=len(xy), missing=miss, points=xy, x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
-                               at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext,
-                               **({'drawstyle': a.get_drawstyle()} if a.get_drawstyle() != 'default' else {})))
+            series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=len(xy), missing=miss, points=xy, x=rng(fx, xy[:, 0]), y=rng(fy, xy[:, 1]),
+                               at=at, ys=ys, sampled=sampled, values=[f"{x}={y}" for x, y in zip(at, ys)] + ext, **bounds,
+                               **({'drawstyle': a.get_drawstyle()} if a is not None and a.get_drawstyle() != 'default' else {})))
         for a in ax.collections:
-            if isinstance(a, QuadMesh): continue
+            if id(a) in handled or isinstance(a, QuadMesh): continue
             if not a.get_visible(): hidden += 1; continue
             fc = a.get_facecolor(); c = fc[0] if len(fc) else (a.get_edgecolor()[0] if len(a.get_edgecolor()) else "k")
             if isinstance(a, PathCollection):
+                handled.add(id(a))
                 xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
                 cx, cy = _compact(ax.xaxis, *ax.get_xlim()), _compact(ax.yaxis, *ax.get_ylim())
                 out = _outliers(xy) if len(xy) else []
@@ -725,6 +775,7 @@ def describe(fig, meta):
                 if out: stats.update(outliers=" ".join(f"({cx(xy[i, 0])},{cy(xy[i, 1])})" for i in out), rest=f"x={cx(rest[:, 0].min())}..{cx(rest[:, 0].max())} y={cy(rest[:, 1].min())}..{cy(rest[:, 1].max())}")
                 series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), missing=miss, points=xy, x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
+                handled.add(id(a))
                 v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
                 meta.setdefault('summary_omissions', []).append(dict(
@@ -734,6 +785,7 @@ def describe(fig, meta):
             if not a.get_visible(): hidden += 1; continue
             z = np.ma.masked_invalid(np.ma.asarray(a.get_array(), float)) if a.get_array() is not None else None
             if z is None or z.ndim != 2: continue
+            handled.add(id(a))
             cb = getattr(a, "colorbar", None)
             label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
             cz = _compact(None, float(z.min()), float(z.max())) if z.count() else None
@@ -749,6 +801,12 @@ def describe(fig, meta):
                     if z.shape[1] <= 12: cells["col_means"] = " ".join(f"{k}={cz(m)}" for k, m in zip(cl, z.mean(0)))
             series.append(dict(name=label or _name(a, {}), kind="heatmap", axes=j, key=None, color=None, n=int(z.count()), shape=f"{z.shape[0]}x{z.shape[1]}",
                                missing=int(z.mask.sum()) if np.ma.is_masked(z) else 0, values=v, **cells))
+        for a in [*ax.lines, *ax.collections, *ax.patches, *ax.images, *(a for c in ax.containers for a in c.get_children())]:
+            if id(a) in handled or not a.get_visible(): continue
+            handled.add(id(a))
+            name = type(a).__name__
+            not_described[name] = not_described.get(name, 0) + 1
+    meta["not_described"] = list(not_described.items())
     meta["hidden"] = hidden
     return series, scales
 
