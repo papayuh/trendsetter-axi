@@ -30,7 +30,11 @@ def test_calibration_interval_removal_is_disclosed_without_inventing_support(col
     assert with_intervals.text != control.text
     assert with_intervals.summary() != control.summary()
     assert with_intervals.summary_omissions and not control.summary_omissions
-    assert 'interval endpoints and sample support unavailable' in with_intervals.summary()
+    assert 'sample support unavailable' in with_intervals.summary()
+    interval = next(s for s in with_intervals.series if s['kind'] == 'errorbar')
+    assert interval['points'][:, 1] == pytest.approx(center)
+    assert np.array(interval['yerr'], float) == pytest.approx(radius, rel=5e-4)
+    assert 'centers inferred from segment midpoints' in with_intervals.summary()
     assert abs(observed[-1] - scores[-1]) == pytest.approx(.3)
     assert counts[np.argmax(abs(observed - scores))] == 20
     contributions = abs(events - counts*scores) / counts.sum() * 100

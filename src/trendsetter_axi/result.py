@@ -22,17 +22,21 @@ class RenderResult:
     series: list               # one dict per series, from the source data (SVG: values unavailable)
     scales: list               # per axes: title, x and y label, scale kind, range
     warnings: list             # notes about how the input was read
-    losses: list               # dicts kind/what/detail/material: everything the text does not show
+    losses: list               # detected render losses; summary coverage is separate (see README.md)
     supported_features: dict   # what this kind of input lets the renderer know
     summary_omissions: list = field(default_factory=list)  # source facts not represented, separate from render losses
+    not_described: list = field(default_factory=list)  # (artist type, count), separate from render losses
 
     def __str__(self): return self.text
 
     def summary(self):
-        """Compact scales, source values, render losses and summary omissions for an agent.
+        """Compact scales, source values, render losses, omissions and artist coverage for an agent.
 
         See README.md, "What the text lost: render", for sampling, rounding and known limits.
         """
+        def bounded(values, errors):
+            return [v + (e if e.startswith('-') else '±' + e) for v, e in zip(values, errors)] if errors else values
+
         multi = len(self.scales) > 1
         lines, shared = [], {}
         for sc in self.scales:
@@ -44,20 +48,21 @@ class RenderResult:
                     lines.append(f"{p}{k}: " + ", ".join(v for v in (a["label"], a["scale"] != "linear" and a["scale"], a["scale"] not in ("linear", "category") and a.get("range")) if v))
         if not self.supported_features["source_values"]: lines.append("values unavailable: SVG input carries shapes, not data")
         for s in self.series:
-            head = " ".join(v for v in (s["kind"], s["name"] and repr(s["name"]), multi and f"axes {s['axes']}", s["key"] and f"key {s['key']}", s["values"] is None and s["color"]) if v)
-            if s["kind"] == "line" and "at" in s:   # lines sharing x positions share one row of them
+            head = " ".join(v for v in ('bars' if s['kind'] == 'histogram' else s["kind"], s["name"] and repr(s["name"]), multi and f"axes {s['axes']}", s["key"] and f"key {s['key']}", s["values"] is None and s["color"]) if v)
+            if s["kind"] in ("line", "errorbar") and "at" in s:   # lines sharing x positions share one row of them
                 at = (s["axes"], tuple(s["at"]))
                 if at not in shared:
                     shared[at] = [f"{'axes ' + str(s['axes']) + ' ' if multi else ''}lines at x: " + " ".join(s["at"])]
                     lines.append(shared[at])
                 ext = " ".join(v for v in s["values"] if v.startswith(("min ", "max ")))
-                name = " ".join(v for v in (s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}", s.get("missing") and f"missing={s['missing']}", s.get('drawstyle')) if v)
-                shared[at].append(f"  {name or 'y'}: " + " ".join(s["ys"]) + (f" ({ext})" if ext else ""))
+                name = " ".join(v for v in (s['kind'] == 'errorbar' and 'errorbar', s["name"] and repr(s["name"]), s["key"], s["sampled"] and f"n={s['n']}", s.get("missing") and f"missing={s['missing']}", s.get('drawstyle')) if v)
+                shared[at].append(f"  {name or 'y'}: " + " ".join(bounded(s["ys"], s.get('yerr'))) + (f" ({ext})" if ext else ""))
+                if s.get('xerr'): shared[at].append('  xerr: ' + ' '.join(s['xerr']) + '; x: ' + ' '.join(bounded(s['at'], s['xerr'])))
                 continue
             parts = [f"{k}={s[k]}" for k in ("n", "shape", "x", "y", "z", "missing", "mean", "r") if s.get(k) not in (None, "")
                      and not (k == "missing" and s[k] == 0) and not (k == "n" and s["kind"] == "heatmap")]
             if s["kind"] == "histogram":
-                lines.append(" ".join([head, s["bins"], f"peak {s['peak']}", "counts:", *s["values"]]))
+                lines.append(" ".join([head, s["bins"], f"peak {s['peak']}", "heights:", *s["values"]]))
                 continue
             lines.append(" ".join([head, *parts, *(s["values"] or [])]))
             if s.get("outliers"): lines.append(f"  outliers {s['outliers']}; others {s['rest']}")
@@ -66,6 +71,7 @@ class RenderResult:
                 if s.get(k): lines.append(f"  {k.replace('_', ' ')}: {s[k]}")
         lines.append("losses: " + ("; ".join(f"{l['kind']} {l['what']}: {l['detail']}" for l in self.losses) or "none"))
         lines += [f"summary omission {o['what']}: {o['detail']}" for o in self.summary_omissions]
+        if self.not_described: lines.append('not described: ' + ', '.join(f'{n} {name}' for name, n in self.not_described))
         lines += [f"warning: {w}" for w in self.warnings]
         return "\n".join(l for x in lines for l in (x if isinstance(x, list) else [x]))
 
@@ -84,7 +90,7 @@ def build(text, meta, cols, series, scales, losses, features):
     if meta.get("hidden"): warnings.append(f"{meta['hidden']} hidden artist{'s' * (meta['hidden'] > 1)} not described")
     rows = text.split("\n")
     return RenderResult(text, dict(cols=cols, width=max(map(width, rows)), height=len(rows)), series, scales, warnings, losses, features,
-                        list(meta.get('summary_omissions', [])))
+                        list(meta.get('summary_omissions', [])), list(meta.get('not_described', [])))
 
 
 def svg_series(meta):
