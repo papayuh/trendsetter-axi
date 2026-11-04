@@ -190,13 +190,13 @@ Everything else is unknown and judged by appearance: its strokes are all kept, s
 
 ## Extras
 
-The core package depends on numpy, matplotlib and wcwidth. The example gallery (`trendsetter_axi.gallery`, 50 charts) needs pandas; the charts built with other libraries need those libraries too:
+The core package depends on numpy, matplotlib and wcwidth. The source-only example gallery ([`examples/gallery.py`](examples/gallery.py), 50 charts, with data in `examples/data/gas.csv`) needs pandas; the charts built with other libraries need those libraries too. From a source checkout:
 
 ```
 uv pip install -e '.[gallery]'
 ```
 
-That installs pandas, seaborn, plotly, altair and plotnine.
+That installs pandas, seaborn, plotly, altair and plotnine. The gallery and its CSV are not included in the wheel; `trendsetter_axi.gallery` has been removed. In a source checkout, use `from examples.gallery import CHARTS` or run the demo below.
 
 Polars is optional and its columns can be passed directly to Matplotlib, without converting through pandas:
 
@@ -322,7 +322,7 @@ uv pip install -e '.[dev]' --python .venv/bin/python
 .venv/bin/python -m pytest
 ```
 
-`python -m trendsetter_axi.mpl --test` runs the extra self-checks bundled with the matplotlib renderer; pytest runs them too.
+The renderer regression fixtures live in `tests/test_selfchecks.py` and run with pytest (or alone with `python -m pytest tests/test_selfchecks.py`). The former `python -m trendsetter_axi.mpl --test` entry point has been removed.
 
 Raster sampling clips each segment to the viewport first, caps samples at terminal resolution, and reduces redundant ink to occupied dots without bridging NaN gaps. See [render budgets and before/after profiling](benchmarks/README.md) for reproducible timings and work limits.
 

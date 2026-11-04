@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Require Matplotlib >=3.10.0 and NumPy >=1.23.0, verified together on Python 3.10. Test latest dependencies on Python 3.10, 3.12 and 3.14, plus the dependency floors and a clean, non-editable wheel install with figure/SVG rendering and embedded self-checks. Python classifiers now match the CI matrix; see [installation requirements](README.md#install).
+- Remove the documented `trendsetter_axi.gallery` module from the installed package: all 50 charts and their CSV now live in `examples/gallery.py` and `examples/data/gas.csv` in the source checkout. Use `from examples.gallery import CHARTS` there, or `python examples/demo.py --section gallery`; the `gallery` extra still installs the optional chart libraries. Move the Matplotlib self-checks to `tests/test_selfchecks.py` and remove `python -m trendsetter_axi.mpl --test`; run them with `python -m pytest tests/test_selfchecks.py`. Rendering APIs are unchanged.
+
+- Require Matplotlib >=3.10.0 and NumPy >=1.23.0, verified together on Python 3.10. Test latest dependencies on Python 3.10, 3.12 and 3.14, plus the dependency floors and a clean, non-editable wheel install with figure/SVG rendering and the renderer regression fixtures. Python classifiers now match the CI matrix; see [installation requirements](README.md#install).
 
 - Preserve source summaries and loss reports in `CompactResult`, including bounded explanations; document `render_figure` and `render_svg` as text-only shortcuts. See [bounded displays](README.md#bounded-displays-and-preferences) for report scope and omission diagnostics.
 

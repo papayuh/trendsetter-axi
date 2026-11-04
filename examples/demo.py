@@ -122,7 +122,11 @@ def section_svg(cols, out):
 
 
 def section_gallery(cols, out):
-    from trendsetter_axi.gallery import CHARTS  # needs pandas: install the [dev] or [gallery] extra
+    # Needs pandas: install the [dev] or [gallery] extra in the source checkout.
+    if __package__:
+        from .gallery import CHARTS
+    else:  # python examples/demo.py
+        from gallery import CHARTS
 
     BY_ID = {c["id"]: c for c in CHARTS}
     for cid in GALLERY:

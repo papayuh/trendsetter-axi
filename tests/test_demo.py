@@ -1,12 +1,7 @@
-import importlib.util
 import re
-from pathlib import Path
 
+from examples import demo
 from trendsetter_axi.cells import width
-
-spec = importlib.util.spec_from_file_location("demo", Path(__file__).parent.parent / "examples" / "demo.py")
-demo = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(demo)
 
 COLS = 60
 
