@@ -65,7 +65,7 @@ print(render_figure(fig, cols=80))
 
 `render_svg(svg_text, cols=80)` does the same for SVG source. For matplotlib SVG, save with `svg.fonttype` set to `"none"` so text stays text. See [SVG limits](#svg-limits) for work and image-decode limits, clipping and unsupported effects.
 
-Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
+`render_figure(fig, cols=80, color=False)` and `render_svg(svg_text, cols=80, color=False)` are text-only shortcuts for `render(source, cols=80, color=False).text`: the same chart, without building the report. Both functions take `color=True` for 24-bit ANSI colour. Colour never changes the cell width.
 
 For matplotlib figures, dense black and grey data lines use the same batched dot sampler as coloured lines; short neutral rules keep their box-drawing glyphs. The batching threshold is documented in `Canvas.stroke()` in [`core.py`](src/trendsetter_axi/core.py); it applies only to strokes tagged as data, not unclassified SVG geometry.
 
@@ -76,11 +76,14 @@ from trendsetter_axi import render_compact, render_ranking
 
 small = render_compact(fig, cols=40, max_rows=8)  # single horizontal bar series
 print(small.text)
+print(small.summary())  # source values and losses, even for undisplayed rows
 # Or use original records directly, without importing NumPy or Matplotlib:
 small = render_ranking(["North", "South"], [-9, 3], unit="pp", cols=40, max_rows=8)
 ```
 
 Rankings retain input order, show aligned exact signed values and bars on one shared magnitude scale. `top_k=N` on `render_ranking` explicitly requests stable descending ranking. The hard row budget includes wrapped title/unit/series name and the omission line. `records` retains all source rows; `omitted` counts undisplayed rows, not missing data. Long names fall back to a wrapped exact table rather than ambiguous abbreviations. If that cannot fit, `mode="explanation"` and `reason` explain the omission within the same budgets. `ascii=True` changes bars to `#`, not caller-supplied labels; this view never needs color. For other figures/SVG, the existing complete rendering is returned only if it fits; otherwise a bounded explanation reports that the chart was omitted (`omitted=None`: unknown row count). No chart is cropped.
+
+Both bounded functions return `CompactResult`, retaining `text`, `dimensions`, `records`, `omitted`, `reason` and `mode`, and adding `losses`, `summary()` and a `report` (`RenderResult`). Only `text` is display-bounded: the summary can exceed `cols`/`max_rows` so the agent still receives source facts. `render_ranking` builds its report directly from every supplied label and exact signed value, plus title/unit/name, without importing NumPy or Matplotlib. Figure reports use the existing [figure description contract](#what-the-text-lost-render), including its sampling/rounding, summary omissions and unsupported-artist coverage. Complete-render fallbacks retain the renderer's losses, including when the chart is replaced by an explanation. Native compact bar displays and width-capacity explanations have no measured raster ink: they report source-view clipping and display omissions, not raster occlusion or heatmap sampling. SVG summaries still disclose that source values are unavailable; a width-capacity explanation cannot recover SVG shape diagnostics. Every omitted display adds a material `omitted` loss (`what="display"`, with count/reason in `detail`); this is separate from missing source values and does not remove those values from the report. `CompactResult.losses` uses the same `kind`/`what`/`detail`/`material` schema as `RenderResult.losses`.
 
 `render_compact` converts only a single zero-based horizontal bar series on one visible linear axes, without other data marks or extra figure context. Conversion requires a standard numeric x formatter, no y formatter offset and unlabelled minor ticks. Legends, side titles, category-axis labels, child axes, custom x formatters, missing widths or control characters in labels/headings use the complete-render/bounded-explanation fallback instead. It does not flatten multi-series/stacked charts into a ranking. Run `python examples/compact_demo.py` for the ten-team before/after and saved plain-text outputs in `.scratch/`.
 
@@ -103,7 +106,7 @@ Short guide: use a line or difference from a meaningful reference for evolution/
 
 ### What the text lost: `render`
 
-`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. Its `text` is exactly what `render_figure` / `render_svg` return. `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard output-size budget; SVG also has fixed [work and image-decode limits](#svg-limits).
+`render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None)` takes a figure or SVG source (`str` or `bytes`) and returns a `RenderResult` instead of a string. For text-only shortcuts with default drawing and height settings, see [Usage](#usage). `ascii=True` swaps braille, block and shade glyphs for ASCII ones in the same cells (`' - _ / \ |` for lines, `#` for bars, `. : = #` for heat levels, `o x ^ *` for series keys): coarser, and a fraction of the tokens a model spends on braille. `rows` is the preferred height in lines (at least 8; SVG input ignores it): heatmaps and bar charts take more rows so each data row or bar keeps a line, so a 20-bar `barh` at `rows=12` returns 45 lines. `cols` is the only hard output-size budget; SVG also has fixed [work and image-decode limits](#svg-limits).
 
 ```python
 from trendsetter_axi import render

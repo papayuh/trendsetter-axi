@@ -1,9 +1,10 @@
 """Opt-in bounded displays. Rankings use source values, never rasterized labels."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import math
 from numbers import Integral
 
 from .cells import DisplayCapacityError, SGR, width, wrap
+from .result import FIGURE, SVG, RenderResult, build
 
 
 @dataclass
@@ -14,6 +15,40 @@ class CompactResult:
     omitted: int | None
     reason: str | None
     mode: str
+    losses: list = field(default_factory=list)
+    report: RenderResult | None = None
+
+    def summary(self):
+        """Source facts and losses; unlike text, this report is not display-bounded."""
+        report = self.report or RenderResult(self.text, self.dimensions, [], [], [], [], FIGURE)
+        return replace(report, losses=self.losses).summary()
+
+
+def _with_report(result, report):
+    losses = list(report.losses)
+    if result.omitted or result.mode == 'explanation':
+        count = f'{result.omitted} source rows' if result.omitted is not None else 'full chart'
+        losses.append(dict(kind='omitted', what='display', material=True,
+                           detail=f'{count} not displayed: {result.reason}'))
+    result.losses = losses
+    result.report = replace(report, text=result.text, dimensions=result.dimensions, losses=losses)
+    return result
+
+
+def _source_report(fig, result):
+    """Describe a non-raster display using source facts and source-view clipping.
+
+    No raster ink was measured: omitted marks are disclosed by _with_report,
+    not invented raster occlusion or sampling diagnostics.
+    """
+    from . import mpl
+
+    artists = [a for ax in fig.axes if ax.get_visible()
+               for a in [*ax.lines, *ax.collections, *ax.images, *ax.patches]]
+    meta = dict(series=[], owners=[(a, 1) for a in artists], owned={}, drawn=set(),
+                dropped=[], truncated=[], guessed=0)
+    return build(result.text, meta, result.dimensions['cols'], *mpl.describe(fig, meta),
+                 mpl.losses(fig, meta), FIGURE)
 
 
 def _budget(cols, max_rows):
@@ -55,6 +90,16 @@ def render_ranking(labels, values, *, cols=80, max_rows=12, title='', unit='', n
     Long labels fall back to a wrapped exact table, never ambiguous truncation.
     records always retains every input row; omitted counts rows not displayed.
     """
+    result = _ranking(labels, values, cols=cols, max_rows=max_rows, title=title, unit=unit,
+                      name=name, ascii=ascii, color=color, top_k=top_k)
+    series = [dict(kind='barh', name=_plain(name), axes=0, key=None, n=len(result.records),
+                   values=[f"{r['label']}={r['exact']}" for r in result.records])]
+    scales = [dict(axes=0, title=_plain(title), x=dict(label=_plain(unit), scale='linear'))]
+    report = RenderResult(result.text, result.dimensions, series, scales, [], [], FIGURE)
+    return _with_report(result, report)
+
+
+def _ranking(labels, values, *, cols, max_rows, title, unit, name, ascii, color, top_k):
     _budget(cols, max_rows)
     labels, values = list(labels), list(values)
     if len(labels) != len(values):
@@ -174,8 +219,9 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
                             except ValueError:
                                 pass
                             else:
-                                return render_ranking(labels, values, cols=cols, max_rows=max_rows,
-                                                      title=title, unit=unit, name=name, ascii=ascii, color=color)
+                                result = render_ranking(labels, values, cols=cols, max_rows=max_rows,
+                                                        title=title, unit=unit, name=name, ascii=ascii, color=color)
+                                return _with_report(result, _source_report(work, result))
                     finally:
                         if work.canvas.manager is not None:
                             import matplotlib.pyplot as plt
@@ -184,7 +230,21 @@ def render_compact(source, *, cols=80, max_rows=12, ascii=False, color=False):
     try:
         result = render(source, cols=cols, rows=max_rows, ascii=ascii, color=color)
     except DisplayCapacityError:
-        return _unavailable(cols, max_rows, None, 'full chart cannot fit display width; request more columns')
+        compact = _unavailable(cols, max_rows, None, 'full chart cannot fit display width; request more columns')
+        if isinstance(source, (str, bytes)):
+            report = RenderResult(compact.text, compact.dimensions, [], [], [], [], SVG)
+        else:
+            from . import _copy
+            work = _copy(source)
+            try:
+                report = _source_report(work, compact)
+            finally:
+                if work.canvas.manager is not None:
+                    import matplotlib.pyplot as plt
+                    plt.close(work)
+        return _with_report(compact, report)
     if result.dimensions['height'] <= max_rows:
-        return _result(result.text.split('\n'), cols, [], 0, None, 'figure')
-    return _unavailable(cols, max_rows, None, 'full chart exceeds row budget; request more rows')
+        compact = _result(result.text.split('\n'), cols, [], 0, None, 'figure')
+    else:
+        compact = _unavailable(cols, max_rows, None, 'full chart exceeds row budget; request more rows')
+    return _with_report(compact, result)

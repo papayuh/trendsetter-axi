@@ -1,5 +1,7 @@
 """Render matplotlib figures and SVG as unicode text for the terminal."""
-import copy, dataclasses, itertools
+import copy
+import dataclasses
+import itertools
 
 from . import result as _result
 from .result import RenderLossError as RenderLossError, RenderResult as RenderResult   # public API
@@ -17,7 +19,8 @@ def _copy(fig):
     memo = {id(a.units._counter): itertools.count(len(a.units._mapping))
             for ax in fig.axes for a in (ax.xaxis, ax.yaxis) if isinstance(a.units, UnitData)}
     artists = {id(a) for a in fig.findobj()}
-    holds = lambda v: id(v) in artists or isinstance(v, list) and any(id(x) in artists for x in v)
+    def holds(v):
+        return id(v) in artists or isinstance(v, list) and any(id(x) in artists for x in v)
     shells, seen, todo = [], set(), [fig.get_layout_engine()]
     while todo:
         o = todo.pop()
@@ -37,7 +40,8 @@ def _copy(fig):
     for o in shells:
         memo[id(o)].__dict__.update(copy.deepcopy(o.__dict__, memo))
     for ax in work.axes:
-        for a in ax._children: a._remove_method = ax._children.remove
+        for a in ax._children:
+            a._remove_method = ax._children.remove
     return work
 
 
@@ -47,7 +51,8 @@ def _figure(fig, cols, color, result, rows=None):
     work = _copy(fig)
     try:
         text, meta = _mpl.render(work, cols, color, rows)
-        if not result: return text
+        if not result:
+            return text
         return _result.build(text, meta, cols, *_mpl.describe(fig, meta), _mpl.losses(work, meta), _result.FIGURE)
     finally:
         if work.canvas.manager is not None:
@@ -57,12 +62,16 @@ def _figure(fig, cols, color, result, rows=None):
 
 def render_figure(fig, cols=80, color=False):
     """Render a matplotlib Figure at most `cols` terminal cells wide per line. The figure itself is left unchanged.
+    Shortcut for render(fig, cols=cols, color=color).text, without building a report.
     color=True adds 24-bit ANSI colour; it never changes the cell width."""
     return _figure(fig, cols, color, False)
 
 
 def render_svg(svg_text, cols=80, color=False):
-    """Render SVG source (plain text, e.g. from matplotlib with svg.fonttype='none') as text."""
+    """Shortcut for render(svg_text, cols=cols, color=color).text, without building a report.
+
+    SVG source is plain text, e.g. from matplotlib with svg.fonttype='none'.
+    """
     from . import svg as _svg
 
     return _svg.render(svg_text, cols, ansi=color)[0]
@@ -91,5 +100,6 @@ def render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None
 
         tr = lambda t: t.translate(_core.ASCII) if t else t  # noqa: E731
         res = dataclasses.replace(res, text=tr(res.text), series=[dict(s, key=tr(s["key"])) for s in res.series])
-    if strict and any(l["material"] for l in res.losses): raise RenderLossError(res)
+    if strict and any(loss["material"] for loss in res.losses):
+        raise RenderLossError(res)
     return res
