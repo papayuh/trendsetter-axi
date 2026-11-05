@@ -206,8 +206,9 @@ python -m trendsetter_axi.queries record.json facts
 
 Follow-ups, not part of this surface: summary/chart text from the record, other
 library readers (including ggplot2), record-to-figure drawing, an interactive
-viewer, human-pane upgrades and Vega-Lite export. No benchmark fixtures changed
-and the earlier benchmark numbers do not measure this experimental API.
+viewer, human-pane upgrades and Vega-Lite export. Suite2 fixtures remain unchanged;
+the [suite3 rerun](benchmarks/agent/RESULTS-suite3.md) evaluates records and optional
+query access, unlike the earlier suite2 results.
 See [validation evidence](docs/experimental-record-validation.md) for source-array
 oracles, gallery byte identity and the import boundary.
 
