@@ -34,6 +34,8 @@ class Screen:
     def __init__(self, cols, rows):
         self.cols, self.rows = cols, rows
         self.cells = [[(' ', INK, BG) for _ in range(cols)] for _ in range(rows)]
+        self.owner = None
+        self.owners = {}
 
     def put(self, row, col, text, fg=INK, bg=None):
         if not 0 <= row < self.rows:
@@ -50,6 +52,8 @@ class Screen:
                     elif c + 1 < self.cols and self.cells[row][c + 1][0] == '':
                         self.cells[row][c + 1] = (' ', fg, self.cells[row][c + 1][2])
                 self.cells[row][col] = (token, fg, bg if bg is not None else self.cells[row][col][2])
+                if self.owner is not None:
+                    self.owners[col, row] = self.owner
                 for c in range(col + 1, col + size):
                     self.cells[row][c] = ('', fg, bg if bg is not None else self.cells[row][c][2])
             col += size
@@ -100,6 +104,7 @@ def draw(viewer, *, interactive=True, color=True):
     from .viewer import line_edges, stats
 
     v = viewer
+    v.hit_cells = {}
     s = Screen(v.cols, v.rows)
     if v.cols < 80 or v.rows < 24:
         s.put(0, 1, 'Resize to at least 80x24' + (' | q quit' if interactive else ''), MUTED)
@@ -175,7 +180,7 @@ def draw(viewer, *, interactive=True, color=True):
         else:
             count = sum(point.mark == m['id'] for point in visible)
             s.put(row, side + 15, f"{m['kind']} ({_number(count, panel - 18 - len(m['kind']))})", MUTED)
-    # Common bounds for both static and interactive geometry, including inverted/log axes.
+    # Common bounds for both static and interactive geometry, including inverted axes.
     clip = (p.left, p.top * 2, p.left + p.cols, (p.top + p.rows) * 2)
     if v.box and len(chosen) > 2 and a['slope'] is not None:
         canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
@@ -190,6 +195,7 @@ def draw(viewer, *, interactive=True, color=True):
         canvas.stroke([run], (0.92, 0.92, 0.91), clip=clip, role='data')
         s.canvas(canvas)
     for m in v.draw_marks:
+        s.owner = (m['id'], None)
         j = list(v.marks).index(m['id'])
         rgb = PALETTE[j % len(PALETTE)]
         points = [a for a in v.points if a.mark == m['id']]
@@ -212,6 +218,7 @@ def draw(viewer, *, interactive=True, color=True):
             s.canvas(canvas)
         elif m['kind'] == 'bars':
             for point in points:
+                s.owner = (m['id'], point.index)
                 s.bar(v.bar_bounds(point), rgb, horizontal=m.get('orientation') == 'h')
         elif m['kind'] == 'points':
             cells = {}
@@ -226,6 +233,8 @@ def draw(viewer, *, interactive=True, color=True):
             for (r, c), groups in cells.items():
                 active = max(groups)
                 s.put(r, c, chr(0x2800 + groups[active]), rgb if active else GHOST)
+    s.owner = None
+    v.hit_cells = s.owners
     # Linked marginals: visible context in gray, selected portion in yellow.
     hx, hy, sx, sy = [0] * p.cols, [0] * p.rows, [0] * p.cols, [0] * p.rows
     for point in scatter:

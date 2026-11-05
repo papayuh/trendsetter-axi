@@ -134,11 +134,11 @@ def test_sparse_line_hover_hits_drawn_segments_and_returns_source_knots(style):
     assert v.nearest(*v.projection.cell(5, 5)) is None
 
 
-def test_projection_log_inverted_category_and_clipping():
-    axis = {'x': {'scale': 'log', 'range': [100, 1]}, 'y': {'scale': 'linear', 'range': [10, 0]}}
+def test_projection_inverted_category_and_clipping():
+    axis = {'x': {'scale': 'linear', 'range': [100, 0]}, 'y': {'scale': 'linear', 'range': [10, 0]}}
     p = Projection(axis, 8, 6, 69, 25)
-    assert p.cell(10, 5) == pytest.approx((42, 18))
-    assert not p.visible(0, 5) and not p.visible(1000, 5)
+    assert p.cell(50, 5) == pytest.approx((42, 18))
+    assert not p.visible(-1, 5) and not p.visible(1000, 5)
     ax = Figure().subplots()
     ax.scatter(['東京', 'Paris'], [2, 4])
     v = model(ax.figure)
@@ -147,7 +147,7 @@ def test_projection_log_inverted_category_and_clipping():
     ax = Figure().subplots()
     ax.bar([1, 2], [10, 100])
     ax.set_yscale('log')
-    assert 'Static view' not in SGR.sub('', model(ax.figure).frame())
+    assert 'Static view: log axes use static render' in SGR.sub('', model(ax.figure).frame())
 
 
 @pytest.mark.parametrize('kind', ['heat', 'area', 'multi', 'polar', 'symlog', 'errorbar'])

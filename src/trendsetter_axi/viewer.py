@@ -81,28 +81,24 @@ class Point:
 
 
 class Projection:
-    """Data -> terminal cells; inverse limits and log scales are preserved."""
+    """Linear/date/category data -> terminal cells, preserving inverted limits."""
     def __init__(self, axis, left, top, cols, rows):
         self.axis = axis
         self.left, self.top, self.cols, self.rows = left, top, cols, rows
         self.limits = []
         for k in "xy":
             scale = axis[k]
-            if scale["scale"] not in ("linear", "log", "date", "category"):
+            if scale['scale'] == 'log':
+                raise ValueError('log axes use static render')
+            if scale["scale"] not in ("linear", "date", "category"):
                 raise ValueError(f"unsupported {k} scale: {scale['scale']}")
-            lo, hi = [self.transform(k, v) for v in scale["range"]]
+            lo, hi = scale['range']
             if not all(map(math.isfinite, (lo, hi))) or lo == hi:
                 raise ValueError(f"unusable {k} range")
             self.limits.append((lo, hi))
 
-    def transform(self, k, value):
-        if self.axis[k]["scale"] == "log":
-            return math.log(value) if value > 0 else float("nan")
-        return value
-
     def cell(self, x, y):
-        values = [self.transform("x", x), self.transform("y", y)]
-        fx, fy = [(v - lo) / (hi - lo) for v, (lo, hi) in zip(values, self.limits)]
+        fx, fy = [(v - lo) / (hi - lo) for v, (lo, hi) in zip((x, y), self.limits)]
         return self.left + fx * (self.cols - 1), self.top + (1 - fy) * (self.rows - 1)
 
     def inside(self, col, row):
@@ -130,7 +126,7 @@ def _points(mark):
 
 
 def line_edges(mark, points, projection):
-    """Draw/hit-test the same source segments, including gaps and step rules."""
+    """Project source segments, including gaps and step rules."""
     breaks = set(mark.get('breaks', []))
     style = mark.get('interp', 'linear')
     for left, right in zip(points, points[1:]):
@@ -164,6 +160,7 @@ class Viewer:
         self.has_scatter = any(m['kind'] == 'points' for m in record['marks'])
         self.hover = self.box = self.press = self.grab = None
         self.projection = None
+        self.hit_cells = None
         self.reason = ""
         if len(record["axes"]) != 1:
             self.reason = "multiple or missing axes"
@@ -183,17 +180,13 @@ class Viewer:
     def layout(self, cols, rows):
         self.cols, self.rows = cols, rows
         self.projection = None
+        self.hit_cells = None
         self.reason = self.initial_reason
         if cols < 80 or rows < 24:
             return
         if not self.reason:
             try:
-                projection = Projection(self.record["axes"][0], 8, 6, cols - 52, rows - 13)
-                for k in 'xy':
-                    if projection.axis[k]['scale'] == 'log' and any(
-                            point.kind == 'line' and getattr(point, k) <= 0 for point in self.points):
-                        raise ValueError(f'nonpositive {k} line coordinates on log axis')
-                self.projection = projection
+                self.projection = Projection(self.record["axes"][0], 8, 6, cols - 52, rows - 13)
             except ValueError as exc:
                 self.reason = str(exc)
 
@@ -224,36 +217,19 @@ class Viewer:
         p = self.projection
         if p is None or not p.inside(col, row):
             return None
-        best, score = None, 2.5
-        for mark in reversed(self.draw_marks):
-            points = [point for point in self.points if point.mark == mark['id']]
-            for point in reversed(points):
-                if point.kind == 'bars':
-                    c0, r0, c1, r1 = self.bar_bounds(point)
-                    if c0 <= col <= c1 and r0 <= row <= r1 and score > 1e-9:
-                        best, score = point, 0
-                    continue
-                if not p.visible(point.x, point.y):
-                    continue
-                c, r = p.cell(point.x, point.y)
-                distance = math.hypot(c - col, 2 * (r - row))
-                if distance < score and not math.isclose(distance, score, abs_tol=1e-9):
-                    best, score = point, distance
-            if mark['kind'] == 'line':
-                for path, left, right in line_edges(mark, points, p):
-                    for a, b in zip(path, path[1:]):
-                        dx, dy = b[0] - a[0], b[1] - a[1]
-                        length = math.hypot(dx, dy)
-                        along = (col - a[0]) * (dx / length) + (row * 2 - a[1]) * (dy / length) if length else 0
-                        t = max(0, min(1, along / length)) if length else 0
-                        distance = math.hypot(col - (a[0] + t * dx), row * 2 - (a[1] + t * dy))
-                        if distance < score and not math.isclose(distance, score, abs_tol=1e-9):
-                            def endpoint_distance(point):
-                                c, r = p.cell(point.x, point.y)
-                                return math.hypot(c - col, 2 * (r - row))
-                            best = min((left, right), key=endpoint_distance)
-                            score = distance
-        return best
+        if self.hit_cells is None:
+            self.frame()
+        cell = round(col), round(row)
+        order = {mark['id']: i for i, mark in enumerate(self.draw_marks)}
+        nearby = [rc for rc in self.hit_cells if math.dist(rc, cell) <= 1]
+        if not nearby:
+            return None
+        hit = min(nearby, key=lambda rc: (math.dist(rc, cell), -order[self.hit_cells[rc][0]]))
+        mark, index = self.hit_cells[hit]
+        points = [point for point in self.points if point.mark == mark and
+                  (index is None or point.index == index) and
+                  (point.kind != 'points' or p.visible(point.x, point.y))]
+        return min(points, key=lambda point: math.dist(p.cell(point.x, point.y), cell))
 
     def chosen(self):
         p = self.projection
@@ -424,6 +400,10 @@ def make_viewer(source):
         viewer.initial_reason = 'unsupported colorbar encoding'
     if any(ax.name != 'rectilinear' for ax in axes):
         viewer.initial_reason = 'non-rectilinear axes'
+    if any(ax.get_xscale() == 'log' or ax.get_yscale() == 'log' for ax in source.axes):
+        viewer.initial_reason = 'log axes use static render'
+    if any(ax.get_visible() and any(child.get_visible() for child in ax.child_axes) for ax in source.axes):
+        viewer.initial_reason = 'inset/child axes use static render'
     return viewer
 
 

@@ -5,7 +5,7 @@ from matplotlib.figure import Figure
 import numpy as np
 import pytest
 
-from trendsetter_axi import from_figure, render_styled
+from trendsetter_axi import from_figure, interact, render, render_styled
 from trendsetter_axi.cells import SGR, clean_text, width
 from trendsetter_axi.styled import PALETTE, RIGHT, UP, draw
 from trendsetter_axi.viewer import line_edges, make_viewer
@@ -15,6 +15,25 @@ def model(source, cols=120, rows=38):
     viewer = make_viewer(source)
     viewer.layout(cols, rows)
     return viewer
+
+
+@pytest.fixture
+def open_interaction(monkeypatch):
+    from trendsetter_axi import viewer as impl
+
+    opened = []
+
+    def run(viewer):
+        viewer.layout(120, 38)
+        opened.append((viewer, viewer.frame()))
+
+    monkeypatch.setattr(impl, 'run', run)
+
+    def open_source(source):
+        interact(source)
+        return opened[-1]
+
+    return open_source
 
 
 def colored_cells(frame):
@@ -43,12 +62,11 @@ def rectangle_cells(cells, bounds):
 
 
 @pytest.mark.parametrize('inverted', [False, True])
-@pytest.mark.parametrize('yscale', ['linear', 'log'])
 @pytest.mark.parametrize('saved', [False, True])
-def test_log_steps_mid_projects_arithmetic_data_midpoint(inverted, yscale, saved):
+def test_steps_mid_projects_arithmetic_data_midpoint(inverted, saved):
     ax = Figure().subplots()
     ax.plot([1, 100], [1, 100], drawstyle='steps-mid')
-    ax.set(xscale='log', yscale=yscale, xlim=(1, 100), ylim=(1, 100))
+    ax.set(xlim=(1, 100), ylim=(1, 100))
     if inverted:
         ax.invert_xaxis()
         ax.invert_yaxis()
@@ -70,7 +88,7 @@ def test_log_steps_mid_projects_arithmetic_data_midpoint(inverted, yscale, saved
 @pytest.mark.parametrize('inverted', [False, True])
 @pytest.mark.parametrize('negative_width', [False, True])
 @pytest.mark.parametrize('negative_value', [False, True])
-def test_bar_rectangles_clip_both_log_axes_before_projection(
+def test_bar_rectangles_clip_both_axes_before_projection(
         horizontal, inverted, negative_width, negative_value):
     ax = Figure().subplots()
     widths = [-4, -2] if negative_width else [4, 2]
@@ -80,8 +98,7 @@ def test_bar_rectangles_clip_both_log_axes_before_projection(
     else:
         ax.bar([1, 10], values, bottom=bases, width=widths)
     position_range, value_range = (.1, 20), (.1, 4)
-    ax.set(xscale='log', yscale='log',
-           xlim=value_range if horizontal else position_range,
+    ax.set(xlim=value_range if horizontal else position_range,
            ylim=position_range if horizontal else value_range)
     if inverted:
         ax.invert_xaxis()
@@ -102,13 +119,13 @@ def test_bar_rectangles_clip_both_log_axes_before_projection(
 
 @pytest.mark.parametrize('horizontal', [False, True])
 @pytest.mark.parametrize('inverted', [False, True])
-def test_saved_log_bar_footprint_clips_estimated_width(horizontal, inverted):
+def test_saved_bar_footprint_clips_estimated_width(horizontal, inverted):
     ax = Figure().subplots()
     if horizontal:
         ax.barh([.1], [2])
     else:
         ax.bar([.1], [2])
-    ax.set(xscale='log', yscale='log', xlim=(.01, 5), ylim=(.01, 5))
+    ax.set(xlim=(.01, 5), ylim=(.01, 5))
     if inverted:
         ax.invert_xaxis()
         ax.invert_yaxis()
@@ -121,13 +138,13 @@ def test_saved_log_bar_footprint_clips_estimated_width(horizontal, inverted):
 
 
 @pytest.mark.parametrize('horizontal', [False, True])
-def test_log_bars_wholly_outside_domain_have_no_drawable_rectangle(horizontal):
+def test_bars_wholly_outside_view_have_no_drawable_rectangle(horizontal):
     ax = Figure().subplots()
     if horizontal:
         ax.barh([-3, 2], [2, -2], left=[0, -1])
     else:
         ax.bar([-3, 2], [2, -2], bottom=[0, -1])
-    ax.set(xscale='log', yscale='log', xlim=(.1, 5), ylim=(.1, 5))
+    ax.set(xlim=(.1, 5), ylim=(.1, 5))
     v = model(ax.figure)
     assert all(not any(map(math.isfinite, v.bar_bounds(point))) for point in v.points)
     p = v.projection
@@ -203,7 +220,7 @@ def test_saved_bar_width_notice_never_overwrites_exact_hover_footer(horizontal, 
 def test_isolated_marked_line_knots_are_drawn_and_hoverable(xs, saved):
     ax = Figure().subplots()
     ax.plot(xs, [2] * len(xs), marker='o')
-    ax.set(xscale='log', xlim=(.5, 200), ylim=(1, 4))
+    ax.set(xlim=(.5, 200), ylim=(1, 4))
     ax.invert_xaxis()
     v = model(from_figure(ax.figure) if saved else ax.figure)
     edges = list(line_edges(v.record['marks'][0], v.points, v.projection))
@@ -286,8 +303,9 @@ def test_gappy_line_traversal_has_linear_comparison_cost_for_draw_and_hover():
     assert v.frame()
     assert CountedIndex.comparisons <= len(v.points) * 4
     CountedIndex.comparisons = 0
-    point = v.points[len(v.points) // 2]
-    assert v.nearest(*v.projection.cell(point.x, point.y)) == point
+    cell = tuple(map(round, v.projection.cell(v.points[1000].x, v.points[1000].y)))
+    expected = min(v.points, key=lambda point: math.dist(v.projection.cell(point.x, point.y), cell))
+    assert v.nearest(*cell) == expected
     assert CountedIndex.comparisons <= len(v.points) * 4
 
 
@@ -308,7 +326,7 @@ def test_nonpositive_log_lines_use_explicit_fallback(axis, style, nonpositive, i
     source = original if saved else ax.figure
     v = model(source)
     assert v.projection is None
-    assert f'nonpositive {axis} line coordinates' in v.reason
+    assert v.reason == 'log axes use static render'
     assert v.nearest(20, 15) is None
     assert 'Static view:' in SGR.sub('', v.frame())
     assert 'Static view:' in render_styled(source, color=False)
@@ -433,7 +451,7 @@ def test_bar_defaults_do_not_access_whole_series_per_point(widths, labels):
 
 @pytest.mark.parametrize('encoding', ['mapped-color', 'colorbar', 'literal-color', 'size', 'edge-color',
                                       'alpha', 'linewidth'])
-def test_scatter_encodings_use_explicit_fallback_without_changing_public_records(encoding):
+def test_scatter_encodings_use_explicit_fallback_without_changing_public_records(encoding, open_interaction):
     ax = Figure().subplots()
     options = {
         'mapped-color': {'c': [10, 20]},
@@ -454,6 +472,9 @@ def test_scatter_encodings_use_explicit_fallback_without_changing_public_records
     assert 'Static view:' in SGR.sub('', v.frame())
     assert 'Static view:' in render_styled(ax.figure, color=False)
     assert v.nearest(20, 15) is None
+    opened, frame = open_interaction(ax.figure)
+    assert opened.projection is None and 'encoding' in opened.reason
+    assert 'Static view:' in SGR.sub('', frame).splitlines()[0]
     assert from_figure(ax.figure) == original
 
 
@@ -567,7 +588,8 @@ def test_fractional_line_bar_overlap_keeps_painter_precedence(line_foreground):
     ax.set(xlim=(0, 67), ylim=(0, 24))
     v = model(ax.figure)
     expected = 'line' if line_foreground else 'bar'
-    assert v.nearest(*v.projection.cell(30.75, 12.2)).name == expected
+    c, r = map(math.floor, v.projection.cell(30.75, 12.2))
+    assert v.nearest(c, r).name == expected
 
 
 @pytest.mark.parametrize('saved', [False, True])
@@ -597,8 +619,9 @@ def test_dense_continuous_lines_retain_batched_rasterization(monkeypatch, saved)
         p = v.projection
         assert any(ch != ' ' for row in cells[p.top:p.top + p.rows]
                    for ch, _ in row[p.left:p.left + p.cols])
-    point = v.points[50_000]
-    assert v.nearest(*v.projection.cell(point.x, point.y)) == point
+    cell = tuple(map(round, v.projection.cell(v.points[50_000].x, v.points[50_000].y)))
+    expected = min(v.points, key=lambda point: math.dist(v.projection.cell(point.x, point.y), cell))
+    assert v.nearest(*cell) == expected
 
 
 @pytest.mark.parametrize('style', ['default', 'steps-pre', 'steps-post', 'steps-mid'])
@@ -633,3 +656,122 @@ def test_line_run_batching_preserves_gaps_steps_and_isolated_knots(monkeypatch, 
         assert cells[math.floor(r)][math.floor(c)][0] != ' '
     for point in v.points:
         assert v.nearest(*v.projection.cell(point.x, point.y)) == point
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('kind', ['points', 'steps-mid', 'bars', 'barh'])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+def test_all_log_axes_use_plain_static_fallback(axis, kind, inverted, saved, open_interaction):
+    ax = Figure().subplots()
+    if kind == 'points':
+        ax.scatter([1, 10], [1, 2])
+    elif kind == 'steps-mid':
+        ax.step([1, 10], [1, 2], where='mid')
+    elif kind == 'bars':
+        ax.bar([1, 10], [2, 3], width=[4, 2])
+    else:
+        ax.barh([1, 10], [2, 3], height=[4, 2])
+    ax.set(xlim=(.1, 20), ylim=(.1, 20))
+    getattr(ax, f'set_{axis}scale')('log')
+    if inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    original = from_figure(ax.figure)
+    source = original if saved else ax.figure
+    opened, interactive = open_interaction(source)
+    assert opened.projection is None
+    assert opened.nearest(38, 18) is None
+    static = render_styled(source, color=False)
+    for frame in (interactive, static):
+        lines = SGR.sub('', frame).splitlines()
+        assert 'Static view: log axes use static render' in lines[0]
+        assert all(width(line) == 120 for line in lines)
+        if saved:
+            assert 'data overview' in '\n'.join(lines)
+        else:
+            plain = [clean_text(line) for line in render(ax.figure, cols=120, rows=35, color=True).text.splitlines()]
+            if len(plain) <= 35 and max(map(width, plain), default=0) <= 120:
+                assert [line.rstrip() for line in lines[2:2 + len(plain)]] == plain
+            else:
+                assert 'Static chart omitted' in '\n'.join(lines)
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('polar', [False, True])
+@pytest.mark.parametrize('nested', [False, True])
+@pytest.mark.parametrize('visible', [False, True])
+def test_child_axes_use_explicit_shared_fallback(polar, nested, visible, open_interaction):
+    ax = Figure().subplots()
+    ax.scatter([1, 2], [2, 3])
+    child = ax.inset_axes([.5, .5, .4, .4], projection='polar' if polar else None)
+    child.plot([1, 2], [3, 4])
+    if nested:
+        child.inset_axes([.2, .2, .5, .5]).plot([1, 2], [1, 2])
+    child.set_visible(visible)
+    original = from_figure(ax.figure)
+    opened, interactive = open_interaction(ax.figure)
+    static = render_styled(ax.figure, color=False)
+    if visible:
+        assert opened.projection is None
+        assert opened.nearest(38, 18) is None
+        for frame in (interactive, static):
+            assert 'Static view: inset/child axes use static render' in SGR.sub('', frame).splitlines()[0]
+    else:
+        assert opened.projection is not None and not opened.reason
+        assert 'Static view:' not in interactive + static
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('kind', ['points', 'line-h', 'line-v'])
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('foreground', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+def test_hover_uses_actual_fractional_mark_cell_over_bar(kind, horizontal, foreground, saved):
+    ax = Figure().subplots()
+    bar_z, mark_z = (1, 3) if foreground else (3, 1)
+    if horizontal:
+        ax.barh([12], [40], left=[10], height=24, label='bar', zorder=bar_z)
+    else:
+        ax.bar([30], [24], width=20, label='bar', zorder=bar_z)
+    if kind == 'points':
+        ax.scatter([30.4], [12.1], label='mark', zorder=mark_z)
+    elif kind == 'line-h':
+        ax.plot([29, 32], [11.9, 11.9], label='mark', zorder=mark_z)
+    else:
+        ax.plot([30.4, 30.4], [10, 14], label='mark', zorder=mark_z)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    original = from_figure(ax.figure)
+    source = original if saved else ax.figure
+    v = model(source)
+    cell = colored_cells(v.frame())[18][38][0]
+    expected = 'mark' if foreground or saved else 'bar'
+    assert (cell != '█') == (expected == 'mark')
+    assert v.nearest(38, 18).name == expected
+    v.mouse(35, 38, 18, False)
+    assert v.hover.name == expected
+    assert from_figure(ax.figure) == original
+
+
+def test_cell_hover_prefers_occupied_cell_then_one_cell_neighbors():
+    ax = Figure().subplots()
+    ax.scatter([12], [12], label='first')
+    ax.scatter([14], [12], label='second')
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(ax.figure)
+    assert v.nearest(20, 18).name == 'first'
+    assert v.nearest(22, 18).name == 'second'
+    assert v.nearest(21, 18).name == 'second'
+    assert v.nearest(20, 17).name == 'first'
+    assert v.nearest(20, 16) is None
+    assert v.nearest(30, 18) is None
+
+
+def test_cell_hover_rebuilds_rendered_ownership_after_resize():
+    ax = Figure().subplots()
+    ax.bar([30], [24], width=20, label='bar', zorder=1)
+    ax.scatter([30.4], [12.1], label='mark', zorder=3)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(ax.figure)
+    assert v.nearest(38, 18).name == 'mark'
+    v.layout(160, 45)
+    assert v.nearest(38, 18).name == 'bar'
