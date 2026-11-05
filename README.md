@@ -21,7 +21,27 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 - Source summaries: eligible source observations, errorbar bounds, axis/tick identity and unsupported-artist coverage, not values reverse-engineered from terminal glyphs. Masked/non-finite line and scatter rows and hidden artists are excluded; missing counts and summary omissions remain explicit. See the [summary contract](#what-the-text-lost-render) for sampling and precision.
 - Diagnostics: `r.losses` includes heatmap sampling and per-artist visibility diagnostics. Strict mode rejects material losses, not every approximation. See [loss reporting and strict mode](#what-the-text-lost-render) for painter order, materiality and known limits, and [SVG limits](#svg-limits) for bounded traversal and decoding.
 
-Agent evidence at renderer `4376145`: 70 new charts, three trials on `claude-sonnet-5-5`, seven paired arms ([results cells](benchmarks/agent/RESULTS.md#pooled-paired-results)).
+**Record benchmark rerun (2026-11-05):** same 70 charts/questions, three trials on
+`claude-sonnet-5-5`, effort low; all 630 cells completed via subscription CLI
+([results](benchmarks/agent/RESULTS-suite3.md), [predeclared bars](benchmarks/agent/README-suite3.md)).
+
+| same-day input | correct / 840 answers | total input tokens, three trials |
+| --- | ---: | ---: |
+| experimental chart record | 828/840 | 648,990 |
+| record + optional query CLI | 825/840 | 831,009 |
+| direct `table+stats` control | 805/840 | 330,342 |
+
+Both record arms beat the **earlier-run** summary/hybrid below and pass the
+same-day control competitiveness bar. Full record access is more accurate here,
+not smaller: input is **1.96×** control, or **2.52×** with the query protocol.
+Records retain full eligible arrays; control tables are sampled, so this does
+not show an advantage over full-source tables. Query access adds no observed
+accuracy gain: 27 CLI requests across 22/210 cells, with replay input counted in
+full. This bounded JSON tool protocol is not a native-tool integration. Charts
+are reused, not a fresh holdout; no general superiority, summary rewrite or
+other-library-reader claim follows. Renderer, summary and query code are unchanged.
+
+**Earlier-run suite2 evidence** at renderer `4376145`: 70 charts, three trials on `claude-sonnet-5-5`, seven paired arms ([original results cells](benchmarks/agent/RESULTS.md#pooled-paired-results)).
 
 | input | correct / 840 answers | wrong (non-abstained) | abstained | total input tokens, three trials |
 | --- | ---: | ---: | ---: | ---: |
@@ -35,7 +55,7 @@ Summary **failed** the [predeclared criterion](benchmarks/agent/RESULTS.md#prede
 
 Summary mostly declines rather than invents: 167 abstentions versus 14 wrong answers. Misses concentrate in point lookups it does not carry, such as scatter y-at-x and heatmap cell queries. Across all questions of those kinds, summary scores [60/120 with 54 abstentions on scatter and 85/120 with 35 abstentions on heatmaps](benchmarks/agent/RESULTS.md#wrong-answers-versus-abstention).
 
-Recommendation narrows to the human-readable preview and optional hybrid, not a claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays; retain them when correctness matters.
+For the human-readable preview and optional hybrid, no claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays; retain them when correctness matters. The experimental record is a higher-accuracy option on the rerun above, with a larger token cost; it does not change the summary's failed result.
 
 [Historical pilot only](benchmarks/agent/RESULTS.md#historical-pilot-not-rerun-not-comparable), `after` at 9288d2b: summary 79/81 dev and 37/39 held-out; hybrid 78/81 and 39/39; PNG 80/81 and 39/39. Median chart tokens respectively 102/114, 316/326 and 408/408. Those single-model, single-run results had no direct-data baseline and do not validate later renderer changes.
 

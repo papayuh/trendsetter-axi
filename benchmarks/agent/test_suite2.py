@@ -131,7 +131,9 @@ def test_full_results_auth_model_and_manifest():
 
 
 def test_report_without_frozen_commit(monkeypatch, tmp_path):
-    expected = (s.HERE / "RESULTS.md").read_text()
+    # The aggregate index adds suite3 above the unchanged suite2 report.
+    heading = "# Suite2 benchmark results\n"
+    expected = heading + (s.HERE / "RESULTS.md").read_text().split(heading, 1)[1]
     def unavailable(*args, **kwargs):
         pytest.fail("Report must not request renderer git history")
     monkeypatch.setattr(s.subprocess, "check_output", unavailable)

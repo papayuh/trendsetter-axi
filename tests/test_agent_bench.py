@@ -45,7 +45,21 @@ def test_scores_only_rows_asked_the_current_questions():
 def test_report_regenerates_from_results(tmp_path, monkeypatch):
     monkeypatch.setattr(bench, "REPORT", tmp_path / "RESULTS.md")
     bench.write_report("claude-sonnet-5-5")
-    assert bench.REPORT.read_text() == (BENCH / "RESULTS.md").read_text()
+    # RESULTS.md now indexes suite3 above the byte-preserved suite2 report.
+    index = (BENCH / "RESULTS.md").read_text()
+    suite2_heading = "# Suite2 benchmark results\n"
+    assert index.count(suite2_heading) == 1
+    assert bench.REPORT.read_text() == suite2_heading + index.split(suite2_heading, 1)[1]
+
+
+def test_suite3_report_regenerates_from_frozen_results(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("suite3_report", BENCH / "suite3.py")
+    suite3 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(suite3)
+    manifest = suite3.load(verify_code=False)
+    monkeypatch.setattr(suite3, "HERE", tmp_path)
+    suite3.report(manifest)
+    assert (tmp_path / "RESULTS-suite3.md").read_text() == (BENCH / "RESULTS-suite3.md").read_text()
 
 
 def test_grade_rejects_malformed_numbers():

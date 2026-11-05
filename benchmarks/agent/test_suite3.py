@@ -152,6 +152,70 @@ def test_budget_stops_before_dispatch(monkeypatch, tmp_path):
     assert s.run(m) == "budget"
 
 
+def test_completed_resume_has_no_model_calls(monkeypatch, tmp_path):
+    m = tiny_manifest(tmp_path)
+    m["trials"] = [1, 2, 3]
+    monkeypatch.setattr(s, "DATA", tmp_path)
+    for trial in m["trials"]:
+        for arm in s.ARMS:
+            s.append(tmp_path / "calls.jsonl", dict(chart="c", arm=arm, trial=trial,
+                attempt_id=f"{arm}-{trial}", is_error=False, list_price_usd=.01,
+                manifest_sha256=s.old.digest(m)))
+    monkeypatch.setattr(s, "call", lambda *args: pytest.fail("Completed cells must not be re-asked"))
+    assert s.run(m) == "complete"
+
+
+def test_offline_report_never_verifies_code_or_calls_model(monkeypatch, tmp_path):
+    m = s.load(verify_code=False)
+    monkeypatch.setattr(s, "HERE", tmp_path)
+    monkeypatch.setattr(s, "DATA", tmp_path)
+    monkeypatch.setattr(s, "invoke", lambda *args: pytest.fail("Report cannot call a model"))
+    s.report(m)
+    report = (tmp_path / "RESULTS-suite3.md").read_text()
+    assert "NOT EVALUABLE — incomplete" in report
+    assert "Earlier-run suite2" in report
+    assert "659/840" in report and "797/840" in report
+
+
+def test_query_action_preserves_outer_object():
+    assert s.action_object('{"query":{"operation":"facts","args":[]}}') == {
+        "query":{"operation":"facts", "args":[]}}
+    assert s.action_object('```json\n{"q1":3}\n```') == {"q1":3}
+
+
+def test_stored_results_auth_model_usage_and_bounds():
+    m = s.load(verify_code=False)
+    rows = s.rows()
+    if not rows:
+        pytest.skip("No model observations stored yet")
+    good = [r for r in rows if not r["is_error"]]
+    assert len(good) == len({(r["chart"], r["arm"], r["trial"]) for r in good})
+    assert sum(r["list_price_usd"] for r in rows) <= s.BUDGET
+    for r in good:
+        assert r["manifest_sha256"] == s.old.digest(m)
+        assert r["stimulus_sha256"] == m["charts"][r["chart"]]["stimuli"][r["arm"]]["sha256"]
+        assert 0 <= r["query_turns"] <= s.MAX_QUERIES
+        assert r["model_invocations"] == r["query_turns"] + 1
+        for t in r["turns"]:
+            assert t["auth_sources"] == ["none"]
+            assert not t["api_key_auth"]
+            assert set(t["final"]["modelUsage"]) == {s.MODEL}
+            assert t["final"]["subagent_stats"]["spawned"] == 0
+        for field in ("input_tokens", "output_tokens", "list_price_usd", "wall_s"):
+            assert r[field] == pytest.approx(sum(t[field] for t in r["turns"]))
+
+
+def test_stored_report_reproduces_exactly(monkeypatch, tmp_path):
+    expected_path = s.HERE / "RESULTS-suite3.md"
+    if not expected_path.exists():
+        pytest.skip("No stored report yet")
+    expected = expected_path.read_text()
+    m = s.load(verify_code=False)
+    monkeypatch.setattr(s, "HERE", tmp_path)
+    s.report(m)
+    assert (tmp_path / "RESULTS-suite3.md").read_text() == expected
+
+
 def test_source_change_refused(monkeypatch):
     monkeypatch.setattr(s, "code_hashes", lambda: {})
     with pytest.raises(RuntimeError, match="Frozen source"):
