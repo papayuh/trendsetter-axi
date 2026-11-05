@@ -823,7 +823,7 @@ def describe(fig, meta, *, record=None):
             if not bs: continue
             h = c.orientation == "horizontal"
             pos, val = ([b.get_y() + b.get_height() / 2 for b in bs], [b.get_width() for b in bs]) if h else ([b.get_x() + b.get_width() / 2 for b in bs], [b.get_height() for b in bs])
-            if record is not None:
+            if record is not None and all(record.geometry(b, raw=True) for b in bs):
                 base = np.array([b.get_x() if h else b.get_y() for b in bs], float)
                 top = base + val
                 ok = np.isfinite(np.column_stack([pos, base, top])).all(1)
@@ -852,7 +852,7 @@ def describe(fig, meta, *, record=None):
             kind = 'line' if a is not None and a.get_visible() else 'errorbar'
             name = _name(container if container is not None else a, {})
             color = a.get_color() if a is not None else next((col.get_colors()[0] for col in container.lines[2] if len(col.get_colors())), 'k')
-            if record is not None:
+            if record is not None and (container is None or all(record.geometry(col) for col in container.lines[2] if col.get_visible())):
                 rk = 'line' if kind == 'line' and a.get_linestyle() not in ('None', 'none', '') else 'points'
                 eligible = np.isfinite(np.ma.filled(np.ma.asarray(raw, float), np.nan)).all(1)
                 record.points(j, a, raw, xy, rk, name, **{k: v[eligible] for k, v in errors.items()})
@@ -896,8 +896,9 @@ def describe(fig, meta, *, record=None):
                 series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), missing=miss, points=xy, x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))
             elif isinstance(a, LineCollection) and record is not None:
                 record_handled.add(id(a))
-                segments = [data(a.get_transform(), s) for s in a.get_segments()]
-                record.add(j, a, 'segments', segments=segments)
+                if record.geometry(a):
+                    segments = [data(a.get_transform(), s) for s in a.get_segments()]
+                    record.add(j, a, 'segments', segments=segments)
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
                 handled.add(id(a))
                 if record is not None: record.polygon(j, a, data)
@@ -913,7 +914,7 @@ def describe(fig, meta, *, record=None):
             handled.add(id(a))
             cb = getattr(a, "colorbar", None)
             label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
-            if record is not None:
+            if record is not None and record.geometry(a, raw=True):
                 source = np.ma.asarray(a.get_array(), float)
                 geometry = dict(coordinates=a.get_coordinates()) if isinstance(a, QuadMesh) else dict(extent=list(a.get_extent()), origin=a.origin)
                 record.add(j, a, 'heat', name=label or _name(a, {}), z=z.filled(np.nan), masked=np.ma.getmaskarray(source).tolist(),

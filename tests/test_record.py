@@ -315,6 +315,159 @@ def test_predicate_language_is_not_python_and_missing_is_not_false():
     unavailable(rec, 'unknown')
 
 
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('mixed', [False, True])
+def test_bar_nondata_transforms_are_unavailable(horizontal, mixed):
+    ax = Figure().subplots()
+    ax.set(xlim=(0, 100), ylim=(0, 100))
+    transform = ax.get_yaxis_transform() if horizontal else ax.get_xaxis_transform()
+    kwargs = {} if mixed else dict(transform=transform)
+    bars = (ax.barh([1, 2], [.2, .3], left=.1, label='bars', **kwargs) if horizontal else
+            ax.bar([1, 2], [.2, .3], bottom=.1, label='bars', **kwargs))
+    if mixed: bars[1].set_transform(transform)
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any('non-data transform' in s and type(transform).__name__ in s for s in rec['unavailable'])
+    assert answer(rec, 'facts')['marks'] == []
+
+
+@pytest.mark.parametrize('polygon', [False, True])
+@pytest.mark.parametrize('offset,transformed', [([1, 2], False), ([0, 0], True)])
+def test_collection_offsets_are_unavailable(polygon, offset, transformed):
+    from matplotlib.collections import LineCollection
+    ax = Figure().subplots()
+    if polygon: artist = ax.fill_between([0, 1], [0, 0], [1, 1], label='offset')
+    else: artist = ax.add_collection(LineCollection([[(0, 0), (1, 1)]], label='offset'))
+    artist.set_offsets([offset])
+    if transformed: artist.set_offset_transform(ax.transData)
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any('offset: geometry unavailable; collection offsets with transform' in s for s in rec['unavailable'])
+
+
+@pytest.mark.parametrize('axis', [0, 1])
+def test_errorbar_collection_offsets_are_unavailable(axis):
+    ax = Figure().subplots()
+    bars = ax.errorbar([0, 1], [1, 2], xerr=.1, yerr=.2, label='estimate')
+    bars.lines[2][axis].set_offsets([[1, 2]])
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any('collection offsets with transform' in s for s in rec['unavailable'])
+
+
+@pytest.mark.parametrize('mesh', [False, True])
+def test_heat_nondata_transforms_are_unavailable(mesh):
+    ax = Figure().subplots()
+    artist = ax.pcolormesh([[1, 2], [3, 4]]) if mesh else ax.imshow([[1, 2], [3, 4]])
+    artist.set_transform(ax.transAxes)
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any('non-data transform' in s and type(ax.transAxes).__name__ in s for s in rec['unavailable'])
+
+
+def test_mesh_offsets_are_unavailable():
+    ax = Figure().subplots()
+    ax.pcolormesh([[1, 2], [3, 4]]).set_offsets([[1, 2]])
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any('collection offsets with transform' in s for s in rec['unavailable'])
+
+
+@pytest.mark.parametrize('polygon', [False, True])
+def test_converted_collection_transforms_remain_available(polygon):
+    from matplotlib.collections import LineCollection
+    ax = Figure().subplots()
+    ax.set(xlim=(0, 10), ylim=(0, 100))
+    if polygon: ax.fill_between([.2, .8], [.1, .1], [.3, .3], transform=ax.transAxes, label='converted')
+    else: ax.add_collection(LineCollection([[[.2, .1], [.8, .3]]], transform=ax.transAxes, label='converted'))
+    m = mark(from_figure(ax.figure), 'converted')
+    if polygon:
+        assert m['lo'] == pytest.approx([10, 10]) and m['hi'] == pytest.approx([30, 30])
+    else: assert np.array(m['segments']) == pytest.approx(np.array([[[2, 10], [8, 30]]]))
+
+
+@pytest.mark.parametrize('style,want', [('default', .5), ('steps-pre', 0), ('steps-post', 1), ('steps-mid', .5)])
+@pytest.mark.parametrize('other', [0, 'B'])
+@pytest.mark.parametrize('descending', [False, True])
+def test_tiny_crossing_signs_do_not_underflow(style, want, other, descending):
+    rec = from_figure(line(style=style).figure)
+    rec['marks'][0].update(x=[1, 0] if descending else [0, 1],
+                           y=[1e-200, -1e-200] if descending else [-1e-200, 1e-200])
+    rec['marks'].append(dict(rec['marks'][0], id='m1', name='B', y=[0, 0]))
+    if descending and style in ('steps-pre', 'steps-post'): want = 1 - want
+    assert answer(rec, 'crossing', 'A', other) == want
+
+
+@pytest.mark.parametrize('descending', [False, True])
+def test_tiny_crossed_fill_branches_are_not_paired(descending):
+    ax = Figure().subplots()
+    ax.fill_between([1, 0] if descending else [0, 1], [-1e-200, 1e-200], [1e-200, -1e-200], label='crossed')
+    rec = from_figure(ax.figure)
+    assert mark(rec, 'crossed')['kind'] == 'area'
+    assert 'paired' in unavailable(rec, 'band_width_at', 'crossed', .5)
+
+
+@pytest.mark.parametrize('descending', [False, True])
+def test_interpolation_overflow_is_unavailable(descending):
+    rec = from_figure(line().figure)
+    rec['marks'][0].update(x=[1e308, -1e308] if descending else [-1e308, 1e308], y=[0, 1])
+    assert 'overflow' in unavailable(rec, 'value_at', 'A', 0)
+    assert 'overflow' in unavailable(rec, 'crossing', 'A', .5)
+
+
+@pytest.mark.parametrize('band', [False, True])
+def test_weighted_interpolation_avoids_y_difference_overflow(band):
+    rec = from_figure(line().figure)
+    rec['marks'][0].update(x=[0, 1], y=[-1e308, 1e308])
+    if band: rec['marks'][0].update(kind='band', lo=[-1e308, 1e308], hi=[-1e308, 1e308])
+    assert answer(rec, 'value_at', 'A', .5) == ([0, 0] if band else 0)
+    if band: assert answer(rec, 'band_width_at', 'A', .5) == 0
+
+
+@pytest.mark.parametrize('style', ['default', 'steps-mid'])
+@pytest.mark.parametrize('descending', [False, True])
+def test_large_midpoints_remain_in_domain(style, descending):
+    rec = from_figure(line(style=style).figure)
+    rec['marks'][0].update(x=[1.6e308, 1e308] if descending else [1e308, 1.6e308],
+                           y=[1, 0] if descending else [0, 1])
+    assert answer(rec, 'value_at', 'A', 1.4e308) == pytest.approx(1 if style == 'steps-mid' else 2 / 3)
+    assert answer(rec, 'crossing', 'A', .5) == pytest.approx(1.3e308)
+
+
+@pytest.mark.parametrize('other', [0, 1e308, 'B'])
+def test_crossing_overflow_cannot_become_no_match(other):
+    rec = from_figure(line().figure)
+    rec['marks'][0].update(x=[0, 1], y=[-1e308, 1e308])
+    rec['marks'].append(dict(rec['marks'][0], id='m1', name='B', y=[1e308, -1e308]))
+    assert 'overflow' in unavailable(rec, 'crossing', 'A', other)
+
+
+@pytest.mark.parametrize('expression', ['x >', "__import__('os')", "False and f()", 'x is None', "b'x'"])
+def test_invalid_predicates_fail_without_rows(expression):
+    rec = from_figure(line().figure)
+    rec['marks'][0].update(x=[], y=[])
+    unavailable(rec, 'count_where', expression, [])
+    unavailable(rec, 'first_x_where', 'A', expression)
+    assert answer(rec, 'count_where', 'x > 0', []) == 0
+    assert answer(rec, 'first_x_where', 'A', 'x > 0') is None
+
+
+def test_predicate_is_parsed_once_before_scanning(monkeypatch):
+    from trendsetter_axi import queries
+    rec = from_figure(line().figure)
+    parse = queries.ast.parse
+    calls = []
+    def counted(*args, **kwargs):
+        calls.append(args[0])
+        return parse(*args, **kwargs)
+    monkeypatch.setattr(queries.ast, 'parse', counted)
+    assert answer(rec, 'count_where', 'x > 0', [dict(x=0), dict(x=1), dict(x=2)]) == 2
+    assert calls == ['x > 0']
+    calls.clear()
+    assert answer(rec, 'first_x_where', 'A', 'y > 5') == 10
+    assert calls == ['y > 5']
+
+
 def test_record_reader_never_draws(monkeypatch):
     ax = line()
     def no_draw(*args): raise AssertionError('record extraction must not draw')

@@ -66,7 +66,7 @@ def _at(rec, m, x, field="y", probe=None, prepared=None):
         if m["kind"] == "points": _need(f"no point at x={x}; points are not interpolated")
         if not min(xs) <= target <= max(xs): _need(f"x={x} outside the knots {min(xs)}..{max(xs)}; no extrapolation")
         direction = 1 if xs[-1] > xs[0] else -1
-        if any(direction * (b - a) <= 0 for a, b in zip(xs, xs[1:])):
+        if any(b <= a if direction == 1 else b >= a for a, b in zip(xs, xs[1:])):
             _need("interpolation needs strictly monotone x; duplicate or unordered knots retained, not sorted")
         ordered = [direction * v for v in xs]
     else:
@@ -82,11 +82,13 @@ def _at(rec, m, x, field="y", probe=None, prepared=None):
     _transform(sy, ys[i])
     if interp == "step-post": return ys[i]
     if interp == "step-pre": return ys[i + 1]
-    if interp == "step-mid": return ys[i + (direction * target >= direction * ((xs[i] + xs[i + 1]) / 2))]
+    if interp == "step-mid": return ys[i + (direction * target >= direction * (xs[i] / 2 + xs[i + 1] / 2))]
     tx = lambda v: _transform(sx, v)
     ty = lambda v: _transform(sy, v)
-    t = (tx(x) - tx(xs[i])) / (tx(xs[i + 1]) - tx(xs[i]))
-    return _transform(sy, ty(ys[i]) + t * (ty(ys[i + 1]) - ty(ys[i])), True)
+    offset, span = tx(x) - tx(xs[i]), tx(xs[i + 1]) - tx(xs[i])
+    if not all(map(math.isfinite, (offset, span))): _need('interpolation unavailable; numeric overflow in x differences')
+    t = offset / span
+    return _transform(sy, (1 - t) * ty(ys[i]) + t * ty(ys[i + 1]), True)
 
 
 def _value_at(rec, key, x):
@@ -111,37 +113,41 @@ def _band_width_at(rec, key, x):
     return _ok(hi - lo, result["evidence"], result["convention"] + "; width = hi - lo in data units")
 
 
-def _predicate(expression, row):
+def _predicate(expression):
     """Small expression language, never eval: no calls, attributes or subscripts."""
     if not isinstance(expression, str) or len(expression) > 1024: _need("predicate must be an expression of at most 1024 characters")
     tree = ast.parse(expression, mode="eval")
-    if len(list(ast.walk(tree))) > 64: _need("predicate exceeds 64 syntax nodes")
+    nodes = list(ast.walk(tree))
+    if len(nodes) > 64: _need("predicate exceeds 64 syntax nodes")
     arithmetic = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
     comparisons = {ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge}
-    def visit(node):
-        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float, str, bool, type(None))): return node.value
+    allowed = (ast.Expression, ast.Constant, ast.Name, ast.Load, ast.BinOp, ast.UnaryOp, ast.BoolOp,
+               ast.Compare, ast.USub, ast.UAdd, ast.Not, ast.And, ast.Or, *arithmetic, *comparisons)
+    for node in nodes:
+        if type(node) not in allowed or isinstance(node, ast.Constant) and not isinstance(node.value, (int, float, str, bool, type(None))):
+            _need("unsupported predicate syntax; only columns, constants, arithmetic, comparisons and and/or/not allowed")
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)): _finite([node.value])
+    def visit(node, row):
+        if isinstance(node, ast.Constant): return node.value
         if isinstance(node, ast.Name):
             if node.id not in row: _need(f"predicate field {node.id!r} missing; supply that column")
             if row[node.id] is None: _need(f"predicate field {node.id!r} is missing, not zero")
             if isinstance(row[node.id], (int, float)): _finite([row[node.id]])
             return row[node.id]
-        if isinstance(node, ast.BinOp) and type(node.op) in arithmetic:
-            a, b = visit(node.left), visit(node.right)
+        if isinstance(node, ast.BinOp):
+            a, b = visit(node.left, row), visit(node.right, row)
             _finite([a, b])
             value = arithmetic[type(node.op)](a, b)
             _finite([value])
             return value
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd, ast.Not)):
-            value = visit(node.operand)
+        if isinstance(node, ast.UnaryOp):
+            value = visit(node.operand, row)
             return -value if isinstance(node.op, ast.USub) else +value if isinstance(node.op, ast.UAdd) else not value
         if isinstance(node, ast.BoolOp):
-            return all(visit(n) for n in node.values) if isinstance(node.op, ast.And) else any(visit(n) for n in node.values)
-        if isinstance(node, ast.Compare):
-            values = [visit(n) for n in [node.left, *node.comparators]]
-            if not all(type(op) in comparisons for op in node.ops): _need("unsupported predicate comparison")
-            return all(comparisons[type(op)](a, b) for op, a, b in zip(node.ops, values, values[1:]))
-        _need("unsupported predicate syntax; only columns, constants, arithmetic, comparisons and and/or/not allowed")
-    return bool(visit(tree.body))
+            return all(visit(n, row) for n in node.values) if isinstance(node.op, ast.And) else any(visit(n, row) for n in node.values)
+        values = [visit(n, row) for n in [node.left, *node.comparators]]
+        return all(comparisons[type(op)](a, b) for op, a, b in zip(node.ops, values, values[1:]))
+    return lambda row: bool(visit(tree.body, row))
 
 
 def _rows(m):
@@ -158,8 +164,9 @@ def _rows(m):
 
 def _first_x_where(rec, key, predicate):
     m = _mark(rec, key)
+    matches = _predicate(predicate)
     for i, row in enumerate(_rows(m)):
-        if _predicate(predicate, row):
+        if matches(row):
             return _ok(row["x"], dict(mark=m["id"], row=i, values=row, predicate=predicate), "first eligible source row in data order; knots only")
     return _ok(None, dict(mark=m["id"], predicate=predicate), "no eligible source knot matches; says nothing between knots")
 
@@ -168,7 +175,8 @@ def _count_where(rec, predicate, table=None):
     if table is None: table = rec.get("records", rec.get("declared", {}).get("records"))
     if table is None: _need("records table or risk table required (one row per subject, e.g. time and event); duplicated subjects draw the same curve")
     if not isinstance(table, list) or not all(isinstance(r, dict) for r in table): _need("records must be a list of row objects")
-    n = sum(_predicate(predicate, row) for row in table)
+    matches = _predicate(predicate)
+    n = sum(matches(row) for row in table)
     return _ok(n, dict(matched=n, rows=len(table), predicate=predicate), "count attached rows once each; not inferred from curve or censor marks")
 
 
@@ -195,27 +203,31 @@ def _crossing(rec, key, other):
         if len(xs) > 1 and not (all(v > u for u, v in zip(xs, xs[1:])) or all(v < u for u, v in zip(xs, xs[1:]))):
             _need("crossing requires strictly monotone, unique x knots")
         knots.update(x for x in xs if lo <= x <= hi)
-        if m["interp"] == "step-mid": knots.update((u + v) / 2 for u, v in zip(xs, xs[1:]) if lo <= (u + v) / 2 <= hi)
+        if m["interp"] == "step-mid": knots.update(u / 2 + v / 2 for u, v in zip(xs, xs[1:]) if lo <= u / 2 + v / 2 <= hi)
     xs = sorted(knots)
     def delta(x, probe=None):
         vals = [_at(rec, m, x, probe=probe, prepared=prepared[id(m)]) for m in marks]
         if not b: vals.append(other)
-        return _transform(sy, vals[0]) - _transform(sy, vals[1])
+        difference = _transform(sy, vals[0]) - _transform(sy, vals[1])
+        if not math.isfinite(difference): _need('crossing unavailable; numeric overflow in y difference')
+        return difference
     convention = "first equality or sign change in increasing x; jumps reported at boundary, not as equality; no extrapolation"
     evidence = dict(marks=[m["id"] for m in marks], threshold=None if b else other)
     previous = None
     for i, x in enumerate(xs):
         d = delta(x)
-        if d == 0 or previous is not None and previous * d < 0:
+        if d == 0 or previous is not None and min(previous, d) < 0 < max(previous, d):
             return _ok(x, dict(evidence, boundary=x, difference=d), convention)
         if i + 1 == len(xs): break
         end = xs[i + 1]
-        mid = (x + end) / 2
+        mid = x / 2 + end / 2
         left, right = delta(x, mid), delta(end, mid)
-        if left == 0 or left * d < 0: return _ok(x, dict(evidence, interval=[x, end]), convention)
-        if left * right < 0:
-            t = left / (left - right)
-            tx = _transform(sx, x) + t * (_transform(sx, end) - _transform(sx, x))
+        if left == 0 or min(left, d) < 0 < max(left, d): return _ok(x, dict(evidence, interval=[x, end]), convention)
+        if min(left, right) < 0 < max(left, right):
+            span = left - right
+            if not math.isfinite(span): _need('crossing unavailable; numeric overflow in root difference')
+            t = left / span
+            tx = (1 - t) * _transform(sx, x) + t * _transform(sx, end)
             return _ok(_transform(sx, tx, True), dict(evidence, interval=[x, end], differences=[left, right]), convention + "; solved in axis scale space")
         previous = right
     return _ok(None, evidence, convention + "; no crossing on shared domain")

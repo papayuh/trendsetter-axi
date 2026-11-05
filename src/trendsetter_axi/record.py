@@ -48,6 +48,22 @@ class _Collector:
         marks = self.result["marks"]
         marks.append(dict(id=f"m{len(marks)}", axes=j, kind=kind, name=name or mpl._name(a, {}), **plain(values)))
 
+    def geometry(self, a, *, raw=False):
+        from . import mpl
+        from matplotlib.transforms import IdentityTransform
+
+        tr = a.get_data_transform() if hasattr(a, 'get_data_transform') else a.get_transform()
+        reason = f"non-data transform {type(tr).__name__}" if raw and tr is not a.axes.transData else None
+        if isinstance(a, mpl.Collection):
+            offset_tr = a.get_offset_transform()
+            if mpl.np.any(a.get_offsets()) or not isinstance(offset_tr, IdentityTransform):
+                reason = f"collection offsets with transform {type(offset_tr).__name__}"
+            elif len(a.get_transforms()):
+                reason = 'per-path transforms'
+        if reason:
+            self.result['unavailable'].append(f"{mpl._name(a, {}) or type(a).__name__}: geometry unavailable; {reason}")
+        return reason is None
+
     def points(self, j, a, raw, xy, kind, name, **extra):
         from . import mpl
 
@@ -62,6 +78,7 @@ class _Collector:
     def polygon(self, j, a, data):
         from . import mpl
 
+        if not self.geometry(a): return
         np = mpl.np
         parts, polygons = [], []
         step = getattr(a, "_step", None)
@@ -87,7 +104,8 @@ class _Collector:
                 if v[0, 0] != x[0]: x, l, h = np.r_[v[0, 0], x], np.r_[v[0, 1], l], np.r_[v[0, 1], h]
                 end = v[n + 1]
                 if end[0] != x[-1]: x, l, h = np.r_[x, end[0]], np.r_[l, end[1]], np.r_[h, end[1]]
-            if not step and np.any((l[1:] - h[1:]) * (l[:-1] - h[:-1]) < 0): continue
+            if not step and np.any(((l[1:] < h[1:]) & (l[:-1] > h[:-1])) |
+                                   ((l[1:] > h[1:]) & (l[:-1] < h[:-1]))): continue
             if len(x) > 1 and not ((np.diff(x) > 0).all() or (np.diff(x) < 0).all()): continue
             parts.append(dict(x=x, lo=np.minimum(l, h), hi=np.maximum(l, h)))
         if len(parts) == len(polygons) and parts:
