@@ -82,7 +82,7 @@ For matplotlib figures, dense black and grey data lines use the same batched dot
 
 ### Experimental chart records and queries
 
-`from_figure(fig)` reads a JSON-safe, post-transform chart record without drawing.
+`from_figure(fig)` reads a JSON-safe chart record in axis data coordinates without drawing.
 `query(record, operation, *args)` computes answers from those arrays, not pixels or
 rounded summary strings. This API and record schema are **experimental**. Existing
 `render()` output and `summary()` text are unchanged; neither consumes the record yet.
@@ -92,7 +92,7 @@ import json
 from trendsetter_axi import from_figure, query
 
 record = from_figure(fig)  # matplotlib Figure, including seaborn/pandas figures
-print(query(record, "value_at", "demand", 3))  # unique mark name or record-local id
+print(query(record, "value_at", "m0", 3))  # record-local id; unique mark names also work
 # {"answer": 3.0, "evidence": {...}, "convention": "exact source knot; no interpolation"}
 with open("record.json", "w") as f:
     json.dump(record, f, allow_nan=False)
@@ -119,9 +119,17 @@ formatted strings. Marks retain:
   extent/origin or mesh coordinates. `masked` and `invalid` flags can overlap
   because matplotlib may already mask NaN inputs; observed zero remains zero.
 
-The reader extends the existing `describe()` traversal. It uses the same visible
-axes/artists, source names, masked/non-finite point eligibility and unsupported
-artist coverage. Source values outside the viewport remain available. Errorbars
+The reader extends the existing `describe()` traversal, sharing visible-axis/artist
+selection, source names and masked/non-finite point eligibility. Lines (including
+marker-only and errorbar data lines), bars, images and meshes require their native
+`ax.transData` transform; rotated bars are also unavailable. A bar container with
+any unsupported visible bar is omitted as a whole. Line/polygon collections and
+meshes with nonzero offsets, non-identity offset transforms or per-path transforms are
+unavailable; eligible line/polygon paths and scatter offsets are converted to axis
+data coordinates. Rejected geometry is omitted from `marks` with its transform or
+rotation reason in `unavailable`, not a fabricated value. Record coverage includes
+`LineCollection` paths that the existing summary does not describe.
+Source values outside the viewport remain available. Errorbars
 retain eligible numerical `xerr`/`yerr` bounds with `null` for unknown bounds;
 line-free centers are segment midpoints, not recovered asymmetric source centers.
 One-sided, line-free errorbar centers remain unavailable. Annotations and axes
@@ -150,12 +158,13 @@ Interpolation supports linear/date and log scale space, never extrapolation or
 bridging missing runs. Duplicate/unordered x is retained, but ambiguous lookups
 and interpolated crossings are unavailable. Other scales allow exact knots only.
 Step-mid boundaries use arithmetic data-x midpoints; ties take the next source knot.
-Crossings between separate axes require matching scale/unit metadata.
+Crossings between separate axes require matching scale/unit metadata. Numeric
+overflow returns `unavailable`, not an invented value or a no-match result.
 
 Author intent belongs in `record["declared"]`, e.g. `{"interval_level": 0.8}` or
 `{"totals": ["Start", "End"]}`; `facts()` reports these as assertions, not computed
 aggregates. Attach one row per subject at `record["declared"]["records"]`
-for subject queries:
+for subject queries, or pass an explicit table to `count_where` to override it:
 
 ```python
 record["declared"]["records"] = [{"time": 2, "event": 1}, {"time": 10, "event": 0}]
@@ -166,9 +175,9 @@ Saved records need no NumPy or matplotlib imports to query. The stdlib-only quer
 module also provides a CLI; arguments are JSON values or bare strings:
 
 ```sh
-python -m trendsetter_axi.queries record.json value_at demand 3
+python -m trendsetter_axi.queries record.json value_at m0 3
 python -m trendsetter_axi.queries record.json first_x_where '80% interval' 'width >= 24'
-python -m trendsetter_axi.queries record.json check '["value_at","demand",3,"==",3]'
+python -m trendsetter_axi.queries record.json check '["value_at","m0",3,"==",3]'
 python -m trendsetter_axi.queries record.json diff newer-record.json
 python -m trendsetter_axi.queries record.json facts
 ```

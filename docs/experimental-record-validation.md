@@ -1,8 +1,10 @@
 # Experimental record/query validation
 
+Historical evidence for the initial implementation at `929cda4`, before the
+review fixes in `ec2976f` and `d6d364e`; not validation of those revisions.
 Baseline: `d83ce5e` (main at dispatch). No benchmark fixtures or rendering/summary
-code paths were replaced. The reader is an optional collector in `mpl.describe`;
-summary-from-record is deferred.
+code paths were replaced. Current behavior and deferred work belong to the
+[experimental API contract](../README.md#experimental-chart-records-and-queries).
 
 ## Oracles
 
@@ -19,17 +21,16 @@ summary-from-record is deferred.
 
 ## Local suite and packaging
 
-Final local suite: **1818 passed**, 34 existing/dependency warnings (Python
+Pre-review local suite: **1818 passed**, 34 existing/dependency warnings (Python
 3.10.22, matplotlib 3.10.9, NumPy 2.2.6), with `BROWSER_PATH` set for Plotly exports.
 `uv build --wheel` succeeds; an isolated interpreter loading that wheel verifies
 the public lazy API and saved-record queries without NumPy/matplotlib imports.
-Added source: **463 lines**, excluding tests/docs, below the 700-line ceiling.
 No dependency declarations changed.
 
 ## Gallery byte identity
 
 The existing `benchmarks/render_identity.py` matrix was run against archived
-baseline source and this implementation. A scratch copy of its driver added
+baseline source and the initial implementation. A scratch copy of its driver added
 `summary=result.summary()` to each output entry; the benchmark itself and all
 fixtures remained unchanged. SVG exports were shared across both runs, as the
 existing driver requires, to avoid random SVG IDs in diagnostic captions.
@@ -62,6 +63,4 @@ load only stdlib modules beyond the package's existing lightweight imports.
 Isolated-interpreter tests enforce that boundary and repeated calls through the
 public `query` entry.
 
-Follow-ups: summary/chart text from the record, other readers including ggplot2,
-record-to-figure, viewer, human-pane upgrades and Vega-Lite export. These results
-do not update the agent benchmark's model-accuracy claims.
+These results do not update the agent benchmark's model-accuracy claims.
