@@ -675,15 +675,16 @@ class Canvas:
                 dark = dark and not ridge and (kind == "h" or np.hypot(*(b - a)) >= 0.25 * self.h)   # dark h-lines (spines, medians) beat fills; only spine-length v-lines do: a short whisker must not hide the box it hangs off
                 if clip is not None:
                     a = np.clip(a, clip[:2], clip[2:]); b = np.clip(b, clip[:2], clip[2:])
+                edge = 0 if primitives[seq][3] is not None else 1e-6
                 if kind == "h":
-                    r = self._row(a[1]); c0, c1 = sorted((self._col(a[0]), self._col(b[0] - 1e-6)))
+                    r = self._row(a[1]); c0, c1 = sorted((self._col(a[0]), self._col(b[0] - edge)))
                     if not 0 <= r < R_: continue
                     c0, c1 = max(c0, 0), min(c1, C_ - 1)
                     for c in range(c0, c1 + 1): box[r, c] |= (L if c > c0 else 0) | (R if c < c1 else 0) | (L | R if c0 == c1 else 0); frame[r, c] |= dark
                     record([(r, c) for c in range(c0, c1 + 1)])
                     box_seq[r, c0:c1 + 1] = seq
                 else:
-                    c = self._col(a[0]); r0, r1 = sorted((self._row(a[1]), self._row(b[1] - 1e-6)))
+                    c = self._col(a[0]); r0, r1 = sorted((self._row(a[1]), self._row(b[1] - edge)))
                     if not 0 <= c < C_: continue
                     r0, r1 = max(r0, 0), min(r1, R_ - 1)
                     for r in range(r0, r1 + 1): box[r, c] |= (U if r > r0 else 0) | (D if r < r1 else 0) | (U | D if r0 == r1 else 0); frame[r, c] |= dark
@@ -784,7 +785,8 @@ class Canvas:
             primitives[order] = ("stroke", [np.array([a, b])], self.opaque[id(primitive)], self.inks.get(id(primitive)))
             inked[order] = set()
             if clip is not None: a = np.clip(a, clip[:2], clip[2:]); b = np.clip(b, clip[:2], clip[2:])
-            r = self._row(a[1]); c0, c1 = sorted((self._col(a[0]), self._col(b[0] - 1e-6)))
+            edge = 0 if primitives[order][3] is not None else 1e-6
+            r = self._row(a[1]); c0, c1 = sorted((self._col(a[0]), self._col(b[0] - edge)))
             if 0 <= r < R_:
                 for c in range(max(c0, 0), min(c1, C_ - 1) + 1):
                     if shade[r, c] and fill[r, c] >= 0 and fill[r, c] != sid: under[r, c] = fill[r, c]   # solid body behind the rule: no black cut-out

@@ -442,6 +442,8 @@ def _collapse(fig):
             else:
                 im.set_data(a[keep]); im.set_extent((*im.get_extent()[:2], len(idx) - .5, -.5)); ax.set_ylim(len(idx) - .5, -.5); ax.set_yticks(range(len(idx)))
             target = new if mesh else im
+            alpha = im.get_alpha()
+            target.set_alpha(np.asarray(alpha).reshape(a.shape)[keep] if np.ndim(alpha) else alpha)
             target._tc_heat_shape = getattr(im, "_tc_heat_shape", a.shape)
             target._tc_heat_rows = getattr(im, "_tc_heat_rows", np.arange(a.shape[0]))[keep]
             ax.set_yticklabels(names)

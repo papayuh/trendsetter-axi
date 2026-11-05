@@ -10,7 +10,7 @@ import pytest
 from wcwidth import wcswidth
 
 import trendsetter_axi as tsa
-from trendsetter_axi import core
+from trendsetter_axi import core, mpl
 from trendsetter_axi.cells import width
 
 
@@ -1271,3 +1271,45 @@ def test_single_point_line_markers_are_accounted(close, marker, cover, linestyle
 def test_point_without_marker_geometry_remains_exempt(close, marker, size):
     fig = figure(lambda ax: ax.plot([5], [5], marker=marker, markersize=size, label="proxy"))
     assert not tsa.render(fig, 60, strict=True).losses
+
+
+@pytest.mark.parametrize("vertical", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("short", [False, True])
+@pytest.mark.parametrize("bottom", ["C0", "black"])
+@pytest.mark.parametrize("top", ["C0", "C1", "black"])
+def test_identical_line_endpoints_keep_colour_independent_verdict(close, vertical, reverse, short, bottom, top):
+    fig, ax = plt.subplots(figsize=(8, 3))
+    points = np.array([[.5, .25], [.5, .75]]) if vertical else np.array([[.1, .5], [.9, .5]])
+    if short: points[1] = [.5, .5]
+    if reverse: points = points[::-1]
+    lower = np.vstack([points[0], points.mean(0), points[1]])
+    ax.plot(*lower.T, color=bottom, label="bottom", transform=fig.transFigure, clip_on=False)
+    ax.plot(*points.T, color=top, label="top", transform=fig.transFigure, clip_on=False)
+    ax.set_axis_off()
+    r = tsa.render(fig, 60, rows=12, strict=True)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [
+        ("occluded", "Line2D 'bottom'", False)
+    ], r.losses
+
+
+@pytest.mark.parametrize("mesh", [False, True])
+@pytest.mark.parametrize("invert_x", [False, True])
+@pytest.mark.parametrize("opacity", ["none", "scalar", "array"])
+def test_collapsed_heatmap_keeps_alpha_aligned(close, mesh, invert_x, opacity):
+    values = np.array([[1, 2], [np.nan, np.nan], [3, 4]])
+    alpha = None if opacity == "none" else .5 if opacity == "scalar" else np.array([[1, .5], [.1, .2], [.5, 1]])
+    fig, ax = plt.subplots(figsize=(8, 3))
+    if mesh:
+        artist = ax.pcolormesh(values, alpha=alpha)
+        ax.invert_yaxis()
+    else: artist = ax.imshow(values, alpha=alpha)
+    if invert_x: ax.invert_xaxis()
+    r = tsa.render(fig, 60, strict=True)
+    assert any(ch in r.text for ch in core.HEAT)
+    np.testing.assert_equal(np.ma.filled(artist.get_array(), np.nan), values)
+    np.testing.assert_equal(artist.get_alpha(), alpha)
+    mpl._collapse(fig)
+    target = ax.collections[0] if mesh else ax.images[0]
+    np.testing.assert_equal(np.ma.filled(target.get_array(), np.nan), values[[0, 2]])
+    np.testing.assert_equal(target.get_alpha(), alpha[[0, 2]] if np.ndim(alpha) else alpha)
