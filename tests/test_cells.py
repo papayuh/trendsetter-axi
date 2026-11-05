@@ -140,6 +140,19 @@ def test_artist_text_strips_control_bytes_but_keeps_layout():
     assert core.clean_text("before" + controls + "after") == "before\t\nafter"
 
 
+@pytest.mark.parametrize("fontsize", [8, 32])
+def test_terminal_text_height_uses_cells_not_font_metrics(fontsize):
+    from matplotlib.figure import Figure
+    from matplotlib.text import Text
+    from trendsetter_axi.mpl import CH, CW, TextRenderer
+
+    text = Text(0, 0, "README", fontsize=fontsize)
+    text.set_figure(Figure(dpi=72))
+    bbox = text.get_window_extent(TextRenderer(80 * CW, 30 * CH, 80))
+    assert bbox.width == pytest.approx(6 * CW)
+    assert bbox.height == pytest.approx(CH / 1.2)
+
+
 def test_renderer_metrics_use_cells():
     rend = TextRenderer(400, 200, 40)
     assert rend.get_text_width_height_descent("界e\u0301", None, False)[0] == 3 * rend.cv.cw
