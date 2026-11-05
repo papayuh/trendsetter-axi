@@ -18,7 +18,8 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 ```
 
 - Output size: `render` bounds every line with `cols`; its `rows` remains a preferred height, which heatmaps and bar charts can exceed. The opt-in [`render_compact`](#bounded-displays-and-preferences) also enforces a hard `max_rows`, titles and omissions included. `ascii=True` uses cheaper drawing glyphs; `dimensions` reports cells and lines used.
-- Diagnostics: `r.losses` lists what the renderer detects the text does not show. See [loss reporting and strict mode](#what-the-text-lost-render) for materiality and known limits.
+- Source summaries: eligible source observations, errorbar bounds, axis/tick identity and unsupported-artist coverage, not values reverse-engineered from terminal glyphs. Masked/non-finite line and scatter rows and hidden artists are excluded; missing counts and summary omissions remain explicit. See the [summary contract](#what-the-text-lost-render) for sampling and precision.
+- Diagnostics: `r.losses` includes heatmap sampling and per-artist visibility diagnostics. Strict mode rejects material losses, not every approximation. See [loss reporting and strict mode](#what-the-text-lost-render) for painter order, materiality and known limits, and [SVG limits](#svg-limits) for bounded traversal and decoding.
 
 What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
 
@@ -43,11 +44,16 @@ version bounds). CI tests Python 3.10, 3.12 and 3.14 with the latest compatible
 dependencies, plus Python 3.10 with those exact Matplotlib/NumPy floors. Newer
 Python versions need newer NumPy releases; the installer selects compatible wheels.
 
-```
-uv pip install trendsetter-axi
+The project is not currently published on PyPI (`trendsetter-axi` returns 404).
+Install directly from GitHub in a virtual environment:
+
+```sh
+uv venv .venv
+source .venv/bin/activate
+uv pip install git+https://github.com/papayuh/trendsetter-axi
 ```
 
-From source:
+For an editable source checkout (in an active virtual environment):
 
 ```
 git clone https://github.com/papayuh/trendsetter-axi
@@ -317,6 +323,25 @@ python examples/demo.py --cols 100 --section widths --section gallery
 ```
 
 Sections: `basic`, `widths`, `big`, `cjk`, `svg`, `gallery`. The `gallery` section needs pandas: `uv pip install -e '.[dev]'`. Chart text is identical run to run; only the `[timing]` line varies.
+
+### Scatter brush prototype (not in the package)
+
+![Standalone scatter brush prototype on synthetic account data, with a selection brush and linked statistics](docs/scatter-brush.gif)
+
+This is a standalone interaction prototype on synthetic data, not a feature of
+`trendsetter_axi`. It does not use the renderer and is not included in the installed
+package. The script uses only Python's standard library.
+
+From a source checkout, run in a POSIX terminal with mouse reporting and 24-bit
+colour, at least 80 columns × 20 rows:
+
+```sh
+python examples/scatter_brush.py
+```
+
+Drag to brush; drag inside the brush to move it. Hover to inspect, click a table
+row to pin an account, `z` to zoom to the brush, `b` to go back, `x` to clear,
+`1`/`2`/`3` to toggle segments, and `q` to quit.
 
 ## Development
 
