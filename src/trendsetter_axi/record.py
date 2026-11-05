@@ -44,11 +44,14 @@ class _Collector:
         from . import mpl
 
         def plain(v):
-            if isinstance(v, dict): return {k: plain(x) for k, x in v.items()}
+            if isinstance(v, dict):
+                return {k: plain(x) for k, x in v.items()}
             if isinstance(v, (list, tuple, mpl.np.ndarray)):
                 return [plain(x) for x in v]
-            if isinstance(v, (float, mpl.np.floating)): return float(v) if mpl.np.isfinite(v) else None
-            if isinstance(v, mpl.np.integer): return int(v)
+            if isinstance(v, (float, mpl.np.floating)):
+                return float(v) if mpl.np.isfinite(v) else None
+            if isinstance(v, mpl.np.integer):
+                return int(v)
             return v
         marks = self.result["marks"]
         marks.append(dict(id=f"m{len(marks)}", axes=j, kind=kind, name=name or mpl._name(a, {}), **plain(values)))
@@ -75,7 +78,8 @@ class _Collector:
     def points(self, j, a, raw, xy, kind, name, **extra):
         from . import mpl
 
-        if isinstance(a, mpl.Line2D) and not self.geometry(a, raw=True): return
+        if isinstance(a, mpl.Line2D) and not self.geometry(a, raw=True):
+            return
         raw = mpl.np.ma.filled(mpl.np.ma.asarray(raw, float), mpl.np.nan).reshape(-1, 2)
         valid = mpl.np.isfinite(raw).all(1)
         indices = mpl.np.flatnonzero(valid)
@@ -87,7 +91,8 @@ class _Collector:
     def polygon(self, j, a, data):
         from . import mpl
 
-        if not self.geometry(a): return
+        if not self.geometry(a):
+            return
         np = mpl.np
         parts, polygons = [], []
         step = getattr(a, "_step", None)
@@ -99,24 +104,31 @@ class _Collector:
             if (getattr(a, "t_direction", None) != "x" or len(v) != 2 * n + 3 or n < 1 or
                     not np.isfinite(v).all() or lo.shape != hi.shape or not np.array_equal(lo[:, 0], hi[:, 0])):
                 continue
-            x, l, h = lo[:, 0], lo[:, 1], hi[:, 1]
+            x, lower, upper = lo[:, 0], lo[:, 1], hi[:, 1]
             if step in ("pre", "post"):
                 idx = np.r_[0, np.arange(1, n, 2)] if step == "pre" else np.arange(0, n, 2)
-                x, l, h = x[::2], l[idx], h[idx]
+                x, lower, upper = x[::2], lower[idx], upper[idx]
             elif step == "mid":
                 knots = [x[0]]
-                for mid in x[1:-1:2]: knots.append(2 * mid - knots[-1])
-                if not np.isclose(knots[-1], x[-1]): continue
-                x, l, h = np.asarray(knots), l[::2], h[::2]
+                for mid in x[1:-1:2]:
+                    knots.append(2 * mid - knots[-1])
+                if not np.isclose(knots[-1], x[-1]):
+                    continue
+                x, lower, upper = np.asarray(knots), lower[::2], upper[::2]
             if getattr(a, '_interpolate', False):
-                if step: continue  # Interpolated where-boundaries are straight, not step intervals.
-                if v[0, 0] != x[0]: x, l, h = np.r_[v[0, 0], x], np.r_[v[0, 1], l], np.r_[v[0, 1], h]
+                if step:
+                    continue  # Interpolated where-boundaries are straight, not step intervals.
+                if v[0, 0] != x[0]:
+                    x, lower, upper = np.r_[v[0, 0], x], np.r_[v[0, 1], lower], np.r_[v[0, 1], upper]
                 end = v[n + 1]
-                if end[0] != x[-1]: x, l, h = np.r_[x, end[0]], np.r_[l, end[1]], np.r_[h, end[1]]
-            if not step and np.any(((l[1:] < h[1:]) & (l[:-1] > h[:-1])) |
-                                   ((l[1:] > h[1:]) & (l[:-1] < h[:-1]))): continue
-            if len(x) > 1 and not ((np.diff(x) > 0).all() or (np.diff(x) < 0).all()): continue
-            parts.append(dict(x=x, lo=np.minimum(l, h), hi=np.maximum(l, h)))
+                if end[0] != x[-1]:
+                    x, lower, upper = np.r_[x, end[0]], np.r_[lower, end[1]], np.r_[upper, end[1]]
+            if not step and np.any(((lower[1:] < upper[1:]) & (lower[:-1] > upper[:-1])) |
+                                   ((lower[1:] > upper[1:]) & (lower[:-1] < upper[:-1]))):
+                continue
+            if len(x) > 1 and not ((np.diff(x) > 0).all() or (np.diff(x) < 0).all()):
+                continue
+            parts.append(dict(x=x, lo=np.minimum(lower, upper), hi=np.maximum(lower, upper)))
         if len(parts) == len(polygons) and parts:
             breaks = np.cumsum([len(p["x"]) for p in parts])[:-1].tolist()
             self.add(j, a, "band", **{k: np.concatenate([p[k] for p in parts]) for k in ("x", "lo", "hi")},

@@ -127,7 +127,7 @@ def stop(child):
 
 def main():
     import pyte
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import ImageDraw, ImageFont
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('font')
     args = parser.parse_args()

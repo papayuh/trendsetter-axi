@@ -423,15 +423,19 @@ ts.interact(fig)  # blocks until q; mouse hover and scatter box-select
 `render_styled()` and `interact()` share the same dense braille drawing, palette,
 axes and stats panel. The ordinary `render(...).text`, `summary()` and chart-record
 APIs stay unchanged for agents. Use `color=False` on `render_styled()` for plain
-text without terminal color codes.
+text without terminal color codes. Its output occupies exactly `cols` × `rows`
+cells; below 80 × 24 it shows a resize notice instead of a chart. Static fallbacks
+that cannot fit are omitted with required dimensions, never cropped.
 
 For interaction, run in the main thread in a POSIX terminal with SGR mouse
 reporting and 24-bit color, at least **80 columns × 24 rows** (120 × 38 recommended). Drag to select scatter
 points; drag inside the brush to move it. Counts, arithmetic means, Pearson r,
 OLS slope, per-series counts and both marginal histograms update while dragging.
-Stats use **visible plotted scatter points in numeric axis data coordinates**, not
-subject counts. Dates use matplotlib date days; categories use their numeric codes. `x` clears; `q` quits. Hover reports an exact stored point/knot or bar value,
-not interpolated values between line knots. Ctrl-C and exceptions restore terminal
+Stats use **visible plotted point marks in numeric axis data coordinates**, not
+subject counts; marker-only lines also count as points and support brushing.
+Dates use matplotlib date days; categories use their numeric codes. `x` clears;
+`q` quits. Hover reports an exact stored point/knot or bar value, not interpolated
+values between line knots. Ctrl-C and exceptions restore terminal
 modes, mouse reporting, cursor visibility and the previous screen. Pipes are rejected
 before changing terminal modes; use the static APIs for captured output.
 
@@ -441,6 +445,8 @@ scatter color/size encodings, custom formatter offsets/multipliers, heatmaps, ar
 errorbars, other scales and unread artists fall back to the existing static figure
 renderer with a clear message. Hover picks the
 topmost mark drawn in the terminal cell, or the nearest drawn cell within one cell.
+Point marks return the last point painted in that cell's displayed selected/context
+group; lines return the nearest stored knot in the winning mark.
 Zoom/pan, row pinning and series toggles are not implemented.
 Resize clears the selection rather than reusing stale screen coordinates.
 
@@ -456,11 +462,14 @@ with open("record.json", "w") as f:
 python -m trendsetter_axi.interact record.json
 ```
 
-Saved records retain exact centers and bar endpoints but not bar widths or axes
-projection. Use rectilinear figures for the saved-record route; bar footprints are
-estimated at width 0.8 and labeled as estimates. `interact(fig)` uses the figure's
-actual bar widths. Unsupported saved records show a static data overview because
-the original figure ink is unavailable.
+Saved records retain exact centers and bar endpoints but not bar widths, axes
+projection, source painter order, scatter styling or custom formatter context.
+Use `interact(fig)` when those distinctions matter: figure-only fallback checks
+cannot recover them from a record, and saved marks draw in record order.
+Use rectilinear figures for the saved-record route; bar footprints are estimated
+at width 0.8 and labeled as estimates. `interact(fig)` uses the figure's actual
+bar widths. Unsupported saved records show a static data overview because the
+original figure ink is unavailable.
 
 From a checkout, `python examples/scatter_brush.py` runs the demo through the
 installed package; `--static` prints the same styled drawing and `--record chart.json`
