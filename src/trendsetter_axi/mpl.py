@@ -14,7 +14,7 @@ from matplotlib.spines import Spine
 from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.category import UnitData
-from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh
+from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh, LineCollection
 from matplotlib.colors import to_hex, to_rgb
 from matplotlib.lines import Line2D, CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE
 from matplotlib.markers import MarkerStyle
@@ -751,15 +751,16 @@ def _heat_at(ax, a, z, k):
     return tick(ax.yaxis, y, py), tick(ax.xaxis, x, px)
 
 
-def describe(fig, meta):
+def describe(fig, meta, *, record=None):
     """Scales and visible series of visible data axes, read from the figure's own data (never from the text)."""
     keys = {tuple(s["rgb"]): s["key"] for s in meta["series"]}
     key = lambda c: keys.get(tuple(round(float(v), 2) for v in to_rgb(c)))
-    scales, series, not_described = [], [], {}
-    handled = set()
+    scales, series, not_described, record_counts = [], [], {}, {}
+    handled, record_handled = set(), set()
     hidden = sum(not ax.get_visible() for ax in fig.axes if not hasattr(ax, "_colorbar"))   # hidden axes and artists: not drawn, so not described
     for j, ax in enumerate(_data_axes(fig)):
         scales.append(dict(axes=j, title=clean_text(ax.get_title()), x=_scale(ax, "x"), y=_scale(ax, "y")))
+        if record is not None: record.axes(ax, j, scales[-1])
         fx, fy = (lambda v: _fmt(ax.xaxis, v)), (lambda v: _fmt(ax.yaxis, v))
         data = lambda tr, xy: xy if tr is ax.transData or not len(xy) else ax.transData.inverted().transform(tr.transform(xy))   # axhline, transAxes, blended: back to data
         rng = lambda f, v: f"{f(np.min(v))}..{f(np.max(v))}" if len(v) else ""
@@ -778,7 +779,9 @@ def describe(fig, meta):
                     ('; one-sided limit bounds unsupported; ' + '/'.join(k + 'err' for k in sorted(limited)) + ' unknown for this container' +
                      ('; centers unavailable without a data line' if a is None else '') if limited else
                      '; centers inferred from segment midpoints without a data line' if a is None else '')))
-                if limited and a is None: continue
+                if limited and a is None:
+                    if record is not None: record.result['unavailable'].append('errorbar: one-sided bounds and centers unavailable without a data line')
+                    continue
                 segments = {k: [data(col.get_transform(), seg) for seg in col.get_segments()]
                             for k, col in zip([k for k, yes in zip('xy', (c.has_xerr, c.has_yerr)) if yes], cols) if col.get_visible()}
                 if a is not None:
@@ -812,7 +815,7 @@ def describe(fig, meta):
                                 lo, hi = np.sort(seg[:, axis])
                                 bounds[row] = xy[row, axis] - lo, hi - xy[row, axis]
                     errors[k + 'err'] = bounds
-                errorbars.append((a, c, xy, errors))
+                errorbars.append((a, c, xy, errors, limited))
                 continue
             if not isinstance(c, BarContainer) or not len(c): continue
             handled.update(id(b) for b in c)
@@ -820,6 +823,13 @@ def describe(fig, meta):
             if not bs: continue
             h = c.orientation == "horizontal"
             pos, val = ([b.get_y() + b.get_height() / 2 for b in bs], [b.get_width() for b in bs]) if h else ([b.get_x() + b.get_width() / 2 for b in bs], [b.get_height() for b in bs])
+            if record is not None and all(record.geometry(b, raw=True) for b in bs):
+                base = np.array([b.get_x() if h else b.get_y() for b in bs], float)
+                top = base + val
+                ok = np.isfinite(np.column_stack([pos, base, top])).all(1)
+                record.add(j, c, 'bars', x=np.asarray(pos)[ok], base=base[ok], top=top[ok],
+                           orientation='h' if h else 'v', labels=[(fy if h else fx)(p) for p in np.asarray(pos)[ok]], missing=int((~ok).sum()))
+                if not ok.any(): continue
             fp, fv = (fy, fx) if h else (fx, fy)
             wid = np.array([b.get_height() if h else b.get_width() for b in bs], float); edge = np.array([b.get_y() if h else b.get_x() for b in bs], float)
             hist = len(bs) > 6 and np.allclose(wid, wid[0]) and np.allclose(np.diff(edge), wid[0]) and not isinstance((ax.yaxis if h else ax.xaxis).units, UnitData)
@@ -834,7 +844,7 @@ def describe(fig, meta):
             pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
             if len(pairs) > 40: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
             series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs), values=pairs))
-        for a, container, raw, errors in [*((a, None, a.get_xydata(), {}) for a in ax.lines if id(a) not in handled), *errorbars]:
+        for a, container, raw, errors, limited in [*((a, None, a.get_xydata(), {}, set()) for a in ax.lines if id(a) not in handled), *errorbars]:
             if container is None and not a.get_visible(): hidden += 1; continue
             if a is not None: handled.add(id(a))
             xy, miss = _valid(raw)
@@ -842,6 +852,13 @@ def describe(fig, meta):
             kind = 'line' if a is not None and a.get_visible() else 'errorbar'
             name = _name(container if container is not None else a, {})
             color = a.get_color() if a is not None else next((col.get_colors()[0] for col in container.lines[2] if len(col.get_colors())), 'k')
+            if record is not None and (container is None or all(record.geometry(col) for col in container.lines[2] if col.get_visible())):
+                rk = 'line' if kind == 'line' and a.get_linestyle() not in ('None', 'none', '') else 'points'
+                eligible = np.isfinite(np.ma.filled(np.ma.asarray(raw, float), np.nan)).all(1)
+                record.points(j, a, raw, xy, rk, name, **{k: v[eligible] for k, v in errors.items()})
+                if container is not None:
+                    record.result['unavailable'].append(f'{name or "errorbar"}: sample support unavailable; ' +
+                        ('centers inferred from segment midpoints' if a is None else 'one-sided bounds unknown' if limited else 'interval meaning requires declaration'))
             if not len(xy):   # no data at all (a legend proxy): nothing to say; all of it missing: say so
                 if miss: series.append(dict(name=name, kind=kind, axes=j, key=key(color), color=to_hex(color), n=0, missing=miss, points=xy, values=[], **{k: [] for k in errors}))
                 continue
@@ -867,6 +884,7 @@ def describe(fig, meta):
             if isinstance(a, PathCollection):
                 handled.add(id(a))
                 xy, miss = _valid(a.get_offsets()); xy = data(a.get_offset_transform(), xy)
+                if record is not None: record.points(j, a, a.get_offsets(), xy, 'points', _name(a, {}))
                 mean = xy.mean(0) if len(xy) else None
                 displayed = [np.append(xy[:, k], mean[k]) if len(xy) and "Date" in type(axis.get_converter()).__name__ else xy[:, k] for k, axis in enumerate((ax.xaxis, ax.yaxis))]
                 cx, cy = _compact(ax.xaxis, *ax.get_xlim(), displayed[0]), _compact(ax.yaxis, *ax.get_ylim(), displayed[1])
@@ -876,8 +894,14 @@ def describe(fig, meta):
                 if len(xy) > 2 and np.ptp(xy[:, 0]) and np.ptp(xy[:, 1]): stats["r"] = f"{np.corrcoef(xy.T)[0, 1]:.2f}"
                 if out: stats.update(outliers=" ".join(f"({cx(xy[i, 0])},{cy(xy[i, 1])})" for i in out), rest=f"x={cx(rest[:, 0].min())}..{cx(rest[:, 0].max())} y={cy(rest[:, 1].min())}..{cy(rest[:, 1].max())}")
                 series.append(dict(name=_name(a, {}), kind="scatter", axes=j, key=key(c), color=to_hex(c), n=len(xy), missing=miss, points=xy, x=rng(cx, xy[:, 0]), y=rng(cy, xy[:, 1]), values=[], **stats))
+            elif isinstance(a, LineCollection) and record is not None:
+                record_handled.add(id(a))
+                if record.geometry(a):
+                    segments = [data(a.get_transform(), s) for s in a.get_segments()]
+                    record.add(j, a, 'segments', segments=segments)
             elif isinstance(a, PolyCollection) and len(a.get_paths()):
                 handled.add(id(a))
+                if record is not None: record.polygon(j, a, data)
                 v = np.concatenate([p.vertices for p in a.get_paths()]); v = data(a.get_transform(), v[np.isfinite(v).all(1)])
                 series.append(dict(name=_name(a, {}), kind="area", axes=j, key=key(c), color=to_hex(c), n=len(a.get_paths()), x=rng(fx, v[:, 0]), y=rng(fy, v[:, 1]), values=[]))
                 meta.setdefault('summary_omissions', []).append(dict(
@@ -890,6 +914,11 @@ def describe(fig, meta):
             handled.add(id(a))
             cb = getattr(a, "colorbar", None)
             label = cb.ax.get_ylabel() or cb.ax.get_xlabel() if cb is not None else ""
+            if record is not None and record.geometry(a, raw=True):
+                source = np.ma.asarray(a.get_array(), float)
+                geometry = dict(coordinates=a.get_coordinates()) if isinstance(a, QuadMesh) else dict(extent=list(a.get_extent()), origin=a.origin)
+                record.add(j, a, 'heat', name=label or _name(a, {}), z=z.filled(np.nan), masked=np.ma.getmaskarray(source).tolist(),
+                           invalid=(~np.isfinite(source.data)).tolist(), **geometry)
             cz = _compact(None, float(z.min()), float(z.max())) if z.count() else None
             v = [f"min {'/'.join(_heat_at(ax, a, z, z.argmin()))}={cz(z.min())}", f"max {'/'.join(_heat_at(ax, a, z, z.argmax()))}={cz(z.max())}"] if z.count() else []
             cells = {}
@@ -908,6 +937,9 @@ def describe(fig, meta):
             handled.add(id(a))
             name = type(a).__name__
             not_described[name] = not_described.get(name, 0) + 1
+            if record is not None and id(a) not in record_handled:
+                record_counts[name] = record_counts.get(name, 0) + 1
+    if record is not None: meta['record_not_described'] = list(record_counts.items())
     meta["not_described"] = list(not_described.items())
     meta["hidden"] = hidden
     return series, scales

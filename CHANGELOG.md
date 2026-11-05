@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add experimental `from_figure(fig)` chart records and `query(record, operation, *args)` with evidence, interpolation conventions and explicit unavailable results. Records retain source arrays, paired bands, bar bases/tops, segments, heat grids and author declarations. Queries cover values, widths, source-row predicates, crossings, attached-record counts, claims, exact diffs and geometry-only facts; `python -m trendsetter_axi.queries` queries saved JSON without importing NumPy or matplotlib. Existing rendering and summary text are unchanged. See [experimental records](README.md#experimental-chart-records-and-queries) for scope and follow-ups.
+
 - Replace the unavailable PyPI install with a GitHub install and retain the editable source route. Refresh the README overview of source summaries and loss diagnostics; benchmark numbers remain labelled with measured commit `9288d2b`.
 - Add a scatter brush GIF and standalone `examples/scatter_brush.py` on synthetic data. This is an interaction prototype, not an installed-package feature or renderer API.
 

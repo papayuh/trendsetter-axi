@@ -12,6 +12,20 @@ from .display import (DisplayPreferences as DisplayPreferences, Surface as Surfa
 __version__ = "0.1.0"
 
 
+def from_figure(fig):
+    """Experimental: read a JSON-safe chart record without drawing the figure."""
+    from .record import from_figure as read
+
+    return read(fig)
+
+
+def query(record, operation, *args):
+    """Experimental: query a saved chart record with evidence and conventions."""
+    from .queries import query as run
+
+    return run(record, operation, *args)
+
+
 def _copy(fig):
     """Isolated figure, using matplotlib's serialization protocol when possible.
 

@@ -82,6 +82,115 @@ print(render_figure(fig, cols=80))
 
 For matplotlib figures, dense black and grey data lines use the same batched dot sampler as coloured lines; short neutral rules keep their box-drawing glyphs. The batching threshold is documented in `Canvas.stroke()` in [`core.py`](src/trendsetter_axi/core.py); it applies only to strokes tagged as data, not unclassified SVG geometry.
 
+### Experimental chart records and queries
+
+`from_figure(fig)` reads a JSON-safe chart record in axis data coordinates without drawing.
+`query(record, operation, *args)` computes answers from those arrays, not pixels or
+rounded summary strings. This API and record schema are **experimental**. Existing
+`render()` output and `summary()` text are unchanged; neither consumes the record yet.
+
+```python
+import json
+from trendsetter_axi import from_figure, query
+
+record = from_figure(fig)  # matplotlib Figure, including seaborn/pandas figures
+print(query(record, "value_at", "m0", 3))  # record-local id; unique mark names also work
+# {"answer": 3.0, "evidence": {...}, "convention": "exact source knot; no interpolation"}
+with open("record.json", "w") as f:
+    json.dump(record, f, allow_nan=False)
+```
+
+Version 1 records contain `source`, `title`, `axes`, `marks`, `unavailable`, `declared`,
+`hidden` and `not_described`. Axes retain titles, labels, numeric view ranges,
+scale kinds and tick labels; category mappings and date units/timezones remain
+explicit. Numeric arrays use axis data units (dates: matplotlib date days), not
+formatted strings. Marks retain:
+
+- `line` / `points`: complete eligible `x`/`y`, `missing`, and `breaks` (indices
+  starting a new finite run). Lines carry `interp`: `linear`, `step-pre`,
+  `step-post` or `step-mid`. Marker-only lines are points, never interpolated.
+- `bars`: position `x`, orientation `v`/`h`, position labels, and `base`/`top`.
+  Heights are `top-base`, including negative and floating bars. Geometry does
+  not establish counts, histogram statistics or waterfall totals.
+- `band`: paired `fill_between` polygon bounds `x`/`lo`/`hi`, interpolation and
+  breaks between polygons. Pairing is geometric, not a claim about interval
+  level. Unpairable, crossed straight branches and other fills remain `area`
+  polygons with an unavailable reason; interpolated step/where mixtures are not guessed.
+- `segments`: every vertex of each `LineCollection` path, including connectors.
+- `heat`: full `z` arrays with missing cells as JSON `null`, plus image
+  extent/origin or mesh coordinates. `masked` and `invalid` flags can overlap
+  because matplotlib may already mask NaN inputs; observed zero remains zero.
+
+The reader extends the existing `describe()` traversal, sharing visible-axis/artist
+selection, source names and masked/non-finite point eligibility. Lines (including
+marker-only and errorbar data lines), bars, images and meshes require their native
+`ax.transData` transform; rotated bars are also unavailable. A bar container with
+any unsupported visible bar is omitted as a whole. Line/polygon collections and
+meshes with nonzero offsets, non-identity offset transforms or per-path transforms are
+unavailable; eligible line/polygon paths and scatter offsets are converted to axis
+data coordinates. Rejected geometry is omitted from `marks` with its transform or
+rotation reason in `unavailable`, not a fabricated value. Record coverage includes
+`LineCollection` paths that the existing summary does not describe.
+Source values outside the viewport remain available. Errorbars
+retain eligible numerical `xerr`/`yerr` bounds with `null` for unknown bounds;
+line-free centers are segment midpoints, not recovered asymmetric source centers.
+One-sided, line-free errorbar centers remain unavailable. Annotations and axes
+decorations are not audited as data. IDs are local to a record; duplicate names
+require an ID, not a guessed match.
+
+Every query returns `answer`, `evidence` and `convention`. Unanswerable requests
+also return `unavailable` naming the missing input or unsupported convention;
+`answer: null` without `unavailable` means an answered search found no match.
+
+| Operation and arguments | Convention |
+| --- | --- |
+| `value_at(mark, x)` | Exact knots first; otherwise scale-space straight segments or the recorded pre/post/mid step rule. Bands return `[lo, hi]`; points require exact x. |
+| `band_width_at(mark, x)` | `hi-lo` in data units at x. |
+| `first_x_where(mark, predicate)` | First eligible source knot in **source order**, not an interpolated threshold. Row fields: `x,y`; `x,lo,hi,width`; or `x,base,top,height`. |
+| `crossing(line, line_or_number)` | First equality/sign change in increasing x on the shared domain. Step jumps use their boundary, not an invented equality. |
+| `count_where(predicate, table=None)` | Count attached record rows once each, never subjects inferred from a curve. |
+| `check([operation, *args, comparison, claimed])` | True/false or `verdict: "unavailable"`, with computed value and exact comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`). |
+| `diff(other_record)` | Exact stored-array, axis and declaration differences; unique `(axes,name,kind)` matching, no resampling or tolerance. Ambiguous identities are unavailable. |
+| `facts()` | Knot extrema/counts and declared assertions, never inferred totals, categorical correlations, pairwise aggregates or interval meaning. |
+
+Predicates are a small expression language: column names, constants, arithmetic
+`+ - * /`, comparisons and `and/or/not`; no Python calls, attributes, indexing or
+`eval`. Example: `query(record, "first_x_where", "80% interval", "hi-lo >= 24")`.
+Interpolation supports linear/date and log scale space, never extrapolation or
+bridging missing runs. Duplicate/unordered x is retained, but ambiguous lookups
+and interpolated crossings are unavailable. Other scales allow exact knots only.
+Step-mid boundaries use arithmetic data-x midpoints; ties take the next source knot.
+Crossings between separate axes require matching scale/unit metadata. Numeric
+overflow returns `unavailable`, not an invented value or a no-match result.
+
+Author intent belongs in `record["declared"]`, e.g. `{"interval_level": 0.8}` or
+`{"totals": ["Start", "End"]}`; `facts()` reports these as assertions, not computed
+aggregates. Attach one row per subject at `record["declared"]["records"]`
+for subject queries, or pass an explicit table to `count_where` to override it:
+
+```python
+record["declared"]["records"] = [{"time": 2, "event": 1}, {"time": 10, "event": 0}]
+print(query(record, "count_where", "time >= 6"))  # answer: 1
+```
+
+Saved records need no NumPy or matplotlib imports to query. The stdlib-only query
+module also provides a CLI; arguments are JSON values or bare strings:
+
+```sh
+python -m trendsetter_axi.queries record.json value_at m0 3
+python -m trendsetter_axi.queries record.json first_x_where '80% interval' 'width >= 24'
+python -m trendsetter_axi.queries record.json check '["value_at","m0",3,"==",3]'
+python -m trendsetter_axi.queries record.json diff newer-record.json
+python -m trendsetter_axi.queries record.json facts
+```
+
+Follow-ups, not part of this surface: summary/chart text from the record, other
+library readers (including ggplot2), record-to-figure drawing, an interactive
+viewer, human-pane upgrades and Vega-Lite export. No benchmark fixtures changed
+and the earlier benchmark numbers do not measure this experimental API.
+See [validation evidence](docs/experimental-record-validation.md) for source-array
+oracles, gallery byte identity and the import boundary.
+
 ### Bounded displays and preferences
 
 ```python
