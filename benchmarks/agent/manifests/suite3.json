@@ -1,0 +1,3048 @@
+{
+ "schema": 3,
+ "source_manifest_sha256": "a827b626cb813c6f9dc93bb0b8cc8bbec0ba2ad9604566e782bcc2c64dc4e33d",
+ "code_sha256": {
+  "src/trendsetter_axi/__init__.py": "d671a58301b520417fea9731184c350bc7f89cd9cea2744152ee2bf71ed5f7da",
+  "src/trendsetter_axi/cells.py": "54f5d47ff8836e930918e3d44af14f649b99aa4fa3d2c04cb479350505e90e99",
+  "src/trendsetter_axi/compact.py": "5f07307ae5e65101e9f54ae9967a493778b47bc48a9df5d4c2583d8450ff9cfa",
+  "src/trendsetter_axi/core.py": "a783eff08dc9329c516fc8d9832463d728d6c1578bcd7eae530ac90495f720bb",
+  "src/trendsetter_axi/display.py": "43bd8e177d3170c835bbf7af3acdc04b8d3621d71a365a29bb2d88ce5f998ce0",
+  "src/trendsetter_axi/mpl.py": "9176a8df21a1bcf43e59df7f0ebad21a71fd32c0f489ee16e262182618d68ed8",
+  "src/trendsetter_axi/queries.py": "6741da14edc80e045bbf9036727aff444a028ef08eaaba4155bc9b8f7d251dfe",
+  "src/trendsetter_axi/record.py": "9b737dd7381690da96ffd073dc35ae824a9c70dd449f6a9b742aadf7a2021f09",
+  "src/trendsetter_axi/result.py": "82dc319f5615846fa5794b2bd92c86a1b28f976bebf18203fe996c0e952fbeeb",
+  "src/trendsetter_axi/svg.py": "86becf7f66924e7ab8003ab088a90df25b0505b8a9154e903debe95e9555651f",
+  "src/trendsetter_axi/ticks.py": "90db7ef04273c0cecc7a5df000142ebb5ce5a69f7f84f560e86834fc8dcbb6d0",
+  "benchmarks/agent/suite3.py": "54a85c6028a638d1f97df830ba950e66a278162a02676196245aca2a65696ba1",
+  "benchmarks/agent/suite2.py": "eed910a24e7d76f93066c083aac723fad0496c28d0362cf68306a89268f4a45b",
+  "benchmarks/agent/README-suite3.md": "d54f50a9ab72df3e55e2d34978f66d345ce937a5b05398e118c795581906cf4f"
+ },
+ "model": "claude-sonnet-5-5",
+ "effort": "low",
+ "arms": [
+  "record",
+  "record+query",
+  "table+stats"
+ ],
+ "trials": [
+  1,
+  2,
+  3
+ ],
+ "system": "Read the supplied chart or data and answer the questions. Return only a JSON object mapping question IDs to numbers or listed options. Use null when the supplied information does not determine an answer; do not guess. Treat masked and non-finite values as missing. If no chart is supplied, use null for every answer.",
+ "tool_prompt": "You may query the supplied chart record. To request exactly one tool call return only\n{\"query\":{\"operation\":\"value_at\",\"args\":[\"m0\",3]}} instead of answers.\nOperations: value_at(mark,x), band_width_at(mark,x), first_x_where(mark,predicate),\ncrossing(line,line_or_number), count_where(predicate,table=null), check(claim), facts().\nPredicates allow column names, constants, arithmetic, comparisons, and/or/not.\ncount_where needs an attached records table or explicit row objects you supply;\nno hidden source data is attached. facts reports eligible geometry, not population intent.\nThe tool runs python -m trendsetter_axi.queries on this exact record; it returns\nanswer, evidence, convention and possibly unavailable. No other tool exists.\nYou may make at most four query requests, then must return the question-ID answer object.",
+ "max_queries": 4,
+ "operations": [
+  "value_at",
+  "band_width_at",
+  "first_x_where",
+  "crossing",
+  "count_where",
+  "check",
+  "facts"
+ ],
+ "budget_usd": 20.0,
+ "call_cap_usd": 0.1,
+ "success": "Each new arm: strictly beat stored summary/hybrid pooled and in every trial; separately, be within 2 correct of same-day table+stats per trial and within 6 pooled. Incomplete runs cannot pass. No token threshold.",
+ "charts": {
+  "s2_line_00": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 7.791369300666498,
+     "tol": 0.15503457877783322
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 2.676595517852507,
+     "tol": 0.15503457877783322
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 10
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.015834697987884283,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_00.record.json",
+     "sha256": "c9330c620a9ae2d7cedc260dd110b163dae942701b93ef2f1622a930e571beae"
+    },
+    "record+query": {
+     "file": "s2_line_00.record.json",
+     "sha256": "c9330c620a9ae2d7cedc260dd110b163dae942701b93ef2f1622a930e571beae"
+    },
+    "table+stats": {
+     "file": "s2_line_00.table+stats.txt",
+     "sha256": "580679b16ad67fd90ac78947206e2029fde7fb6358cf68a7a6c6b7462e46b1a7"
+    }
+   }
+  },
+  "s2_line_01": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 7.105091939268535,
+     "tol": 0.1402118011802234
+    },
+    "q2": {
+     "q": "What is y at x=7?",
+     "type": "number",
+     "answer": 3.056376516480074,
+     "tol": 0.1402118011802234
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 11
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009133650455623865,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_01.record.json",
+     "sha256": "0a2bb611163ab11011839d5911c2add1beaad5b6659c091959cbf1ec1e737211"
+    },
+    "record+query": {
+     "file": "s2_line_01.record.json",
+     "sha256": "0a2bb611163ab11011839d5911c2add1beaad5b6659c091959cbf1ec1e737211"
+    },
+    "table+stats": {
+     "file": "s2_line_01.table+stats.txt",
+     "sha256": "16495964931985ba0e3ef9070f857256b5b0f6e00a7653fb157d5cf17008cd11"
+    }
+   }
+  },
+  "s2_line_02": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 12.0,
+     "tol": 0.24243242517812566
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.787539361013362,
+     "tol": 0.24243242517812566
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 2
+    }
+   },
+   "reader_s": 0.0008940600091591477,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_02.record.json",
+     "sha256": "b48a56759c079de7c1cb4471f0cf0638dcc4fb086093a3e128a37dd2f73d138b"
+    },
+    "record+query": {
+     "file": "s2_line_02.record.json",
+     "sha256": "b48a56759c079de7c1cb4471f0cf0638dcc4fb086093a3e128a37dd2f73d138b"
+    },
+    "table+stats": {
+     "file": "s2_line_02.table+stats.txt",
+     "sha256": "e57c82af7fa149f53e4eb476bdd6c1d11fe65ff87c8e9d3582b1d10bf8c80f9f"
+    }
+   }
+  },
+  "s2_line_03": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 3.125,
+     "tol": 1e-12
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.125,
+     "tol": 1e-12
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 13
+    }
+   },
+   "reader_s": 0.0008664779597893357,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_03.record.json",
+     "sha256": "69c13eefef81746b946571b59e079ae1a8989bf6b5cc08c3dfdf3b5a442baf38"
+    },
+    "record+query": {
+     "file": "s2_line_03.record.json",
+     "sha256": "69c13eefef81746b946571b59e079ae1a8989bf6b5cc08c3dfdf3b5a442baf38"
+    },
+    "table+stats": {
+     "file": "s2_line_03.table+stats.txt",
+     "sha256": "c5d308afd52af1b52e6bd51c68e90127abf958c6d8ec4971a81d557a453929fc"
+    }
+   }
+  },
+  "s2_line_04": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 5.460122111182105e-08,
+     "tol": 1.4097883471171257e-09
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 2.556814185543279e-08,
+     "tol": 1.4097883471171257e-09
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0008958779508247972,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_04.record.json",
+     "sha256": "2280caea476deb981fcd29ca4128c25fb1befc13cd3a55ce774c6207a0427f74"
+    },
+    "record+query": {
+     "file": "s2_line_04.record.json",
+     "sha256": "2280caea476deb981fcd29ca4128c25fb1befc13cd3a55ce774c6207a0427f74"
+    },
+    "table+stats": {
+     "file": "s2_line_04.table+stats.txt",
+     "sha256": "dbcd3006024975b6a50a24910259349f870831c47cc87b2ded06e881531515fd"
+    }
+   }
+  },
+  "s2_line_05": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": -5.947874304961346,
+     "tol": 0.19396994493399752
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": -10.309471603974723,
+     "tol": 0.19396994493399752
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0008756739553064108,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_05.record.json",
+     "sha256": "5fd6b530ae603f6b94466a50f816fb9000bef0e79c876ecac1f32f074ea78ed1"
+    },
+    "record+query": {
+     "file": "s2_line_05.record.json",
+     "sha256": "5fd6b530ae603f6b94466a50f816fb9000bef0e79c876ecac1f32f074ea78ed1"
+    },
+    "table+stats": {
+     "file": "s2_line_05.table+stats.txt",
+     "sha256": "e1787aaa303a6a82e80843885e0719e162b5c2aa608811235df61e2c9092ca77"
+    }
+   }
+  },
+  "s2_line_06": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 1000000006.0937575,
+     "tol": 0.11954072713851929
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 1000000002.155008,
+     "tol": 0.11954072713851929
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0008936619851738214,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_06.record.json",
+     "sha256": "dd48957636148d8f543c5f44ca7049dd7f47ed1b403d6314b63e5077d3f64589"
+    },
+    "record+query": {
+     "file": "s2_line_06.record.json",
+     "sha256": "dd48957636148d8f543c5f44ca7049dd7f47ed1b403d6314b63e5077d3f64589"
+    },
+    "table+stats": {
+     "file": "s2_line_06.table+stats.txt",
+     "sha256": "7cd0ae2a79261bfe5dd649bd53b468459b045c02c905d2f5af09ca199b025d45"
+    }
+   }
+  },
+  "s2_line_07": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 7.841516148680811,
+     "tol": 0.20307051133217577
+    },
+    "q2": {
+     "q": "What is y at x=128?",
+     "type": "number",
+     "answer": 0.2440016598344803,
+     "tol": 0.20307051133217577
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 257
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0013674440560862422,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_07.record.json",
+     "sha256": "b566da2d3ac83d05007ff60360d78e3400379a0e51032a3b3355e3214012ed67"
+    },
+    "record+query": {
+     "file": "s2_line_07.record.json",
+     "sha256": "b566da2d3ac83d05007ff60360d78e3400379a0e51032a3b3355e3214012ed67"
+    },
+    "table+stats": {
+     "file": "s2_line_07.table+stats.txt",
+     "sha256": "167a5c196154e2001dcfee08effb1781166e4681d18cb7790544d90a8b343bd9"
+    }
+   }
+  },
+  "s2_line_08": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 7.551830573323429,
+     "tol": 0.20287156875502482
+    },
+    "q2": {
+     "q": "What is y at x=128?",
+     "type": "number",
+     "answer": 2.886256969656294,
+     "tol": 0.20287156875502482
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 257
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0013334809336811304,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_08.record.json",
+     "sha256": "bdd9eae320ada49dece0cfd2ae55738fd047d72713baf21dfe99ba51d393d312"
+    },
+    "record+query": {
+     "file": "s2_line_08.record.json",
+     "sha256": "bdd9eae320ada49dece0cfd2ae55738fd047d72713baf21dfe99ba51d393d312"
+    },
+    "table+stats": {
+     "file": "s2_line_08.table+stats.txt",
+     "sha256": "c513724e6e828c8d9a7e785429570ef04fe4a6dd0fecb9fcf3027441b653ce8b"
+    }
+   }
+  },
+  "s2_line_09": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 7.410656130603393,
+     "tol": 0.1944214333280572
+    },
+    "q2": {
+     "q": "What is y at x=128?",
+     "type": "number",
+     "answer": 4.180484802505251,
+     "tol": 0.1944214333280572
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 257
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0013079200871288776,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_09.record.json",
+     "sha256": "932e567512ee5082b27e3736a9872dd7cd5f78196cf00ad07cb8bddae031bbca"
+    },
+    "record+query": {
+     "file": "s2_line_09.record.json",
+     "sha256": "932e567512ee5082b27e3736a9872dd7cd5f78196cf00ad07cb8bddae031bbca"
+    },
+    "table+stats": {
+     "file": "s2_line_09.table+stats.txt",
+     "sha256": "f65e92914d9636636bc10f8ceae1c138a3c5d13975c0303684fb8b723adbf8f2"
+    }
+   }
+  },
+  "s2_line_10": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 5.3077606256240175,
+     "tol": 0.08294633145464357
+    },
+    "q2": {
+     "q": "What is y at UTC second 06 after 2025-03-01T00:00:00Z?",
+     "type": "number",
+     "answer": 2.753387101792433,
+     "tol": 0.08294633145464357
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.002061140025034547,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_10.record.json",
+     "sha256": "880d10a9f5516597591a38711c20f45804d4c22eb3dc72086850349df639093d"
+    },
+    "record+query": {
+     "file": "s2_line_10.record.json",
+     "sha256": "880d10a9f5516597591a38711c20f45804d4c22eb3dc72086850349df639093d"
+    },
+    "table+stats": {
+     "file": "s2_line_10.table+stats.txt",
+     "sha256": "bcd60d4fd94c5f8c8118b37dae6bae6af20b7ec65fbe378522feeec666fd6065"
+    }
+   }
+  },
+  "s2_line_11": {
+   "kind": "line",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 6.933625845614452,
+     "tol": 0.14059973381751045
+    },
+    "q2": {
+     "q": "What is y at slot-06?",
+     "type": "number",
+     "answer": 3.4561435767383277,
+     "tol": 0.14059973381751045
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009838469559326768,
+   "stimuli": {
+    "record": {
+     "file": "s2_line_11.record.json",
+     "sha256": "fec7b55df93aac60a543a6af9bf75176e53209cd058da733e95abc2eb51ab22c"
+    },
+    "record+query": {
+     "file": "s2_line_11.record.json",
+     "sha256": "fec7b55df93aac60a543a6af9bf75176e53209cd058da733e95abc2eb51ab22c"
+    },
+    "table+stats": {
+     "file": "s2_line_11.table+stats.txt",
+     "sha256": "30fdc30db2ded8de560f0bd529eeda4419a65cbec0812e32c8617318a2a72330"
+    }
+   }
+  },
+  "s2_multi-line_00": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Beta",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 0
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 0.2068833172314246,
+     "tol": 0.6854189329939474
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": -25.33756988747905,
+     "tol": 0.6854189329939474
+    }
+   },
+   "reader_s": 0.001117261010222137,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_00.record.json",
+     "sha256": "a2cc5bb5028f532dd64ad9006a54e4cc5b0c406b24313192795af6c5a7aa1f34"
+    },
+    "record+query": {
+     "file": "s2_multi-line_00.record.json",
+     "sha256": "a2cc5bb5028f532dd64ad9006a54e4cc5b0c406b24313192795af6c5a7aa1f34"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_00.table+stats.txt",
+     "sha256": "75e0c3374099ec3c58de36316e3bfacbf13f1607860a8fc9e31bd32807f0dc93"
+    }
+   }
+  },
+  "s2_multi-line_01": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Alpha",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 10
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": -7.770014726742185,
+     "tol": 0.5744830655784743
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": -9.418401250080557,
+     "tol": 0.5744830655784743
+    }
+   },
+   "reader_s": 0.001127001945860684,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_01.record.json",
+     "sha256": "5c989ca30021f84b777da1d89bfc0ffb301ef9b9664321aad7129336300013e3"
+    },
+    "record+query": {
+     "file": "s2_multi-line_01.record.json",
+     "sha256": "5c989ca30021f84b777da1d89bfc0ffb301ef9b9664321aad7129336300013e3"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_01.table+stats.txt",
+     "sha256": "f162f2a5f99d6f95221f26a9b51d1975e8700cfb1602e3cb40da86fe3ca3ffab"
+    }
+   }
+  },
+  "s2_multi-line_02": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Alpha",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 12
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 6.915767449097467,
+     "tol": 0.47210783165297854
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": 3.927621698119936,
+     "tol": 0.47210783165297854
+    }
+   },
+   "reader_s": 0.0010713640367612243,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_02.record.json",
+     "sha256": "49780917dc97b063e74a7bfb01799c83c7461ad90562b809779b910e0509f3f3"
+    },
+    "record+query": {
+     "file": "s2_multi-line_02.record.json",
+     "sha256": "49780917dc97b063e74a7bfb01799c83c7461ad90562b809779b910e0509f3f3"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_02.table+stats.txt",
+     "sha256": "0a2bebe303850ddf3ad90b2fab7b7419eda5784ad2affa3e85d320efec9b01ca"
+    }
+   }
+  },
+  "s2_multi-line_03": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Beta",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 4
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 2.2150207839759277,
+     "tol": 0.7275536962198091
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": -15.342438813510865,
+     "tol": 0.7275536962198091
+    }
+   },
+   "reader_s": 0.0011074560461565852,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_03.record.json",
+     "sha256": "1ccb615be95111d7ba6cd91a16c15a604849be909adb1385f574460766caa16f"
+    },
+    "record+query": {
+     "file": "s2_multi-line_03.record.json",
+     "sha256": "1ccb615be95111d7ba6cd91a16c15a604849be909adb1385f574460766caa16f"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_03.table+stats.txt",
+     "sha256": "210f507d0c2312cbf9fe37a998c7a22876f9bfebeba372b48d92b442de4507cd"
+    }
+   }
+  },
+  "s2_multi-line_04": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Beta",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 0
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 21.330296790572312,
+     "tol": 0.6800009398787554
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": -0.5294549781500548,
+     "tol": 0.6800009398787554
+    }
+   },
+   "reader_s": 0.0011153670493513346,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_04.record.json",
+     "sha256": "1c5391976ba7106534eedbffd9fcc2f110c9705ee781e53f63b7eeb1952cc5fe"
+    },
+    "record+query": {
+     "file": "s2_multi-line_04.record.json",
+     "sha256": "1c5391976ba7106534eedbffd9fcc2f110c9705ee781e53f63b7eeb1952cc5fe"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_04.table+stats.txt",
+     "sha256": "0c15a9a96137203a8536c14ae3bccdbc35febda7f5686ffd9be45552563bfedb"
+    }
+   }
+  },
+  "s2_multi-line_05": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Beta",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 2
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 18.319723609859807,
+     "tol": 0.8123435743873394
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": -22.297455109507162,
+     "tol": 0.8123435743873394
+    }
+   },
+   "reader_s": 0.0011407589772716165,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_05.record.json",
+     "sha256": "2995c442634031e2172912f6e830c48d5b8979060b5295d498e1cd0f472b8d6a"
+    },
+    "record+query": {
+     "file": "s2_multi-line_05.record.json",
+     "sha256": "2995c442634031e2172912f6e830c48d5b8979060b5295d498e1cd0f472b8d6a"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_05.table+stats.txt",
+     "sha256": "b6dd628a32e414c090e6f6b132288e75d95e2050b501ebfb68de4036965a04c4"
+    }
+   }
+  },
+  "s2_multi-line_06": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=6?",
+     "type": "label",
+     "answer": "Alpha",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 13
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": -0.46975591631518965,
+     "tol": 1.3575296184993053
+    },
+    "q4": {
+     "q": "What is Alpha y at x=6?",
+     "type": "number",
+     "answer": 20.688100648853343,
+     "tol": 1.3575296184993053
+    }
+   },
+   "reader_s": 0.0011673349654302,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_06.record.json",
+     "sha256": "d0fe4a9d9f93c28ebea69a002518de7a4a0432f2bc3bd7a330cedc8579596029"
+    },
+    "record+query": {
+     "file": "s2_multi-line_06.record.json",
+     "sha256": "d0fe4a9d9f93c28ebea69a002518de7a4a0432f2bc3bd7a330cedc8579596029"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_06.table+stats.txt",
+     "sha256": "11a16e2b56a72438f41ba14db01c2721cda21d1c7d5ca9abbcc0ec445b36bb77"
+    }
+   }
+  },
+  "s2_multi-line_07": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=64?",
+     "type": "label",
+     "answer": "Beta",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 14
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 57.4926913653906,
+     "tol": 2.41905362091446
+    },
+    "q4": {
+     "q": "What is Alpha y at x=64?",
+     "type": "number",
+     "answer": -47.502760712325404,
+     "tol": 2.41905362091446
+    }
+   },
+   "reader_s": 0.0016304790042340755,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_07.record.json",
+     "sha256": "f48947c81c7adb86cb18504718177488f6a56bc356ba5da240e803257a675d83"
+    },
+    "record+query": {
+     "file": "s2_multi-line_07.record.json",
+     "sha256": "f48947c81c7adb86cb18504718177488f6a56bc356ba5da240e803257a675d83"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_07.table+stats.txt",
+     "sha256": "1eda61b3c25c0275b05e58cdb5c72c21cda2c9cc8cc8027a27d197ace43d0526"
+    }
+   }
+  },
+  "s2_multi-line_08": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=64?",
+     "type": "label",
+     "answer": "Alpha",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 32
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 45.587995458219176,
+     "tol": 1.3197401543927618
+    },
+    "q4": {
+     "q": "What is Alpha y at x=64?",
+     "type": "number",
+     "answer": 10.740669438741248,
+     "tol": 1.3197401543927618
+    }
+   },
+   "reader_s": 0.0016346850898116827,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_08.record.json",
+     "sha256": "41e43df5c7caabc6bd822e87b5c27773eeeed1d503a91febf22c34287fe985e1"
+    },
+    "record+query": {
+     "file": "s2_multi-line_08.record.json",
+     "sha256": "41e43df5c7caabc6bd822e87b5c27773eeeed1d503a91febf22c34287fe985e1"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_08.table+stats.txt",
+     "sha256": "06ee5392a11aecd27d62ef4cde9b6a125e87859a73ef90a699ed0c8a5f354de4"
+    }
+   }
+  },
+  "s2_multi-line_09": {
+   "kind": "multi-line",
+   "questions": {
+    "q1": {
+     "q": "Which series is higher at x=64?",
+     "type": "label",
+     "answer": "Alpha",
+     "options": [
+      "Alpha",
+      "Beta"
+     ]
+    },
+    "q2": {
+     "q": "At how many x positions is Alpha strictly above Beta?",
+     "type": "int",
+     "answer": 129
+    },
+    "q3": {
+     "q": "What is the maximum Beta y?",
+     "type": "number",
+     "answer": 6.574614767540049,
+     "tol": 2.3643329940885316
+    },
+    "q4": {
+     "q": "What is Alpha y at x=64?",
+     "type": "number",
+     "answer": 30.085483491221716,
+     "tol": 2.3643329940885316
+    }
+   },
+   "reader_s": 0.0017129500629380345,
+   "stimuli": {
+    "record": {
+     "file": "s2_multi-line_09.record.json",
+     "sha256": "690a7b3cced413333f8848378bf10816aa75b89527b42ec04187163764b92a3e"
+    },
+    "record+query": {
+     "file": "s2_multi-line_09.record.json",
+     "sha256": "690a7b3cced413333f8848378bf10816aa75b89527b42ec04187163764b92a3e"
+    },
+    "table+stats": {
+     "file": "s2_multi-line_09.table+stats.txt",
+     "sha256": "5ecea23e8d282d2cfc25ae890941afa103dd390a1c3590bdb8feb4b22ec4e93a"
+    }
+   }
+  },
+  "s2_bar_00": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 3
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 20.0,
+     "tol": 0.5
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 7.0,
+     "tol": 0.5
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009763229172676802,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_00.record.json",
+     "sha256": "67cf8cc810838ab3fba59061ece2c183072b1759bcee5dd30552b73b5f31ddeb"
+    },
+    "record+query": {
+     "file": "s2_bar_00.record.json",
+     "sha256": "67cf8cc810838ab3fba59061ece2c183072b1759bcee5dd30552b73b5f31ddeb"
+    },
+    "table+stats": {
+     "file": "s2_bar_00.table+stats.txt",
+     "sha256": "c00cd97efdae74d25f9d736aabc3f522fb8ac784c1f3892af6f8dda9706d2eda"
+    }
+   }
+  },
+  "s2_bar_01": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 0
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 21.0,
+     "tol": 0.34
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 19.0,
+     "tol": 0.34
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009479660075157881,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_01.record.json",
+     "sha256": "96ed93a9b2dff5c5235255e9a22559a3ed3530bba4a1e2488ad840e64c5ef9a3"
+    },
+    "record+query": {
+     "file": "s2_bar_01.record.json",
+     "sha256": "96ed93a9b2dff5c5235255e9a22559a3ed3530bba4a1e2488ad840e64c5ef9a3"
+    },
+    "table+stats": {
+     "file": "s2_bar_01.table+stats.txt",
+     "sha256": "9f905875ef83dec396e511a87fa7d09baefb7bdb2cc65859ef210d0b4e7ff9a2"
+    }
+   }
+  },
+  "s2_bar_02": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 2
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 30.0,
+     "tol": 0.74
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": -7.0,
+     "tol": 0.74
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 2
+    }
+   },
+   "reader_s": 0.0009627210674807429,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_02.record.json",
+     "sha256": "314946ac39a4d48fb21bbd938c6a112f57e97f18b5b4d7d145b9541a28e365a1"
+    },
+    "record+query": {
+     "file": "s2_bar_02.record.json",
+     "sha256": "314946ac39a4d48fb21bbd938c6a112f57e97f18b5b4d7d145b9541a28e365a1"
+    },
+    "table+stats": {
+     "file": "s2_bar_02.table+stats.txt",
+     "sha256": "5385407979ac8d0db27d0cfcd5d9b1d531911e8def2cf64f82b639efb9582a3c"
+    }
+   }
+  },
+  "s2_bar_03": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 8
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 24.0,
+     "tol": 0.66
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 24.0,
+     "tol": 0.66
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009586389642208815,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_03.record.json",
+     "sha256": "bf6f9642a1b0cff7718efe595774f19400ee5cc622c32e36cacb93348de5d7d6"
+    },
+    "record+query": {
+     "file": "s2_bar_03.record.json",
+     "sha256": "bf6f9642a1b0cff7718efe595774f19400ee5cc622c32e36cacb93348de5d7d6"
+    },
+    "table+stats": {
+     "file": "s2_bar_03.table+stats.txt",
+     "sha256": "90b3f2f64e3022edae4ed75bae30cd1947af9839bcc23b21bc7be684890b672d"
+    }
+   }
+  },
+  "s2_bar_04": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 5
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 21.0,
+     "tol": 0.6
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": -9.0,
+     "tol": 0.6
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.000940416008234024,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_04.record.json",
+     "sha256": "411de0c7e77784dd928f8f185393b6fd18b2a78f16cc4ab009b358a265c7d3a9"
+    },
+    "record+query": {
+     "file": "s2_bar_04.record.json",
+     "sha256": "411de0c7e77784dd928f8f185393b6fd18b2a78f16cc4ab009b358a265c7d3a9"
+    },
+    "table+stats": {
+     "file": "s2_bar_04.table+stats.txt",
+     "sha256": "dbe5119e4d1cbd6a9d025f666599b4107c50681fcd8a945f863b74417e9e1d68"
+    }
+   }
+  },
+  "s2_bar_05": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 3
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 20.0,
+     "tol": 0.58
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 12.0,
+     "tol": 0.58
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009571979753673077,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_05.record.json",
+     "sha256": "008b5b61792996d67e2d29e572022400efce0ef301312ab49550945ae8bd85ec"
+    },
+    "record+query": {
+     "file": "s2_bar_05.record.json",
+     "sha256": "008b5b61792996d67e2d29e572022400efce0ef301312ab49550945ae8bd85ec"
+    },
+    "table+stats": {
+     "file": "s2_bar_05.table+stats.txt",
+     "sha256": "f5ee559f8c04772dafcf9bd1e55d3a24b711a61155024cb1e7282e72a9f405fb"
+    }
+   }
+  },
+  "s2_bar_06": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 6
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 14.0,
+     "tol": 0.52
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 14.0,
+     "tol": 0.52
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 2
+    }
+   },
+   "reader_s": 0.0009434189414605498,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_06.record.json",
+     "sha256": "baef6891027aa720bcc1c14be296c004562b2494ea74728c29ba24f29665ccb4"
+    },
+    "record+query": {
+     "file": "s2_bar_06.record.json",
+     "sha256": "baef6891027aa720bcc1c14be296c004562b2494ea74728c29ba24f29665ccb4"
+    },
+    "table+stats": {
+     "file": "s2_bar_06.table+stats.txt",
+     "sha256": "f4009c9d364607632ad9810fad6b9c0153c657a19077126f08cbace83fbc1a57"
+    }
+   }
+  },
+  "s2_bar_07": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 2
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 23.0,
+     "tol": 0.58
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 5.0,
+     "tol": 0.58
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0009788499446585774,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_07.record.json",
+     "sha256": "8f9b559c158ce03ea60229a5af22b21d4fb167a463870dab7719269603b29bff"
+    },
+    "record+query": {
+     "file": "s2_bar_07.record.json",
+     "sha256": "8f9b559c158ce03ea60229a5af22b21d4fb167a463870dab7719269603b29bff"
+    },
+    "table+stats": {
+     "file": "s2_bar_07.table+stats.txt",
+     "sha256": "f436c3af5fc4b1ba25b6591da9897496a20efa1368d42a2a5afc078eca4e080f"
+    }
+   }
+  },
+  "s2_bar_08": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 18
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 24.0,
+     "tol": 0.72
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 3.0,
+     "tol": 0.72
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.002281483029946685,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_08.record.json",
+     "sha256": "d9c94ee42af180f98c55729fb057cb8a40d8da844ddbaa92fd5a41d4cf6c6a2a"
+    },
+    "record+query": {
+     "file": "s2_bar_08.record.json",
+     "sha256": "d9c94ee42af180f98c55729fb057cb8a40d8da844ddbaa92fd5a41d4cf6c6a2a"
+    },
+    "table+stats": {
+     "file": "s2_bar_08.table+stats.txt",
+     "sha256": "2bf38abe9f6a97593ffaf5306fdeada332b5d0f2f3bc14399d7953dd7ddec04f"
+    }
+   }
+  },
+  "s2_bar_09": {
+   "kind": "bar",
+   "questions": {
+    "q1": {
+     "q": "How many categories have negative values?",
+     "type": "int",
+     "answer": 23
+    },
+    "q2": {
+     "q": "What is the maximum category value?",
+     "type": "number",
+     "answer": 24.0,
+     "tol": 0.72
+    },
+    "q3": {
+     "q": "What is the value of C05?",
+     "type": "number",
+     "answer": 7.0,
+     "tol": 0.72
+    },
+    "q4": {
+     "q": "How many categories tie for the maximum value?",
+     "type": "int",
+     "answer": 2
+    }
+   },
+   "reader_s": 0.0023420490324497223,
+   "stimuli": {
+    "record": {
+     "file": "s2_bar_09.record.json",
+     "sha256": "bb13bd00471a2cb8361b598f4177ca80c6eca93e1213e84d6ea8407039ee5571"
+    },
+    "record+query": {
+     "file": "s2_bar_09.record.json",
+     "sha256": "bb13bd00471a2cb8361b598f4177ca80c6eca93e1213e84d6ea8407039ee5571"
+    },
+    "table+stats": {
+     "file": "s2_bar_09.table+stats.txt",
+     "sha256": "513b1e14582adb2c25b0b52cbf02eb39f84190819142b48fff065d553ae451e7"
+    }
+   }
+  },
+  "s2_scatter_00": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 8.640429841857081,
+     "tol": 0.1953721186842467
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": -1.0338503958346514,
+     "tol": 0.1953721186842467
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 10
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0011835850309580564,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_00.record.json",
+     "sha256": "ad923bcb4cc54f77b1fe830e9150529c0edbea8f8399e0e83b9b03d1f893e57e"
+    },
+    "record+query": {
+     "file": "s2_scatter_00.record.json",
+     "sha256": "ad923bcb4cc54f77b1fe830e9150529c0edbea8f8399e0e83b9b03d1f893e57e"
+    },
+    "table+stats": {
+     "file": "s2_scatter_00.table+stats.txt",
+     "sha256": "b2aaa4837a8c085cfbd2b678615e45edc255d74e074be6d321d236ad12ad2dbb"
+    }
+   }
+  },
+  "s2_scatter_01": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 5.4458532920399065,
+     "tol": 0.12770654719105068
+    },
+    "q2": {
+     "q": "What is y at x=7?",
+     "type": "number",
+     "answer": -0.9394740675126276,
+     "tol": 0.12770654719105068
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 11
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.001136019011028111,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_01.record.json",
+     "sha256": "24174ad9e13ab0867a06b377959cee13a83482a23966b02b1412b7600f1b6b95"
+    },
+    "record+query": {
+     "file": "s2_scatter_01.record.json",
+     "sha256": "24174ad9e13ab0867a06b377959cee13a83482a23966b02b1412b7600f1b6b95"
+    },
+    "table+stats": {
+     "file": "s2_scatter_01.table+stats.txt",
+     "sha256": "80e7a5fac4b6ab5a7ae33cdea014ce11e7a5606cde7cad6d66c886073764429e"
+    }
+   }
+  },
+  "s2_scatter_02": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 12.0,
+     "tol": 0.22565919076008004
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.4825917881013124,
+     "tol": 0.22565919076008004
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 2
+    }
+   },
+   "reader_s": 0.0010627449955791235,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_02.record.json",
+     "sha256": "b59d0869e64f5a2288ebaef8988f0ebb8ced2ded3c7fbdd18e8870f3ebab2cd1"
+    },
+    "record+query": {
+     "file": "s2_scatter_02.record.json",
+     "sha256": "b59d0869e64f5a2288ebaef8988f0ebb8ced2ded3c7fbdd18e8870f3ebab2cd1"
+    },
+    "table+stats": {
+     "file": "s2_scatter_02.table+stats.txt",
+     "sha256": "5c25642d3cd3a233bfe876cb7a36e90842073f37e910b48261c582f3a243b274"
+    }
+   }
+  },
+  "s2_scatter_03": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 3.125,
+     "tol": 1e-12
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.125,
+     "tol": 1e-12
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 13
+    }
+   },
+   "reader_s": 0.0010139360092580318,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_03.record.json",
+     "sha256": "b46f9bd0e587eb127cca9703d1ae04392b1012c7019f2431abeb2078afcbd08f"
+    },
+    "record+query": {
+     "file": "s2_scatter_03.record.json",
+     "sha256": "b46f9bd0e587eb127cca9703d1ae04392b1012c7019f2431abeb2078afcbd08f"
+    },
+    "table+stats": {
+     "file": "s2_scatter_03.table+stats.txt",
+     "sha256": "f55f09601a0dc303065b0443ec610265cddb92c313f0320a93ee0dc40fb73e13"
+    }
+   }
+  },
+  "s2_scatter_04": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 6.866719403631061e-08,
+     "tol": 1.5231721114997528e-09
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 6.866719403631061e-08,
+     "tol": 1.5231721114997528e-09
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0010740369325503707,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_04.record.json",
+     "sha256": "aec196f38393f19e9d6bca29492b517c12df999f25b6deceb612e755073d0319"
+    },
+    "record+query": {
+     "file": "s2_scatter_04.record.json",
+     "sha256": "aec196f38393f19e9d6bca29492b517c12df999f25b6deceb612e755073d0319"
+    },
+    "table+stats": {
+     "file": "s2_scatter_04.table+stats.txt",
+     "sha256": "b95dc4ce302759935fd5019010eb829843a849b688d2278d10502a329b7d1cce"
+    }
+   }
+  },
+  "s2_scatter_05": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": -9.467202432987555,
+     "tol": 0.147470937338516
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": -10.780631907263034,
+     "tol": 0.147470937338516
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0010613729245960712,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_05.record.json",
+     "sha256": "572422e0c9fa9496bc8dd76fdfc4751520f49c3ed38792fc870853dd93479742"
+    },
+    "record+query": {
+     "file": "s2_scatter_05.record.json",
+     "sha256": "572422e0c9fa9496bc8dd76fdfc4751520f49c3ed38792fc870853dd93479742"
+    },
+    "table+stats": {
+     "file": "s2_scatter_05.table+stats.txt",
+     "sha256": "cc3c54f190a8202b8457a4cca896a025bdfb9c41b7ce88c754bffbe19a11b7fe"
+    }
+   }
+  },
+  "s2_scatter_06": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 1000000006.0314217,
+     "tol": 0.10234618902206422
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 1000000002.5562589,
+     "tol": 0.10234618902206422
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0010581270325928926,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_06.record.json",
+     "sha256": "16b4cc94b7b47285c5a071ccbd15bfb365d7859eea11b9a21eca2d5c23f1c889"
+    },
+    "record+query": {
+     "file": "s2_scatter_06.record.json",
+     "sha256": "16b4cc94b7b47285c5a071ccbd15bfb365d7859eea11b9a21eca2d5c23f1c889"
+    },
+    "table+stats": {
+     "file": "s2_scatter_06.table+stats.txt",
+     "sha256": "e5737d2f409e00ce78a4bcce3d9335610368accf281fc77b944aac2ed70f17e3"
+    }
+   }
+  },
+  "s2_scatter_07": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 8.472079202414093,
+     "tol": 0.21696575695792739
+    },
+    "q2": {
+     "q": "What is y at x=128?",
+     "type": "number",
+     "answer": 4.510862860699022,
+     "tol": 0.21696575695792739
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 257
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0014281050534918904,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_07.record.json",
+     "sha256": "9d5557c85c7dd649d7d007cb86958440785447ef5b5237fcf14f6be35a077106"
+    },
+    "record+query": {
+     "file": "s2_scatter_07.record.json",
+     "sha256": "9d5557c85c7dd649d7d007cb86958440785447ef5b5237fcf14f6be35a077106"
+    },
+    "table+stats": {
+     "file": "s2_scatter_07.table+stats.txt",
+     "sha256": "2ddfd1fb829b72bc275d8813f5e50953ed7aa0dd967cbcb64c77196cab1c43da"
+    }
+   }
+  },
+  "s2_scatter_08": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 8.830050097906394,
+     "tol": 0.2148995933986373
+    },
+    "q2": {
+     "q": "What is y at x=128?",
+     "type": "number",
+     "answer": 3.894175531919227,
+     "tol": 0.2148995933986373
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 257
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.001436254009604454,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_08.record.json",
+     "sha256": "e41448546ba0e421b7b3a83703dfaaf5752848797a2e3e5ab7cf57a366626998"
+    },
+    "record+query": {
+     "file": "s2_scatter_08.record.json",
+     "sha256": "e41448546ba0e421b7b3a83703dfaaf5752848797a2e3e5ab7cf57a366626998"
+    },
+    "table+stats": {
+     "file": "s2_scatter_08.table+stats.txt",
+     "sha256": "4dca9de2f77fd7af1afe030dd07af710a23447f4a0ee4a89f4509fc63de8b919"
+    }
+   }
+  },
+  "s2_scatter_09": {
+   "kind": "scatter",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 10.636496612526143,
+     "tol": 0.2609949060918786
+    },
+    "q2": {
+     "q": "What is y at x=128?",
+     "type": "number",
+     "answer": 3.1749535933953004,
+     "tol": 0.2609949060918786
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 257
+    },
+    "q4": {
+     "q": "How many finite observations equal the maximum y (including ties)?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0014563979348167777,
+   "stimuli": {
+    "record": {
+     "file": "s2_scatter_09.record.json",
+     "sha256": "15b1f8db001a42b350249b46740a86d9aa4878b7a8e22c34f1228524f7286dcc"
+    },
+    "record+query": {
+     "file": "s2_scatter_09.record.json",
+     "sha256": "15b1f8db001a42b350249b46740a86d9aa4878b7a8e22c34f1228524f7286dcc"
+    },
+    "table+stats": {
+     "file": "s2_scatter_09.table+stats.txt",
+     "sha256": "fb8a19978fbbdda4e19553e98b1ae863e72eba28bbfa369ddd745257321d7f9b"
+    }
+   }
+  },
+  "s2_heatmap_00": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 97.0,
+     "tol": 1.94
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": 0.0,
+     "tol": 1.94
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 30
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0027589129749685526,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_00.record.json",
+     "sha256": "16916de3789c73020c8b8ca0f75d3587a65e8268029ba2b6a6df6434c23b5296"
+    },
+    "record+query": {
+     "file": "s2_heatmap_00.record.json",
+     "sha256": "16916de3789c73020c8b8ca0f75d3587a65e8268029ba2b6a6df6434c23b5296"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_00.table+stats.txt",
+     "sha256": "9bfd54a10eeb2d18ded30cccc5d6adcc525c3c0b090cc08232c8d92363e476ae"
+    }
+   }
+  },
+  "s2_heatmap_01": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K01?",
+     "type": "number",
+     "answer": -3.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 24
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.002731253975071013,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_01.record.json",
+     "sha256": "143ff60797ee0d9e8be5093b066a5f1aa8f716de307e0251190d990af231bd9a"
+    },
+    "record+query": {
+     "file": "s2_heatmap_01.record.json",
+     "sha256": "143ff60797ee0d9e8be5093b066a5f1aa8f716de307e0251190d990af231bd9a"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_01.table+stats.txt",
+     "sha256": "2af61505b6c0b850e81de022bdc78b2c9c9725b734cfe0a7245518acf239ed3e"
+    }
+   }
+  },
+  "s2_heatmap_02": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": -6.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 29
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 2
+    }
+   },
+   "reader_s": 0.0026740659959614277,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_02.record.json",
+     "sha256": "4ebc4523160f1c68a688440a4c36f4f9d0cba20379862cbf24a5d7057958c892"
+    },
+    "record+query": {
+     "file": "s2_heatmap_02.record.json",
+     "sha256": "4ebc4523160f1c68a688440a4c36f4f9d0cba20379862cbf24a5d7057958c892"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_02.table+stats.txt",
+     "sha256": "19b52f536df5e07420b1d120be576eeceffebe19030155c9afad6bde4c79842f"
+    }
+   }
+  },
+  "s2_heatmap_03": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": 3.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 30
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 3
+    }
+   },
+   "reader_s": 0.002681855927221477,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_03.record.json",
+     "sha256": "39cd9f66ab26342bd6e7203e4f9292726138f3b1de571eeefc05f8af61c03523"
+    },
+    "record+query": {
+     "file": "s2_heatmap_03.record.json",
+     "sha256": "39cd9f66ab26342bd6e7203e4f9292726138f3b1de571eeefc05f8af61c03523"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_03.table+stats.txt",
+     "sha256": "241babdad879bf7192cca5772d3fb2ce97dde1765037fb54b6f9534e859424a4"
+    }
+   }
+  },
+  "s2_heatmap_04": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 7.0,
+     "tol": 0.3
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": -2.0,
+     "tol": 0.3
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 30
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.0027372640324756503,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_04.record.json",
+     "sha256": "5c1094d36ea4ff2c10f2ec90fa733fbea40efaa299bdf3c5c83158514204f0ab"
+    },
+    "record+query": {
+     "file": "s2_heatmap_04.record.json",
+     "sha256": "5c1094d36ea4ff2c10f2ec90fa733fbea40efaa299bdf3c5c83158514204f0ab"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_04.table+stats.txt",
+     "sha256": "066db7f123dd8a73a5177cb7df4008f79c4e6fd067f91c3c6d1883fe7c89dd85"
+    }
+   }
+  },
+  "s2_heatmap_05": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 97.0,
+     "tol": 1.94
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": 0.0,
+     "tol": 1.94
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 1184
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 1
+    }
+   },
+   "reader_s": 0.04201195598579943,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_05.record.json",
+     "sha256": "4b111bb185784989e3c15d58f6ee450a495a388d8162ad21effba6a1f23fa5e1"
+    },
+    "record+query": {
+     "file": "s2_heatmap_05.record.json",
+     "sha256": "4b111bb185784989e3c15d58f6ee450a495a388d8162ad21effba6a1f23fa5e1"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_05.table+stats.txt",
+     "sha256": "808b7610052da42fcd37b7175f04b66e9537d876f452ef8f6d48435658cb5975"
+    }
+   }
+  },
+  "s2_heatmap_06": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 1184
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 71
+    }
+   },
+   "reader_s": 0.042028266936540604,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_06.record.json",
+     "sha256": "bf9829b7bfe54e616409b392ca3dea9db1088800c23e6eadd72bbc62eca32516"
+    },
+    "record+query": {
+     "file": "s2_heatmap_06.record.json",
+     "sha256": "bf9829b7bfe54e616409b392ca3dea9db1088800c23e6eadd72bbc62eca32516"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_06.table+stats.txt",
+     "sha256": "345bcb95b030b22c7379b079a9e77d3770c104c9a9d399cebb9d7bb106665db6"
+    }
+   }
+  },
+  "s2_heatmap_07": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": 4.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 1184
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 59
+    }
+   },
+   "reader_s": 0.04295792104676366,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_07.record.json",
+     "sha256": "89c9f9bd14f155661200bb10897c7336015e6668da6abc74cb9e417f70f23f7d"
+    },
+    "record+query": {
+     "file": "s2_heatmap_07.record.json",
+     "sha256": "89c9f9bd14f155661200bb10897c7336015e6668da6abc74cb9e417f70f23f7d"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_07.table+stats.txt",
+     "sha256": "3fcfb1541f9186d5e899b418ff1c281250cb6acb11abca53ac19b0e2a6408eb6"
+    }
+   }
+  },
+  "s2_heatmap_08": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": -8.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 1184
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 59
+    }
+   },
+   "reader_s": 0.04196864296682179,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_08.record.json",
+     "sha256": "f1863cb083de533435d1bab0a8007aad0e9f262c840c781a801d17b01ba5a553"
+    },
+    "record+query": {
+     "file": "s2_heatmap_08.record.json",
+     "sha256": "f1863cb083de533435d1bab0a8007aad0e9f262c840c781a801d17b01ba5a553"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_08.table+stats.txt",
+     "sha256": "4b582569c19012ef796943dbee5eafa14af2dffd90f42f2d992e905dbfdc835c"
+    }
+   }
+  },
+  "s2_heatmap_09": {
+   "kind": "heatmap",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite cell value?",
+     "type": "number",
+     "answer": 8.0,
+     "tol": 0.32
+    },
+    "q2": {
+     "q": "What is the cell at row R00 column K00?",
+     "type": "number",
+     "answer": -5.0,
+     "tol": 0.32
+    },
+    "q3": {
+     "q": "How many cells have finite unmasked values?",
+     "type": "int",
+     "answer": 1184
+    },
+    "q4": {
+     "q": "How many finite cells equal the maximum?",
+     "type": "int",
+     "answer": 81
+    }
+   },
+   "reader_s": 0.04200592706911266,
+   "stimuli": {
+    "record": {
+     "file": "s2_heatmap_09.record.json",
+     "sha256": "9517b3a4b66687ad83b39d09f7c56c7fc71cae5fbb09e30259e6756383991c87"
+    },
+    "record+query": {
+     "file": "s2_heatmap_09.record.json",
+     "sha256": "9517b3a4b66687ad83b39d09f7c56c7fc71cae5fbb09e30259e6756383991c87"
+    },
+    "table+stats": {
+     "file": "s2_heatmap_09.table+stats.txt",
+     "sha256": "11a65c671a1d6a425e4aac6817f292ad058b09d7ca9e1076472e79f634131fdf"
+    }
+   }
+  },
+  "s2_histogram_00": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 144
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 8
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 16
+    }
+   },
+   "reader_s": 0.0010394069831818342,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_00.record.json",
+     "sha256": "030dae30d73e6da77cbbd14b47dc359c63cb3213c68c7e9267d07ec9aab9f771"
+    },
+    "record+query": {
+     "file": "s2_histogram_00.record.json",
+     "sha256": "030dae30d73e6da77cbbd14b47dc359c63cb3213c68c7e9267d07ec9aab9f771"
+    },
+    "table+stats": {
+     "file": "s2_histogram_00.table+stats.txt",
+     "sha256": "0f34f1765d0f24471dcc2d7e9f529e01c89b410206e928f77ba48f56ebc5178e"
+    }
+   }
+  },
+  "s2_histogram_01": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 150
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 9
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 16
+    }
+   },
+   "reader_s": 0.0009847920155152678,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_01.record.json",
+     "sha256": "a21f3924499b7cba6b17a7d46fff143279792f4ba0d96ac0985d7ce67e02e7b0"
+    },
+    "record+query": {
+     "file": "s2_histogram_01.record.json",
+     "sha256": "a21f3924499b7cba6b17a7d46fff143279792f4ba0d96ac0985d7ce67e02e7b0"
+    },
+    "table+stats": {
+     "file": "s2_histogram_01.table+stats.txt",
+     "sha256": "64cd81ef61dce09e846725b4dcac901c845359d2857335c0e352039f86da123a"
+    }
+   }
+  },
+  "s2_histogram_02": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 143
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 9
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 16
+    }
+   },
+   "reader_s": 0.0010041809873655438,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_02.record.json",
+     "sha256": "ffc075d76ca05eb504409d605c651e884629cc3de5316325570a73cffa811ae1"
+    },
+    "record+query": {
+     "file": "s2_histogram_02.record.json",
+     "sha256": "ffc075d76ca05eb504409d605c651e884629cc3de5316325570a73cffa811ae1"
+    },
+    "table+stats": {
+     "file": "s2_histogram_02.table+stats.txt",
+     "sha256": "e77df01c13768ba700e85a309b45bf283e3de184600035134b971bd851753ffc"
+    }
+   }
+  },
+  "s2_histogram_03": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 157
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 8
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 16
+    }
+   },
+   "reader_s": 0.0009993980638682842,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_03.record.json",
+     "sha256": "d20727eaa5e95fb2355dd40ad9de7865db91b1ffdfbf5dc13f850a0cabe0150c"
+    },
+    "record+query": {
+     "file": "s2_histogram_03.record.json",
+     "sha256": "d20727eaa5e95fb2355dd40ad9de7865db91b1ffdfbf5dc13f850a0cabe0150c"
+    },
+    "table+stats": {
+     "file": "s2_histogram_03.table+stats.txt",
+     "sha256": "7186110dc8269442dc789f1626b528b33e7613fc0b379dea7dfebe6081723427"
+    }
+   }
+  },
+  "s2_histogram_04": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 146
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 9
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 16
+    }
+   },
+   "reader_s": 0.0010279740672558546,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_04.record.json",
+     "sha256": "01cce8906c0335f507658dff2676634e2d98dcff8edf2c3388c1b7334207cd44"
+    },
+    "record+query": {
+     "file": "s2_histogram_04.record.json",
+     "sha256": "01cce8906c0335f507658dff2676634e2d98dcff8edf2c3388c1b7334207cd44"
+    },
+    "table+stats": {
+     "file": "s2_histogram_04.table+stats.txt",
+     "sha256": "5be0e71b54879a3b8868f053875cd63014d5bef897de42099b1111be1eaa0df1"
+    }
+   }
+  },
+  "s2_histogram_05": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 155
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 7
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 16
+    }
+   },
+   "reader_s": 0.0011916049988940358,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_05.record.json",
+     "sha256": "4b1edee6b4f3f8d1a799aa3d6b109b8855e2264a50bdde024dd126604a37689d"
+    },
+    "record+query": {
+     "file": "s2_histogram_05.record.json",
+     "sha256": "4b1edee6b4f3f8d1a799aa3d6b109b8855e2264a50bdde024dd126604a37689d"
+    },
+    "table+stats": {
+     "file": "s2_histogram_05.table+stats.txt",
+     "sha256": "5e586f88c106dc15734908d53977ae2388588a2d5758ce746814ebf46f17101e"
+    }
+   }
+  },
+  "s2_histogram_06": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 40
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 11
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 80
+    }
+   },
+   "reader_s": 0.0017967718886211514,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_06.record.json",
+     "sha256": "2c5da1bf528a6e8ef445144165976b34eecf0be96d295fcc185b1433d78bf0c2"
+    },
+    "record+query": {
+     "file": "s2_histogram_06.record.json",
+     "sha256": "2c5da1bf528a6e8ef445144165976b34eecf0be96d295fcc185b1433d78bf0c2"
+    },
+    "table+stats": {
+     "file": "s2_histogram_06.table+stats.txt",
+     "sha256": "9c15fc94e7d6b4f64bc1a72a2ca83c0e6a45f2c575f9202408a4584ac11b58d0"
+    }
+   }
+  },
+  "s2_histogram_07": {
+   "kind": "histogram",
+   "questions": {
+    "q1": {
+     "q": "What is the count in the tallest bin?",
+     "type": "int",
+     "answer": 35
+    },
+    "q2": {
+     "q": "How many observations are represented in total?",
+     "type": "int",
+     "answer": 900
+    },
+    "q3": {
+     "q": "How many bins contain more than 30 observations?",
+     "type": "int",
+     "answer": 5
+    },
+    "q4": {
+     "q": "How many bins are plotted?",
+     "type": "int",
+     "answer": 80
+    }
+   },
+   "reader_s": 0.001742230961099267,
+   "stimuli": {
+    "record": {
+     "file": "s2_histogram_07.record.json",
+     "sha256": "185712fe7b76375762ce3ee6f6d6a3d6723a655929d3ae1268b0b4724953f9e1"
+    },
+    "record+query": {
+     "file": "s2_histogram_07.record.json",
+     "sha256": "185712fe7b76375762ce3ee6f6d6a3d6723a655929d3ae1268b0b4724953f9e1"
+    },
+    "table+stats": {
+     "file": "s2_histogram_07.table+stats.txt",
+     "sha256": "db40992da4e0ef447e47253c046ab53275e46fd51b27d5db9af3e4078bc2862b"
+    }
+   }
+  },
+  "s2_errorbar_00": {
+   "kind": "errorbar",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 8.292994410909564,
+     "tol": 0.19097586953731038
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 0.6025865684030807,
+     "tol": 0.19097586953731038
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 10
+    },
+    "q4": {
+     "q": "What is the upper errorbar endpoint at x=6?",
+     "type": "number",
+     "answer": 1.0692465020545487,
+     "tol": 0.2010166442511564
+    }
+   },
+   "reader_s": 0.001151550910435617,
+   "stimuli": {
+    "record": {
+     "file": "s2_errorbar_00.record.json",
+     "sha256": "1a03266cd9886a3f3111afc561545a5ba7c054d152ac141bafa0e4870a84fb94"
+    },
+    "record+query": {
+     "file": "s2_errorbar_00.record.json",
+     "sha256": "1a03266cd9886a3f3111afc561545a5ba7c054d152ac141bafa0e4870a84fb94"
+    },
+    "table+stats": {
+     "file": "s2_errorbar_00.table+stats.txt",
+     "sha256": "f563a4ae1e72ff299b49ad1d2baf99d9a7ff20e50dad65d7a6d8ee3c27c5b154"
+    }
+   }
+  },
+  "s2_errorbar_01": {
+   "kind": "errorbar",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 4.188767200474987,
+     "tol": 0.07345879565253417
+    },
+    "q2": {
+     "q": "What is y at x=7?",
+     "type": "number",
+     "answer": 0.5158274178482785,
+     "tol": 0.07345879565253417
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 11
+    },
+    "q4": {
+     "q": "What is the upper errorbar endpoint at x=7?",
+     "type": "number",
+     "answer": 1.0808268935753689,
+     "tol": 0.084758785167076
+    }
+   },
+   "reader_s": 0.0011456080246716738,
+   "stimuli": {
+    "record": {
+     "file": "s2_errorbar_01.record.json",
+     "sha256": "3e3eb28309fa6b9acc7a7d00f60b26f147de3d40ce750a772b9ec4cc4394aa70"
+    },
+    "record+query": {
+     "file": "s2_errorbar_01.record.json",
+     "sha256": "3e3eb28309fa6b9acc7a7d00f60b26f147de3d40ce750a772b9ec4cc4394aa70"
+    },
+    "table+stats": {
+     "file": "s2_errorbar_01.table+stats.txt",
+     "sha256": "4405eed679219f6a20c79732cf6ef711746bfe15b8dfb5f525c8f947035fabff"
+    }
+   }
+  },
+  "s2_errorbar_02": {
+   "kind": "errorbar",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 12.0,
+     "tol": 0.26093414807054716
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.752429875609088,
+     "tol": 0.26093414807054716
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "What is the upper errorbar endpoint at x=6?",
+     "type": "number",
+     "answer": 3.959821061035153,
+     "tol": 0.2730221736628781
+    }
+   },
+   "reader_s": 0.0012001070426777005,
+   "stimuli": {
+    "record": {
+     "file": "s2_errorbar_02.record.json",
+     "sha256": "4becc957636b1aa58dbedd24d9e9df74c2ff9ad81997c3b729e0b14d638ebe59"
+    },
+    "record+query": {
+     "file": "s2_errorbar_02.record.json",
+     "sha256": "4becc957636b1aa58dbedd24d9e9df74c2ff9ad81997c3b729e0b14d638ebe59"
+    },
+    "table+stats": {
+     "file": "s2_errorbar_02.table+stats.txt",
+     "sha256": "3ba704f6596665f5f1823cb589b6ff5999267bc56f2f105e9f8c4448ca973a6c"
+    }
+   }
+  },
+  "s2_errorbar_03": {
+   "kind": "errorbar",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 3.125,
+     "tol": 1e-12
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.125,
+     "tol": 1e-12
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "What is the upper errorbar endpoint at x=6?",
+     "type": "number",
+     "answer": 3.5892604260829546,
+     "tol": 0.009927023835949232
+    }
+   },
+   "reader_s": 0.0011883568949997425,
+   "stimuli": {
+    "record": {
+     "file": "s2_errorbar_03.record.json",
+     "sha256": "0c1309f16090ff25cf137a1d05411a05a3f48499c135770338095a6e83acd5d1"
+    },
+    "record+query": {
+     "file": "s2_errorbar_03.record.json",
+     "sha256": "0c1309f16090ff25cf137a1d05411a05a3f48499c135770338095a6e83acd5d1"
+    },
+    "table+stats": {
+     "file": "s2_errorbar_03.table+stats.txt",
+     "sha256": "85ca2e2097390707967aed10fa9fe21f6168669b076dfd73eccd0950c6c0af50"
+    }
+   }
+  },
+  "s2_errorbar_04": {
+   "kind": "errorbar",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum finite y?",
+     "type": "number",
+     "answer": 5.740903994532932e-08,
+     "tol": 1.252751808682784e-09
+    },
+    "q2": {
+     "q": "What is y at x=6?",
+     "type": "number",
+     "answer": 3.64587052273218e-08,
+     "tol": 1.252751808682784e-09
+    },
+    "q3": {
+     "q": "How many observations have finite unmasked y?",
+     "type": "int",
+     "answer": 13
+    },
+    "q4": {
+     "q": "What is the upper errorbar endpoint at x=6?",
+     "type": "number",
+     "answer": 4.0275236286403754e-08,
+     "tol": 1.372776417218069e-09
+    }
+   },
+   "reader_s": 0.0012417009565979242,
+   "stimuli": {
+    "record": {
+     "file": "s2_errorbar_04.record.json",
+     "sha256": "7370f325d0652012bc068fe26c786174635f7d96efcf587471fe179a7c9f2f02"
+    },
+    "record+query": {
+     "file": "s2_errorbar_04.record.json",
+     "sha256": "7370f325d0652012bc068fe26c786174635f7d96efcf587471fe179a7c9f2f02"
+    },
+    "table+stats": {
+     "file": "s2_errorbar_04.table+stats.txt",
+     "sha256": "e9dee0417758c30ef27a6c64f47b39c19fc068f3da405d41769400c61402873b"
+    }
+   }
+  },
+  "s2_subplot_00": {
+   "kind": "subplot",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum y in the Left panel?",
+     "type": "number",
+     "answer": 14.0,
+     "tol": 0.44
+    },
+    "q2": {
+     "q": "What is y at x=4 in the Right panel?",
+     "type": "number",
+     "answer": 13.0,
+     "tol": 0.44
+    },
+    "q3": {
+     "q": "Which panel has the greater minimum y?",
+     "type": "label",
+     "answer": "Right",
+     "options": [
+      "Left",
+      "Right"
+     ]
+    },
+    "q4": {
+     "q": "How many points across both panels have negative y?",
+     "type": "int",
+     "answer": 6
+    }
+   },
+   "reader_s": 0.0016266199527308345,
+   "stimuli": {
+    "record": {
+     "file": "s2_subplot_00.record.json",
+     "sha256": "02820568974dae7866255f05ea2819a267f95e48d49118e24c0bb7b2270f4140"
+    },
+    "record+query": {
+     "file": "s2_subplot_00.record.json",
+     "sha256": "02820568974dae7866255f05ea2819a267f95e48d49118e24c0bb7b2270f4140"
+    },
+    "table+stats": {
+     "file": "s2_subplot_00.table+stats.txt",
+     "sha256": "328ddb2257ae2a534c743124a66e735cdebc61e715f3871a800fe1e0160ec57f"
+    }
+   }
+  },
+  "s2_subplot_01": {
+   "kind": "subplot",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum y in the Left panel?",
+     "type": "number",
+     "answer": 10.0,
+     "tol": 0.36
+    },
+    "q2": {
+     "q": "What is y at x=4 in the Right panel?",
+     "type": "number",
+     "answer": 0.0,
+     "tol": 0.36
+    },
+    "q3": {
+     "q": "Which panel has the greater minimum y?",
+     "type": "label",
+     "answer": "Left",
+     "options": [
+      "Left",
+      "Right"
+     ]
+    },
+    "q4": {
+     "q": "How many points across both panels have negative y?",
+     "type": "int",
+     "answer": 6
+    }
+   },
+   "reader_s": 0.0017152780201286077,
+   "stimuli": {
+    "record": {
+     "file": "s2_subplot_01.record.json",
+     "sha256": "62c3bb18b382a4cd7be580533b7d036b8af1df2a7dca56900a942059faa0af28"
+    },
+    "record+query": {
+     "file": "s2_subplot_01.record.json",
+     "sha256": "62c3bb18b382a4cd7be580533b7d036b8af1df2a7dca56900a942059faa0af28"
+    },
+    "table+stats": {
+     "file": "s2_subplot_01.table+stats.txt",
+     "sha256": "6d671b43319075d990730ebaaf4c9f56d68c5e7d420cc192d45e6068b2da5a6e"
+    }
+   }
+  },
+  "s2_subplot_02": {
+   "kind": "subplot",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum y in the Left panel?",
+     "type": "number",
+     "answer": 14.0,
+     "tol": 0.46
+    },
+    "q2": {
+     "q": "What is y at x=4 in the Right panel?",
+     "type": "number",
+     "answer": 7.0,
+     "tol": 0.46
+    },
+    "q3": {
+     "q": "Which panel has the greater minimum y?",
+     "type": "label",
+     "answer": "Left",
+     "options": [
+      "Left",
+      "Right"
+     ]
+    },
+    "q4": {
+     "q": "How many points across both panels have negative y?",
+     "type": "int",
+     "answer": 6
+    }
+   },
+   "reader_s": 0.0016675129299983382,
+   "stimuli": {
+    "record": {
+     "file": "s2_subplot_02.record.json",
+     "sha256": "e2292bacae1da7096ad28e0e8e128a3117cd6c30675cc8cd084857b1fb9e4b92"
+    },
+    "record+query": {
+     "file": "s2_subplot_02.record.json",
+     "sha256": "e2292bacae1da7096ad28e0e8e128a3117cd6c30675cc8cd084857b1fb9e4b92"
+    },
+    "table+stats": {
+     "file": "s2_subplot_02.table+stats.txt",
+     "sha256": "3a772dded61a08a4734d3ed970f4a6e0df58b488e8703cee0ec4d3b951ba8ac5"
+    }
+   }
+  },
+  "s2_subplot_03": {
+   "kind": "subplot",
+   "questions": {
+    "q1": {
+     "q": "What is the maximum y in the Left panel?",
+     "type": "number",
+     "answer": 10.0,
+     "tol": 0.36
+    },
+    "q2": {
+     "q": "What is y at x=4 in the Right panel?",
+     "type": "number",
+     "answer": 1.0,
+     "tol": 0.36
+    },
+    "q3": {
+     "q": "Which panel has the greater minimum y?",
+     "type": "label",
+     "answer": "Left",
+     "options": [
+      "Left",
+      "Right"
+     ]
+    },
+    "q4": {
+     "q": "How many points across both panels have negative y?",
+     "type": "int",
+     "answer": 9
+    }
+   },
+   "reader_s": 0.0016850220272317529,
+   "stimuli": {
+    "record": {
+     "file": "s2_subplot_03.record.json",
+     "sha256": "dbfd3f514ec09d50fcd88d676fc3bbc0e23d8eb845bde8678c0e2c74cbb2acc5"
+    },
+    "record+query": {
+     "file": "s2_subplot_03.record.json",
+     "sha256": "dbfd3f514ec09d50fcd88d676fc3bbc0e23d8eb845bde8678c0e2c74cbb2acc5"
+    },
+    "table+stats": {
+     "file": "s2_subplot_03.table+stats.txt",
+     "sha256": "bbdb51ec6400c8aa8a79b5b8e4cf39a537033665524c9e2d5c6be361c5e91159"
+    }
+   }
+  },
+  "s2_pie_00": {
+   "kind": "pie",
+   "questions": {
+    "q1": {
+     "q": "Which category has the largest slice?",
+     "type": "label",
+     "answer": "Elm",
+     "options": [
+      "Oak",
+      "Pine",
+      "Elm",
+      "Ash"
+     ]
+    },
+    "q2": {
+     "q": "What percentage belongs to Oak?",
+     "type": "number",
+     "answer": 25.84269662921348,
+     "tol": 2.0
+    },
+    "q3": {
+     "q": "Is Pine's slice larger than Elm's?",
+     "type": "label",
+     "answer": "no",
+     "options": [
+      "yes",
+      "no"
+     ]
+    },
+    "q4": {
+     "q": "How many slices are plotted?",
+     "type": "int",
+     "answer": 4
+    }
+   },
+   "reader_s": 0.00011862802784889936,
+   "stimuli": {
+    "record": {
+     "file": "s2_pie_00.record.json",
+     "sha256": "403393d50f277d04478fb674cea0a6849cfe1c89b21adff6d4ce4d66ccf9cc83"
+    },
+    "record+query": {
+     "file": "s2_pie_00.record.json",
+     "sha256": "403393d50f277d04478fb674cea0a6849cfe1c89b21adff6d4ce4d66ccf9cc83"
+    },
+    "table+stats": {
+     "file": "s2_pie_00.table+stats.txt",
+     "sha256": "f19efbe30eec63cdcc5a834c054be99f73b51f443a1b9ecfb96fb41ce8cf092f"
+    }
+   }
+  }
+ },
+ "environment": {
+  "python": "3.10.22",
+  "numpy": "2.2.6",
+  "matplotlib": "3.10.9"
+ }
+}
