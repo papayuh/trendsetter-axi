@@ -2,12 +2,31 @@
 
 ## Summary
 
-- Run geometry-only preliminary layout instead of drawing every artist into a discarded Canvas. The shortening retry also only lays out geometry.
+- Use geometry-only preliminary layout only when every figure artist has an exact type in a short allow-list (Figure, Axes, XAxis/YAxis, XTick/YTick, Spine, Line2D, Text, Rectangle). Unknown artists and subclasses, including quiver, legends, annotations, collections and custom artists, retain the original full preliminary draw. The same boundary handles the shortening retry.
 - Clone the artist graph with matplotlib's pickle protocol rather than Python's recursive deepcopy. Keep the existing plotnine-aware deepcopy fallback for local functions and custom objects that reject serialization.
 - Preserve the baseline's pre-copy tick materialization: otherwise each disposable clone constructs the initial Tick artists again in `prepare`.
 - No new dependencies, public API/import-surface changes, cross-call result caches, renderer rewrite, or feature removal.
 
-## Before / after medians
+## Revised compatibility results
+
+Focused review run: Python 3.14.6, matplotlib 3.11.2, numpy 2.4.4, Agg. **25 tests passed** in `tests/test_figure_work.py`. All **32 new quiver/custom-artist records** (18 rows, 60/80 columns, color and ASCII independently off/on) match archived base `4376145` in exact text bytes and losses; previous HEAD `bf2f34d` differs. The full gallery identity matrix and full suite were not rerun in this review phase.
+
+Warm structured gallery medians, **seven samples per chart**, 80 columns, imports/construction excluded. Separate processes ran sequentially in base/previous/fixed order, not interleaved; shared-host load and the different dependency versions mean these cannot be compared directly with the original timings below.
+
+| Gallery chart | Base (ms) | Previous HEAD (ms) | Fixed (ms) | Preliminary path |
+| --- | ---: | ---: | ---: | --- |
+| 01: line | 95.5 | 130.5 | 164.9 | geometry-only |
+| 02: lines with legend | 128.5 | 191.6 | 156.5 | full draw |
+| 03: scatter | 108.0 | 133.3 | 198.6 | full draw |
+| 04: bars with generated annotations | 77.2 | 83.9 | 125.4 | full draw |
+| 10: heatmap | 101.5 | 56.4 | 68.9 | full draw |
+| 18: annotated line | 164.9 | 128.9 | 166.3 | full draw |
+
+The compatibility fix gives up the skipped preliminary draw for five of these six charts. Most fixed medians show no speed gain over base in this run; even the allow-listed line was slower. Do not claim the original speedups for the revised code. Pickle copying remains enabled.
+
+The attempted seven-sample alternating cold-figure/warm-structured/warm-text benchmark did not produce a report: `startup_routes.py` requires installed distribution metadata and ended with `PackageNotFoundError: No package metadata was found for trendsetter-axi`. No dependencies were installed. Revised cold/route medians are unavailable; the numbers below remain historical, not current evidence. Raw focused observations are in `.scratch/review-observations.json` in the review worktree.
+
+## Before / after medians (original optimization, before compatibility fix)
 
 Base: current main `4376145` (includes painter-order changes). Head: `fm/ts-speed-trim`.
 Python 3.10.22, matplotlib 3.10.9, numpy 2.2.6, wcwidth 0.9.3; Agg backend.
@@ -39,7 +58,7 @@ Final `render_budget.py` medians (three warm samples, sequential baseline/head p
 
 All three output SHA-256 values remained identical.
 
-## Profile evidence and stopping point
+## Profile evidence and stopping point (before compatibility fix)
 
 Final 100k-point `cProfile` runs:
 
@@ -60,11 +79,14 @@ The remaining layout-engine executions are intentional: measure the initial geom
 
 ## Byte identity and source preservation
 
+The following full-matrix and full-suite results predate the compatibility fix; they are historical evidence, not validation of the revised allow-list.
+
 - **496/496 renders:** all 50 gallery charts plus every example chart, columns 60 and 80, color off/on, ASCII off/on, including both compact height budgets. Compare exact UTF-8 text bytes and complete `RenderResult`/compact losses at base and head.
 - Use the same exported SVG inputs for both versions. Plotly generates random SVG IDs that appear verbatim in loss captions; generating separate SVGs would compare different inputs.
 - Entire baseline/head matrix files have the same SHA-256: `25e2da3e119471a357070c4f7435f885ed73189ece786ab99c7809738cc0cbf7`.
 - **1,762 tests passed**, including the existing source-figure preservation tests. Added source-PNG byte preservation, managed/unmanaged figures, independent category counters/artists, deepcopy compatibility, and mutation-between-calls coverage.
-- The work-budget regression is red on base: ordinary layout draws data twice; shortening draws it three times. Both draw it exactly once at head. No machine-dependent timing test was added.
+- The work-budget regression is red on base: ordinary layout draws data twice; shortening draws it three times. Allow-listed figures still draw data exactly once. Other figures retain two draws, or three with shortening. No machine-dependent timing test was added.
+- The identity script now includes undrawn quiver and a custom Line2D subclass that caches geometry on its first draw, at 18 rows, both widths and all color/ASCII combinations (512 records total). Focused tests compare these against full preliminary draws, exercise the shortening retry and text shortcut, and check that source geometry stays uninitialized.
 
 ## Reproduce
 

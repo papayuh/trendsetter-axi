@@ -13,8 +13,39 @@ import json
 from pathlib import Path
 import sys
 
+from matplotlib.lines import Line2D
+
 # Make development fixtures importable without overriding the selected package.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+
+class DeferredLine(Line2D):
+    def __init__(self):
+        super().__init__([0, 9], [0, 1])
+        self.initial_ylim = None
+
+    def draw(self, renderer):
+        if self.initial_ylim is None:
+            self.initial_ylim = self.axes.get_ylim()
+            self.set_ydata([self.initial_ylim[1] * .8] * 2)
+        super().draw(renderer)
+
+
+def quiver():
+    from matplotlib.figure import Figure
+
+    ax = Figure().subplots()
+    ax.quiver(range(10), [1] * 9 + [0], [0] * 10, [1] * 9 + [3], angles="xy", scale_units="xy")
+    return ax.figure
+
+
+def custom_artist():
+    from matplotlib.figure import Figure
+
+    ax = Figure().subplots()
+    ax.add_line(DeferredLine())
+    ax.autoscale_view()
+    return ax.figure
 
 
 def records(svg_dir):
@@ -49,7 +80,9 @@ def records(svg_dir):
 
     cases += [("semantics-" + style, "matplotlib", lambda style=style: ecdf(style))
               for style in ("steps-post", "default")]
-    cases += [("compact-ranking", "matplotlib", ranking)]
+    cases += [("compact-ranking", "matplotlib", ranking),
+              ("deferred-quiver", "matplotlib", quiver),
+              ("deferred-custom", "matplotlib", custom_artist)]
     # The SVG example uses a matplotlib-generated SVG as its source.
     def svg_example():
         fig = demo.line()
@@ -90,7 +123,7 @@ def records(svg_dir):
             for cols in (60, 80):
                 for color in (False, True):
                     for ascii in (False, True):
-                        rows = 18 if name.startswith("semantics-") or name == "compact-ranking" else None
+                        rows = 18 if name.startswith(("semantics-", "deferred-")) or name == "compact-ranking" else None
                         result = render(obj, cols=cols, color=color, ascii=ascii, rows=rows)
                         key = f"{name}/{cols}/{color}/{ascii}"
                         record(key, result)

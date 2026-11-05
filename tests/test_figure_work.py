@@ -10,6 +10,7 @@ import pytest
 
 import trendsetter_axi as tsa
 from trendsetter_axi import mpl
+from benchmarks.render_identity import custom_artist, quiver
 
 
 @pytest.mark.parametrize("managed", [False, True])
@@ -110,6 +111,56 @@ def test_layout_pass_does_not_draw_data(monkeypatch, shorten):
     monkeypatch.setattr(mpl.TextRenderer, "draw_path", path)
     assert tsa.render_figure(ax.figure, 60)
     assert len(calls) == 1  # Not once per preliminary layout/shortening pass.
+
+
+@pytest.mark.parametrize("make", [quiver, custom_artist], ids=["quiver", "custom-subclass"])
+@pytest.mark.parametrize("shorten", [False, True])
+@pytest.mark.parametrize("cols", [60, 80])
+@pytest.mark.parametrize("color,ascii", [(False, False), (True, True)])
+def test_draw_dependent_artists_match_full_draws(monkeypatch, make, shorten, cols, color, ascii):
+    fig = make()
+    ax = fig.axes[0]
+    if shorten:
+        ax.set_xticks([0, 9], ["very long category label " * 8] * 2)
+    limits = ax.get_xlim(), ax.get_ylim()
+    draws, retries = [], []
+    original_draw, original_shorten = Figure.draw, mpl._shorten
+
+    def draw(fig, renderer):
+        draws.append(fig)
+        return original_draw(fig, renderer)
+
+    def shorten_labels(fig, cols):
+        retries.append(fig)
+        return original_shorten(fig, cols)
+
+    monkeypatch.setattr(Figure, "draw", draw)
+    monkeypatch.setattr(mpl, "_shorten", shorten_labels)
+
+    def render():
+        draws.clear()
+        retries.clear()
+        result = tsa.render(fig, cols, color=color, ascii=ascii, rows=18)
+        assert len(draws) == 2 + int(shorten)
+        assert len(retries) == int(shorten)
+        return result
+
+    actual = render()
+    actual_text = tsa.render_figure(fig, cols, color=color)
+    with monkeypatch.context() as baseline:
+        baseline.setattr(mpl, "_layout", lambda fig, renderer: fig.draw(renderer))
+        expected = render()
+        expected_text = tsa.render_figure(fig, cols, color=color)
+    assert actual.text.encode("utf-8") == expected.text.encode("utf-8")
+    assert actual.losses == expected.losses
+    assert actual_text.encode("utf-8") == expected_text.encode("utf-8")
+    assert (ax.get_xlim(), ax.get_ylim()) == limits
+    if make is quiver:
+        assert ax.collections[0].scale is None
+        assert ax.collections[0].width is None
+    else:
+        assert ax.lines[0].initial_ylim is None
+        np.testing.assert_array_equal(ax.lines[0].get_ydata(), [0, 1])
 
 
 def test_no_output_cached_between_calls():

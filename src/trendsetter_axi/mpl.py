@@ -6,6 +6,11 @@ legends and margins for the terminal grid instead of us patching collisions late
 """
 import numpy as np
 from matplotlib.backend_bases import RendererBase
+from matplotlib.axes import Axes
+from matplotlib.axis import XAxis, XTick, YAxis, YTick
+from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
+from matplotlib.spines import Spine
 from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.category import UnitData
@@ -561,9 +566,15 @@ def _clipped(fig):
     return ""
 
 
+_LAYOUT_ONLY_TYPES = frozenset({Figure, Axes, XAxis, YAxis, XTick, YTick, Spine, Line2D, Text, Rectangle})
+
+
 def _layout(fig, renderer):
-    """The geometry part of Figure.draw, without its discarded primitives."""
+    """Use geometry-only layout for known artists, otherwise draw normally."""
     if not fig.get_visible():
+        return
+    if not all(type(a) in _LAYOUT_ONLY_TYPES for a in fig.findobj()):
+        fig.draw(renderer)
         return
     fig._get_draw_artists(renderer)  # Figure.draw applies aspect before layout.
     if fig.axes and fig.get_layout_engine() is not None:
@@ -585,8 +596,6 @@ def render(fig, cols=80, color=False, rows=None):
     import warnings
     with warnings.catch_warnings(record=True) as wl:
         warnings.simplefilter("always")
-        # Only geometry survives this pass. The final draw must still reflow
-        # layout after tick tuning/padding, unless _snap freezes the axes.
         _layout(fig, rend)
         if any("Tight layout" in str(w.message) for w in wl) or any(min(a.get_position().width, a.get_position().height) < .1 or a.get_position().height > .99 for a in fig.axes):  # plotnine: infeasible gridspec leaves the axes filling the figure   # labels too wide for the grid: layout gave up and kept the old margins, so shorten x labels to their slot and lay out again
             area = lambda: sum(a.get_position().width * a.get_position().height for a in fig.axes)
