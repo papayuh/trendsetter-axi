@@ -1,0 +1,5 @@
+title: multi-line experiment 7
+lines at x: 0 1 2 3 4 5 6 7 8 9 10 11 12
+  'Alpha' ●: 4 1 4 4 13 16 21 17 21 23 26 29 33
+  'Beta' ×: 0 -8 -12 -22 -28 -26 -24 -25 -31 -33 -35 -31 -32
+losses: none

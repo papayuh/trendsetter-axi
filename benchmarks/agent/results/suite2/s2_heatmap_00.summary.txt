@@ -1,0 +1,9 @@
+title: heatmap experiment 1
+heatmap shape=5x6 min R00/K00=0 max R02/K03=97
+  cols: K00 K01 K02 K03 K04 K05
+  R00: 0 0 0 0 0 0
+  R01: 0 0 0 0 0 0
+  R02: 0 0 0 97 0 0
+  R03: 0 0 0 0 0 0
+  R04: 0 0 0 0 0 0
+losses: none

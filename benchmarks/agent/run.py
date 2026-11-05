@@ -361,4 +361,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--suite2" in sys.argv:
+        # Keep the historical pilot reproducible; suite2 has its own immutable
+        # stimuli, manifest, retries and raw rows, never reused from the pilot.
+        from suite2 import main as suite2_main
+        suite2_main([arg for arg in sys.argv[1:] if arg != "--suite2"])
+    else:
+        main()

@@ -1,0 +1,5 @@
+line experiment 3
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"signal","columns":["x","y"],"x_aliases":null,"x_unit":"index","total_rows":13,"selected_indices":[0,1,2,3,4,5,6,7,8,9,10,11,12],"rows":[[0.0,0.8002174109768219],[1.0,3.699405584966606],[2.0,12.0],[3.0,4.118350842457793],[4.0,5.28045379493439],[5.0,4.105354820866967],[6.0,3.787539361013362],[7.0,5.057621007999785],[8.0,4.716472616335036],[9.0,12.0],[10.0,2.845864915116416],[11.0,-0.12162125890628195],[12.0,4.728346900156621]]}
+Full-source statistics:
+[{"name":"signal","rows":13,"columns":{"x":{"n":13,"min":0.0,"max":12.0,"mean":6.0,"sum":78.0,"negative":0,"max_ties":1},"y":{"n":13,"min":-0.12162125890628195,"max":12.0,"mean":4.847538922762886,"sum":63.01800599591752,"negative":1,"max_ties":2}}}]

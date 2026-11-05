@@ -1,0 +1,3 @@
+title: bar experiment 2
+barh n=12 C00=14 C01=7 C02=11 C03=11 C04=21 C05=19 C06=16 C07=15 C08=18 C09=5 C10=4 C11=13
+losses: none

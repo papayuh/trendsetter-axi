@@ -1,0 +1,3 @@
+title: scatter experiment 6
+scatter 'signal' n=13 x=0..12 y=-16.8..-9.5 mean=6,-12.5 r=0.13
+losses: none

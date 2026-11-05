@@ -1,0 +1,15 @@
+                     line experiment 12
+   ┌─────────────────────────────────────────────────────┐
+   │                    _-o_                             │
+  5│                 _o'   '\                     o-__   │
+   │ o_             _'       'o                  #'  'o  │
+   │  '-_   _-o-___/          '-_     o_--o_    _'       │
+   │     'o'     'o             '-__-'     '-_ _'        │
+  0│                              o          'o'         │
+   └─────────────────────────────────────────────────────┘
+  slot-00  slot-02 slot-04 slot-06 slot-08 slot-10 slot-12
+
+title: line experiment 12
+lines at x: 0 1 2 3 4 5 6 7 8 9 10 11 12
+  'signal': 3.7 1.4 2.8 2 5.1 6.9 3.5 0.7 2.3 2.8 -0.1 5.4 4.2
+losses: text tick 'slot-01': dropped (ink); text tick 'slot-03': dropped (ink); text tick 'slot-05': dropped (ink); text tick 'slot-07': dropped (ink); text tick 'slot-09': dropped (ink); text tick 'slot-11': dropped (ink)

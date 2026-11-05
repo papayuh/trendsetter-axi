@@ -1,0 +1,9 @@
+title: heatmap experiment 3
+heatmap shape=5x6 missing=1 min R00/K04=-8 max R02/K00=8
+  cols: K00 K01 K02 K03 K04 K05
+  R00: -6 3 -3 1 -8 4
+  R01: 1 6 . 5 -1 5
+  R02: 8 4 4 -8 -3 6
+  R03: 7 -7 -2 5 8 -4
+  R04: -7 -3 -8 -4 1 1
+losses: none

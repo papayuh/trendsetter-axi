@@ -1,0 +1,5 @@
+title: multi-line experiment 9
+lines at x: 0 20 40 60 80 100 120 128
+  'Alpha' ● n=129: 7 14 10 16 2 -16 -12 -2 (min 51=-20 max 34=28)
+  'Beta' × n=129: 3 8 15 -16 44 40 13 24 (min 58=-18 max 98=46)
+losses: none
