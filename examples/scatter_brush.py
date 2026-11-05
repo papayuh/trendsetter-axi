@@ -4,7 +4,16 @@
 drag: new brush   drag inside: move it   hover: inspect   click a table row: pin account
 z: zoom to brush   b: zoom back   x: clear   1/2/3: toggle segment   q: quit
 """
-import math, os, random, re, select, shutil, signal, sys, termios, time, tty
+import math
+import os
+import random
+import re
+import select
+import shutil
+import signal
+import termios
+import time
+import tty
 
 MOUSE = re.compile(rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 BITS = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]]
@@ -366,8 +375,12 @@ class App:
 
     def brush_frame(self, s, chosen):
         c0, c1, r0, r1 = self.brush_bounds()
-        clipc = lambda c: self.left <= c < self.left + self.w
-        clipr = lambda r: self.top <= r < self.top + self.h
+        def clipc(c):
+            return self.left <= c < self.left + self.w
+
+        def clipr(r):
+            return self.top <= r < self.top + self.h
+
         for c in range(max(c0, self.left), min(c1, self.left + self.w - 1) + 1):
             if clipr(r0):
                 s.put(r0, c, "─", GOOD)
@@ -398,7 +411,9 @@ class App:
             s.put(r, col + 14, a.rjust(9), GOOD if emph else INK)
             s.put(r, col + 23, b.rjust(11), MUTED)
         dash = "-"
-        val = lambda v, f: dash if v is None else f.format(v)
+        def val(v, f):
+            return dash if v is None else f.format(v)
+
         total = all_st["n"] or 1
         row(3, "accounts", f"{sel['n']:,}" if chosen is not None else dash, f"{all_st['n']:,}", True)
         row(4, "share", f"{sel['n'] / total:.0%}" if chosen is not None else dash, "100%")
