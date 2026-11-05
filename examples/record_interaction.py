@@ -52,6 +52,8 @@ def screenshot(screen, font, cache):
                             d.rectangle([px, py, px + 2, py + 2], fill=fg)
                 elif char == '█':
                     d.rectangle([0, 0, CW, CH], fill=fg)
+                elif char == '▀':
+                    d.rectangle([0, 0, CW, CH // 2 - 1], fill=fg)
                 elif 0x2581 <= o <= 0x2587:
                     d.rectangle([0, CH - round((o - 0x2580) * CH / 8), CW, CH], fill=fg)
                 elif 0x2589 <= o <= 0x258f:

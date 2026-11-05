@@ -9,6 +9,7 @@ import argparse
 
 import numpy as np
 from matplotlib.figure import Figure
+from matplotlib.ticker import MultipleLocator
 
 from trendsetter_axi import dashboard
 
@@ -21,7 +22,9 @@ def make_figures(step=0):
     for label, offset, phase in [('edge', 0, 0), ('origin', 32, 1)]:
         y = 80 + offset + 15 * np.sin((time + step * 3) / 12 + phase) + rng.normal(0, 2, len(time))
         ax.plot(time, y, label=label)
-    ax.set(xlim=(0, 119), ylim=(45, 150), xlabel='minutes', ylabel='requests / s', title='Traffic / last two hours')
+    ax.set(xlim=(0, 119), xlabel='minutes', ylabel='requests / s', title='Traffic / last two hours')
+    ax.margins(y=.08)
+    ax.yaxis.set_major_locator(MultipleLocator(20))
 
     ax = figures[1].subplots()
     ax.bar(['iad', 'ams', 'sin', 'syd', 'fra', 'gru'],

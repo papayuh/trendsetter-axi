@@ -199,6 +199,74 @@ def test_original_figures_records_plain_render_and_limits_unchanged():
     assert ts.render(fig).text == text
 
 
+@pytest.mark.parametrize('cols,rows', [(120, 38), (140, 44), (160, 48)])
+def test_zero_based_bars_meet_axis_and_zero_tick(cols, rows):
+    ax = Figure().subplots()
+    ax.bar(['a', 'b', 'c'], [25, 50, 75])
+    ax.set_ylim(0, 100)
+    m = Dashboard([ax.figure])
+    m.layout(cols, rows)
+    v = m.viewers[0]
+    p = v.projection
+    screen = m._tile(0)
+    zero = round(p.cell(0, 0)[1])
+    assert screen.cells[zero][p.left - 1][0] == '└'
+    assert '0' in ''.join(cell[0] for cell in screen.cells[zero][:p.left - 1])
+    for point in v.points:
+        col = round(p.cell(point.x, 0)[0])
+        # The upper half of the baseline cell reaches the rule's centerline;
+        # no empty cell or half-cell sits between the bar and its zero axis.
+        assert screen.cells[zero][col][0] == '▀'
+        assert screen.cells[zero - 1][col][0] == '█'
+
+
+def test_bar_alignment_preserves_nonzero_bases_negative_and_zero_values():
+    ax = Figure().subplots()
+    ax.bar(['raised', 'negative', 'zero'], [4, -4, 0], bottom=[3, 0, 0])
+    ax.set_ylim(-10, 10)
+    m = Dashboard([ax.figure])
+    m.layout(120, 38)
+    v, screen = m.viewers[0], m._tile(0)
+    p = v.projection
+    raised, negative, zero = v.points
+    c = round(p.cell(raised.x, raised.base)[0])
+    base = p.cell(raised.x, raised.base)[1]
+    assert screen.cells[math.floor(base) + 2][c][0] == ' '
+    c, r = map(round, p.cell(negative.x, -2))
+    assert screen.cells[r][c][0] == '█'
+    c, r = map(round, p.cell(zero.x, zero.base))
+    assert screen.cells[r][c][0] == ' '
+
+
+def test_dashboard_count_labels_use_plain_chart_units():
+    m = model(('line', 'bar', 'scatter'))
+    assert m._tile(0).text(False).splitlines()[1].strip() == '3 points'
+    assert m._tile(1).text(False).splitlines()[1].strip() == '3 bars'
+    assert m._tile(2).text(False).splitlines()[1].strip() == '3 points'
+    assert 'knots' not in m.frame() and 'endpoints' not in m.frame()
+
+
+@pytest.mark.parametrize('step', [0, 1, 8, 20])
+def test_demo_line_limits_follow_data_with_small_balanced_padding(step):
+    from examples.dashboard_demo import make_figures
+
+    ax = make_figures(step)[0].axes[0]
+    values = [float(y) for line in ax.lines for y in line.get_ydata()]
+    lo, hi = ax.get_ylim()
+    span = max(values) - min(values)
+    assert 0 < min(values) - lo <= span * .1
+    assert 0 < hi - max(values) <= span * .1
+    m = Dashboard([ax.figure])
+    m.layout(69, 24)
+    screen = m._tile(0)
+    p = m.viewers[0].projection
+    labels = [r for r in range(p.top, p.top + p.rows)
+              if any(cell[0].strip() for cell in screen.cells[r][:p.left - 1])]
+    assert len(labels) >= 3
+    assert min(labels) <= p.top + 3 and max(labels) >= p.top + p.rows - 3
+    assert max(labels) - min(labels) >= p.rows // 2
+
+
 def test_saved_bars_disclose_estimated_widths():
     text = ts.dashboard([ts.from_figure(figure('bar'))], cols=140, rows=44, color=False)
     assert 'widths estimated' in text

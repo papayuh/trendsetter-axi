@@ -112,7 +112,10 @@ def _plot(v, screen):
             for point in points:
                 c0, r0, c1, r1 = v.bar_bounds(point)
                 if all(map(math.isfinite, (c0, r0, c1, r1))):
-                    canvas.fill([[(c0, r0 * 2), (c1, r0 * 2), (c1, r1 * 2), (c0, r1 * 2)]],
+                    # Projection rows denote cell centers. Fill edges must use
+                    # the same center, especially at zero on the baseline.
+                    canvas.fill([[(c0, r0 * 2 + 1), (c1, r0 * 2 + 1),
+                                  (c1, r1 * 2 + 1), (c0, r1 * 2 + 1)]],
                                 tuple(c / 255 for c in rgb), clip=clip, role='data')
         elif m['kind'] == 'points':
             for a in points:
@@ -150,9 +153,10 @@ def _plot(v, screen):
 def _axes(v, screen):
     p, axis = v.projection, v.record['axes'][0]
     screen.put(3, 0, truncate(axis['y'].get('label') or 'y', v.cols), MUTED)
-    for r in range(p.top, p.top + p.rows):
+    bottom = p.top + p.rows - 1  # The projected minimum, not a row below it.
+    for r in range(p.top, bottom):
         screen.put(r, p.left - 1, '│', FAINT)
-    screen.put(p.top + p.rows, p.left - 1, '└' + '─' * p.cols, FAINT)
+    screen.put(bottom, p.left - 1, '└' + '─' * p.cols, FAINT)
     occupied = {'x': set(), 'y': set()}
     for k in 'xy':
         for tick in axis[k].get('ticks', []):
@@ -168,11 +172,11 @@ def _axes(v, screen):
                 if span & occupied[k]:
                     continue
                 occupied[k].update(span)
-                screen.put(p.top + p.rows + 1, c, label, MUTED)
+                screen.put(bottom + 1, c, label, MUTED)
             elif not {r - 1, r, r + 1} & occupied[k]:
                 occupied[k].add(r)
                 screen.put(r, 0, label.rjust(6), MUTED)
-    screen.put(p.top + p.rows + 2, p.left, truncate(axis['x'].get('label') or 'x', p.cols), MUTED)
+    screen.put(bottom + 2, p.left, truncate(axis['x'].get('label') or 'x', p.cols), MUTED)
 
 
 class Dashboard:
@@ -210,7 +214,7 @@ class Dashboard:
             v.cols, v.rows = tile.cols, tile.rows
             if not v.reason:
                 try:
-                    v.projection = Projection(v.record['axes'][0], 7, 4, tile.cols - 9, tile.rows - 8)
+                    v.projection = Projection(v.record['axes'][0], 7, 4, tile.cols - 9, tile.rows - 7)
                 except ValueError as exc:
                     v.reason = str(exc)
 
@@ -263,10 +267,18 @@ class Dashboard:
             _paste(screen, self.cache[index], 0, 3)
             return screen
         visible = [p for p in v.points if v.projection.visible(p.x, p.y)]
-        caption = f'{len(visible):,} visible knots / endpoints' if not v.has_scatter else f'{len(v.chosen()):,} / {sum(p.kind == "points" for p in visible):,} points'
+        has_bars = any(m['kind'] == 'bars' for m in v.record['marks'])
+        has_points = any(m['kind'] in ('line', 'points') for m in v.record['marks'])
+        counts = []
+        if has_points or not has_bars:
+            counts.append(f'{sum(p.kind != "bars" for p in visible):,} points')
+        if has_bars:
+            counts.append(f'{sum(p.kind == "bars" for p in visible):,} bars')
+        caption = ' · '.join(counts)
         if v.box:
             result = stats(v.chosen())
-            caption += f' selected · r={result["correlation"]:.3f}' if result['correlation'] is not None else ' selected · r=n/a'
+            caption = f'{len(v.chosen()):,} / {sum(p.kind == "points" for p in visible):,} points selected'
+            caption += f' · r={result["correlation"]:.3f}' if result['correlation'] is not None else ' · r=n/a'
         if any(m['kind'] == 'bars' and 'width' not in m for m in v.record['marks']):
             caption += ' · widths estimated'
         screen.put(1, 0, truncate(caption, t.cols), GOOD if v.box else MUTED)
@@ -278,8 +290,8 @@ class Dashboard:
             col += width(label) + 2
             if col >= t.cols:
                 break
-        _plot(v, screen)
         _axes(v, screen)
+        _plot(v, screen)  # Keep the bar's upper half-cell touching its baseline.
         return screen
 
     def frame(self, *, interactive=True, live=False):
