@@ -224,20 +224,20 @@ class Viewer:
         p = self.projection
         if p is None or not p.inside(col, row):
             return None
+        best, score = None, 2.5
         for mark in reversed(self.draw_marks):
             points = [point for point in self.points if point.mark == mark['id']]
-            best, score = None, 2.5
             for point in reversed(points):
                 if point.kind == 'bars':
                     c0, r0, c1, r1 = self.bar_bounds(point)
-                    if c0 <= col <= c1 and r0 <= row <= r1:
-                        return point
+                    if c0 <= col <= c1 and r0 <= row <= r1 and score > 1e-9:
+                        best, score = point, 0
                     continue
                 if not p.visible(point.x, point.y):
                     continue
                 c, r = p.cell(point.x, point.y)
                 distance = math.hypot(c - col, 2 * (r - row))
-                if distance < score:
+                if distance < score and not math.isclose(distance, score, abs_tol=1e-9):
                     best, score = point, distance
             if mark['kind'] == 'line':
                 for path, left, right in line_edges(mark, points, p):
@@ -247,15 +247,13 @@ class Viewer:
                         along = (col - a[0]) * (dx / length) + (row * 2 - a[1]) * (dy / length) if length else 0
                         t = max(0, min(1, along / length)) if length else 0
                         distance = math.hypot(col - (a[0] + t * dx), row * 2 - (a[1] + t * dy))
-                        if distance < score:
+                        if distance < score and not math.isclose(distance, score, abs_tol=1e-9):
                             def endpoint_distance(point):
                                 c, r = p.cell(point.x, point.y)
                                 return math.hypot(c - col, 2 * (r - row))
                             best = min((left, right), key=endpoint_distance)
                             score = distance
-            if best is not None:
-                return best
-        return None
+        return best
 
     def chosen(self):
         p = self.projection

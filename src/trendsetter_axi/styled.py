@@ -13,6 +13,23 @@ PALETTE = [(92, 200, 250), (255, 170, 70), (120, 225, 150), (207, 160, 240)]
 UP, RIGHT = ' ▁▂▃▄▅▆▇█', ' ▏▎▍▌▋▊▉█'
 
 
+def _number(value, cols, *, signed=False):
+    if value is None:
+        return '-'
+    if isinstance(value, int):
+        text = f'{value:,}'
+        if len(text) <= cols:
+            return text
+    for precision in range(3 if signed else 4, 1, -1):
+        text = format(value, f'{"+" if signed else ""}.{precision}g')
+        mantissa, sep, exponent = text.partition('e')
+        if sep:
+            text = f'{mantissa}e{int(exponent)}'
+        if len(text) <= cols:
+            return text
+    raise ValueError('number does not fit terminal cell')
+
+
 class Screen:
     def __init__(self, cols, rows):
         self.cols, self.rows = cols, rows
@@ -111,17 +128,17 @@ def draw(viewer, *, interactive=True, color=True):
     chosen = v.chosen()
     selected = {(a.mark, a.index) for a in chosen}
     visible = [a for a in v.points if p.visible(a.x, a.y)]
-    caption = f'{len(scatter):,} visible scatter points' if v.has_scatter else f'{len(visible):,} visible knots / bar endpoints'
-    s.put(1, 1, caption + (f'   {len(chosen):,} selected' if v.box else ''), MUTED)
+    caption = f'{_number(len(scatter), 8)} visible scatter points' if v.has_scatter else f'{_number(len(visible), 8)} visible knots / bar endpoints'
+    if v.box:
+        caption = f'{_number(len(chosen), 8)} selected / {_number(len(scatter), 8)} visible points'
+    s.put(1, 1, caption, MUTED)
     if any(m['kind'] == 'bars' and 'width' not in m for m in v.record['marks']):
         s.put(2, 1, 'Saved bar widths estimated: 0.8', MUTED)
     side, panel = p.left + p.cols + 9, v.cols - (p.left + p.cols + 9) - 1
-    header = 'Selection'.ljust(14) + 'selected'.rjust(8) + ' ' + 'visible'.rjust(9) if v.has_scatter else 'Source values'
+    header = 'Selection'.ljust(14) + 'selected'.rjust(9) + ' ' + 'visible'.rjust(9) if v.has_scatter else 'Source values'
     s.put(1, side, header, MUTED)
     s.put(2, side, '─' * panel, FAINT)
     a, b = stats(chosen), stats(scatter)
-    def fmt(value, signed=False):
-        return '-' if value is None else format(value, '+.3g' if signed else '.4g')
     for row, (key, label) in enumerate([('n', 'points'), ('share', 'share'), ('mean_x', 'mean x'),
                                       ('mean_y', 'mean y'), ('correlation', 'Pearson r'), ('slope', 'OLS slope')], 3):
         if not v.has_scatter:
@@ -130,14 +147,14 @@ def draw(viewer, *, interactive=True, color=True):
             va = f"{len(chosen) / max(len(scatter), 1):.0%}" if v.box else '-'
             vb = '100%' if scatter else '-'
         elif key == 'n':
-            va = f"{a[key]:,}" if v.box else '-'
-            vb = f"{b[key]:,}"
+            va = _number(a[key], 9) if v.box else '-'
+            vb = _number(b[key], 9)
         else:
-            va = fmt(a[key], key in ('correlation', 'slope')) if v.box else '-'
-            vb = fmt(b[key], key in ('correlation', 'slope'))
+            va = _number(a[key], 9, signed=key in ('correlation', 'slope')) if v.box else '-'
+            vb = _number(b[key], 9, signed=key in ('correlation', 'slope'))
         s.put(row, side, label.ljust(14), MUTED)
-        s.put(row, side + 14, va.rjust(8), GOOD if key in ('n', 'correlation') else INK)
-        s.put(row, side + 23, vb.rjust(9), MUTED)
+        s.put(row, side + 14, va.rjust(9), GOOD if key in ('n', 'correlation') else INK)
+        s.put(row, side + 24, vb.rjust(9), MUTED)
     if v.has_scatter:
         s.put(9, side, 'points, not subject counts', FAINT)
     else:
@@ -154,10 +171,10 @@ def draw(viewer, *, interactive=True, color=True):
         if m['kind'] == 'points':
             units = n / max(len(scatter), 1) * 13 * 8
             s.put(row, side + 14, '█' * int(units // 8) + RIGHT[int(units % 8)].strip(), rgb)
-            s.put(row, side + 28, str(n).rjust(4), MUTED)
+            s.put(row, side + 28, _number(n, panel - 28).rjust(panel - 28), MUTED)
         else:
             count = sum(point.mark == m['id'] for point in visible)
-            s.put(row, side + 15, f"{m['kind']} ({count})", MUTED)
+            s.put(row, side + 15, f"{m['kind']} ({_number(count, panel - 18 - len(m['kind']))})", MUTED)
     # Common bounds for both static and interactive geometry, including inverted/log axes.
     clip = (p.left, p.top * 2, p.left + p.cols, (p.top + p.rows) * 2)
     if v.box and len(chosen) > 2 and a['slope'] is not None:
@@ -179,10 +196,16 @@ def draw(viewer, *, interactive=True, color=True):
         if m['kind'] == 'line':
             canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
             canvas.stamp = False
-            edges = list(line_edges(m, points, p))
+            paths, connected, previous = [], set(), None
+            for path, left, right in line_edges(m, points, p):
+                if previous == left.index:
+                    paths[-1].extend(path[1:])
+                else:
+                    paths.append(path)
+                previous = right.index
+                connected.update((left.index, right.index))
             ink = tuple(c / 255 for c in rgb)
-            canvas.stroke([path for path, _, _ in edges], ink, clip=clip, role='data')
-            connected = {point.index for _, left, right in edges for point in (left, right)}
+            canvas.stroke(paths, ink, clip=clip, role='data')
             isolated = [p.cell(a.x, a.y) for a in points if a.index not in connected and p.visible(a.x, a.y)]
             if isolated:
                 canvas.marker([(c, r * 2) for c, r in isolated], ink, clip=clip, role='data')
@@ -231,9 +254,12 @@ def draw(viewer, *, interactive=True, color=True):
     s.put(table_row, side, 'Top points by x', MUTED)
     pool = chosen if v.has_scatter else visible
     for r, point in enumerate(sorted(pool, key=lambda q: -q.x)[:max(0, v.rows - table_row - 5)], table_row + 1):
-        label = truncate(f'{point.name}[{point.index}]', 16)
+        label = truncate(f'{point.name}[{point.index}]', 14)
         s.put(r, side, label, INK)
-        s.put(r, side + 17, f'{point.x:7.2f} {point.y:7.2f}', MUTED)
+        xcols = (panel - 16) // 2
+        ycols = panel - 16 - xcols
+        s.put(r, side + 15, _number(point.x, xcols).rjust(xcols), MUTED)
+        s.put(r, side + 16 + xcols, _number(point.y, ycols).rjust(ycols), MUTED)
     if v.box:
         c0, r0, c1, r1 = v.box
         for r in range(r0, r1 + 1):

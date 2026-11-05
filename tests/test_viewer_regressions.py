@@ -2,6 +2,7 @@
 import math
 
 from matplotlib.figure import Figure
+import numpy as np
 import pytest
 
 from trendsetter_axi import from_figure, render_styled
@@ -470,3 +471,165 @@ def test_uniform_scatter_style_and_hidden_encoded_artists_remain_interactive():
         assert v.nearest(*v.projection.cell(point.x, point.y)) == point
     assert 'Static view:' not in render_styled(ax.figure, color=False)
     assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('scale', [1, 1e240, 1e-240])
+@pytest.mark.parametrize('cols', [80, 120])
+@pytest.mark.parametrize('saved', [False, True])
+def test_statistics_and_points_table_emit_complete_bounded_numbers(scale, cols, saved):
+    ax = Figure().subplots()
+    xs = np.array([-12350, -12340, -12330, 37020]) * scale
+    ys = np.array([1, 2, 3, 10]) * scale
+    ax.scatter(xs, ys, label='samples')
+    ax.set(xlim=(-13000 * scale, 38000 * scale), ylim=(0, 12 * scale))
+    original = from_figure(ax.figure)
+    v = model(original if saved else ax.figure, cols)
+    p = v.projection
+    v.mouse(0, p.left, p.top, False)
+    v.mouse(32, p.left + p.cols // 2, p.top + p.rows - 1, False)
+    v.mouse(0, p.left + p.cols // 2, p.top + p.rows - 1, True)
+    chosen = v.chosen()
+    assert len(chosen) == 3
+    side = p.left + p.cols + 9
+    panel = cols - side - 1
+    table_row = 15
+    ordered = sorted(chosen, key=lambda point: -point.x)
+    for frame in (v.frame(), draw(v, interactive=False, color=False)):
+        lines = SGR.sub('', frame).splitlines()
+        assert all(width(line) == cols for line in lines)
+        assert int(lines[3][side + 14:side + 23]) == 3
+        assert int(lines[3][side + 24:side + 33]) == 4
+        assert lines[4][side + 14:side + 23].strip() == '75%'
+        for row, values in ((5, xs), (6, ys)):
+            selected = float(lines[row][side + 14:side + 23])
+            visible = float(lines[row][side + 24:side + 33])
+            expected_selected = math.fsum(float(value) / 3 for value in values[:3])
+            expected_visible = math.fsum(float(value) / 4 for value in values)
+            assert selected == pytest.approx(expected_selected, rel=.05, abs=scale * 1e-9)
+            assert visible == pytest.approx(expected_visible, rel=.05, abs=scale * 1e-9)
+        xcols = (panel - 16) // 2
+        ycols = panel - 16 - xcols
+        for row, point in enumerate(ordered, table_row + 1):
+            x = float(lines[row][side + 15:side + 15 + xcols])
+            y = float(lines[row][side + 16 + xcols:side + 16 + xcols + ycols])
+            assert x == pytest.approx(point.x, rel=.05, abs=scale * 1e-9)
+            assert y == pytest.approx(point.y, rel=.05, abs=scale * 1e-9)
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('near,far', [(a, b) for a in ('points', 'line', 'bars', 'barh')
+                                     for b in ('points', 'line', 'bars', 'barh')])
+@pytest.mark.parametrize('direction', ['x', 'y'])
+@pytest.mark.parametrize('saved', [False, True])
+def test_hover_prefers_near_geometry_over_separate_foreground_marks(near, far, direction, saved):
+    ax = Figure().subplots()
+    farther = (14, 12) if direction == 'x' else (12, 13)
+    for kind, (x, y), name, zorder in ((near, (12, 12), 'near', 1), (far, farther, 'far', 3)):
+        if kind == 'points':
+            ax.scatter([x], [y], label=name, zorder=zorder)
+        elif kind == 'line':
+            ax.plot([x - .25, x + .25], [y, y], label=name, zorder=zorder)
+        elif kind == 'bars':
+            ax.bar([x], [.8], bottom=[y - .4], width=.8, label=name, zorder=zorder)
+        else:
+            ax.barh([y], [.8], left=[x - .4], height=.8, label=name, zorder=zorder)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    original = from_figure(ax.figure)
+    v = model(original if saved else ax.figure)
+    c, r = v.projection.cell(12, 12)
+    assert v.nearest(c, r).name == 'near'
+    v.mouse(35, c, r, False)
+    assert v.hover.name == 'near'
+    assert 'near [' in SGR.sub('', v.frame())
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('zorders', [(1, 3), (3, 1), (2, 2)])
+@pytest.mark.parametrize('kind', ['points', 'line'])
+def test_equal_distance_hover_uses_source_painter_precedence(zorders, kind):
+    ax = Figure().subplots()
+    for x, name, zorder in zip((12, 14), ('first', 'second'), zorders):
+        if kind == 'points':
+            ax.scatter([x], [12], label=name, zorder=zorder)
+        else:
+            ax.plot([x, x], [11, 13], label=name, zorder=zorder)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(ax.figure)
+    expected = 'first' if zorders[0] > zorders[1] else 'second'
+    assert v.nearest(*v.projection.cell(13, 12)).name == expected
+
+
+@pytest.mark.parametrize('line_foreground', [False, True])
+def test_fractional_line_bar_overlap_keeps_painter_precedence(line_foreground):
+    ax = Figure().subplots()
+    ax.bar([30.75], [20], width=20, label='bar', zorder=1 if line_foreground else 3)
+    ax.plot([1.2, 60.3], [2.3, 22.1], label='line', zorder=3 if line_foreground else 1)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(ax.figure)
+    expected = 'line' if line_foreground else 'bar'
+    assert v.nearest(*v.projection.cell(30.75, 12.2)).name == expected
+
+
+@pytest.mark.parametrize('saved', [False, True])
+def test_dense_continuous_lines_retain_batched_rasterization(monkeypatch, saved):
+    from trendsetter_axi.core import Canvas
+
+    ax = Figure().subplots()
+    xs = np.linspace(0, 100, 100_000)
+    ax.plot(xs, 2 + np.sin(xs))
+    ax.set(xlim=(0, 100), ylim=(0, 4))
+    source = from_figure(ax.figure) if saved else ax.figure
+    v = model(source)
+    calls = []
+    rasterize = Canvas._line_dots
+
+    def counted(canvas, path, *args, **kwargs):
+        calls.append(len(path))
+        assert len(calls) <= 1, 'continuous run split into per-edge rasterization calls'
+        return rasterize(canvas, path, *args, **kwargs)
+
+    monkeypatch.setattr(Canvas, '_line_dots', counted)
+    for render_frame in (v.frame, lambda: render_styled(source)):
+        calls.clear()
+        frame = render_frame()
+        assert calls == [len(xs)]
+        cells = colored_cells(frame)
+        p = v.projection
+        assert any(ch != ' ' for row in cells[p.top:p.top + p.rows]
+                   for ch, _ in row[p.left:p.left + p.cols])
+    point = v.points[50_000]
+    assert v.nearest(*v.projection.cell(point.x, point.y)) == point
+
+
+@pytest.mark.parametrize('style', ['default', 'steps-pre', 'steps-post', 'steps-mid'])
+@pytest.mark.parametrize('saved', [False, True])
+def test_line_run_batching_preserves_gaps_steps_and_isolated_knots(monkeypatch, style, saved):
+    from trendsetter_axi.core import Canvas
+
+    ax = Figure().subplots()
+    ax.plot([1, 2, 3, math.nan, 5, math.nan, 7, 8, 9],
+            [1, 2, 1, math.nan, 2, math.nan, 1, 2, 1], drawstyle=style, marker='o')
+    ax.set(xlim=(0, 10), ylim=(0, 3))
+    source = from_figure(ax.figure) if saved else ax.figure
+    v = model(source)
+    calls = []
+    rasterize = Canvas._line_dots
+
+    def counted(canvas, path, *args, **kwargs):
+        calls.append(len(path))
+        return rasterize(canvas, path, *args, **kwargs)
+
+    monkeypatch.setattr(Canvas, '_line_dots', counted)
+    for render_frame in (v.frame, lambda: render_styled(source)):
+        calls.clear()
+        cells = colored_cells(render_frame())
+        assert len(calls) == 2
+        assert all(length >= 3 for length in calls)
+        for x in (4, 6):
+            assert v.nearest(*v.projection.cell(x, 1.5)) is None
+            c, r = v.projection.cell(x, 1)
+            assert cells[math.floor(r)][math.floor(c)][0] == ' '
+        c, r = v.projection.cell(5, 2)
+        assert cells[math.floor(r)][math.floor(c)][0] != ' '
+    for point in v.points:
+        assert v.nearest(*v.projection.cell(point.x, point.y)) == point
