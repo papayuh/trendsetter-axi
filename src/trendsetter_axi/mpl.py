@@ -12,6 +12,7 @@ from matplotlib.category import UnitData
 from matplotlib.collections import Collection, PathCollection, PolyCollection, QuadMesh
 from matplotlib.colors import to_hex, to_rgb
 from matplotlib.lines import Line2D, CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE
+from matplotlib.markers import MarkerStyle
 from matplotlib.container import BarContainer, ErrorbarContainer
 from matplotlib.image import _ImageBase
 from matplotlib.text import Text
@@ -129,6 +130,7 @@ class TextRenderer(RendererBase):
         values = np.ma.filled(np.ma.asarray(self.cur.get_array(), float), np.nan).reshape(t.shape)
         alpha = self.cur.get_alpha()
         alpha = 1.0 if alpha is None else np.asarray(alpha)
+        if np.ndim(alpha): alpha = alpha.reshape(t.shape)
         if xs[0] > xs[-1]:
             xs, t, values = xs[::-1], t[:, ::-1], values[:, ::-1]
             if np.ndim(alpha): alpha = alpha[:, ::-1]
@@ -915,7 +917,10 @@ def losses(fig, meta):
         # Compact source-only reports have no measured raster visibility.
         if "owners_drawn" in meta and (n == 0 or i not in meta["owners_drawn"]):
             if pts is not None and not len(pts) or isinstance(a, Collection) and not any(np.isfinite(p.vertices).all(1).any() for p in a.get_paths()): continue   # no data to draw
-            if hasattr(a, "get_path") and np.ptp(a.get_transform().transform(a.get_path().vertices), axis=0).max(initial=0) == 0: continue   # zero-size legend proxies on data axes carry no geometry
+            if hasattr(a, "get_path") and np.ptp(a.get_transform().transform(a.get_path().vertices), axis=0).max(initial=0) == 0:
+                if not isinstance(a, Line2D) or a.get_markersize() <= 0: continue
+                marker = MarkerStyle(a.get_marker(), fillstyle=a.get_fillstyle())
+                if not len(marker.get_path().vertices) or np.ptp(marker.get_path().transformed(marker.get_transform()).vertices, axis=0).max(initial=0) == 0: continue
             occluded = i in meta["occluded"]
             k = ("occluded" if occluded else "lost_artist", kind(a), _name(a, bars),
                  "covered by later opaque ink" if occluded else "drew nothing" if n == 0 else "hidden: no visible cell")

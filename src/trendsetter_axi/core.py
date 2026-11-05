@@ -98,6 +98,7 @@ class Canvas:
         self.inks = {}            # id(primitive) -> ("ink", owner), independent of presentation colour
         self.orders = {}          # id(primitive) -> painter sequence; retained when geometry is snapped
         self.opaque = {}
+        self.stroke_paths = {}
         self.sequence = 0
 
     def _queue(self, queue, primitive, *, source=None, opaque=True):
@@ -132,6 +133,7 @@ class Canvas:
     def bg(self, c): return neutral(c) and (lum(c) < 0.4 if self.dark else lum(c) > 0.8)
 
     def stroke(self, polylines, rgb, dashes=None, clip=None, role=None, rule=False, alpha=1.0):
+        polylines = [p for p in polylines if len(p) >= 2]
         data = role == "data"   # a data artist (a curve) is never axis/grid geometry or background, whatever its colour
         if role in ("grid", "background") or self.bg(rgb) and not data or not polylines: return
         pts = np.concatenate([np.asarray(p, float) for p in polylines if len(p)])
@@ -146,7 +148,9 @@ class Canvas:
         if neutral(rgb) or role in ("axis", "annotation"):  # neutral ink has no series id; frames and arrows never introduce a series
             ink = ("ink", self.owner) if data and self.owner is not None else None
             if ink: self.owned.setdefault(self.owner, set()).add(ink)
-            put = lambda s: self._queue(self.strokes, s, opaque=alpha >= .95)
+            def put(s):
+                self._queue(self.strokes, s, opaque=alpha >= .95)
+                if data: self.stroke_paths[self.orders[id(s)]] = [np.asarray(p, float) for p in polylines]
             # ponytail: batch neutral data strokes over 32 total points across polylines; short rules keep box glyphs.
             if data and len(pts) > 32:
                 put(("dots", -1, [np.asarray(p, float) for p in polylines], dashes, clip))
@@ -493,6 +497,7 @@ class Canvas:
         box_seq = np.zeros(box.shape, int)
         fill_seq = np.zeros(fill.shape, int)
         fill_opaque = np.zeros(fill.shape, bool)
+        fill_barrier = np.zeros(fill.shape, int)
         mark_seq = {}
         primitives, inked = {}, {}
         seq = 0
@@ -510,12 +515,14 @@ class Canvas:
         def put_fill(m, sid, g):
             record(np.argwhere(m))
             opaque = primitives[seq][2]
+            if opaque: fill_barrier[m] = np.maximum(fill_barrier[m], seq)
             m = m & ((fill_seq <= seq) | (~fill_opaque & (not opaque)))
             fill_seq[m] = seq; fill_opaque[m] = opaque; fill[m] = sid; shade[m] = g
 
         def fill_cell(r, c, sid, g):
             inked[seq].add((r, c))
             opaque = primitives[seq][2]
+            if opaque: fill_barrier[r, c] = max(fill_barrier[r, c], seq)
             if fill_seq[r, c] <= seq or not (opaque or fill_opaque[r, c]):
                 fill_seq[r, c] = seq; fill_opaque[r, c] = opaque; fill[r, c] = sid; shade[r, c] = g
 
@@ -712,7 +719,7 @@ class Canvas:
         # ponytail: transient buffers stay local to this render, not as new Canvas attributes.
         return dict(dots=dots, box=box, frame=frame, fill=fill, shade=shade, under=under,
                     stamps=stamps, inked=inked, primitives=primitives, dot_seq=dot_seq,
-                    box_seq=box_seq, fill_seq=fill_seq, mark_seq=mark_seq,
+                    box_seq=box_seq, fill_seq=fill_seq, fill_barrier=fill_barrier, mark_seq=mark_seq,
                     famsid=famsid, famruns=famruns,
                     marks=marks, mark_sid=mark_sid, glyph=glyph, multi=multi, nser=nser,
                     shaded=shaded, ridge=ridge, rscaled=rscaled, alt=alt, seqs=seqs,
@@ -737,6 +744,7 @@ class Canvas:
 
         def paint(r, c, order, g, sid, crossing=False):
             inked[order].add((r, c))
+            if not crossing and raster["fill_barrier"][r, c] > order: return
             old = sources[r, c]
             # Translucent fills never erase strokes, irrespective of painter order.
             if old and max(old) > order and any(primitives[k][2] and
@@ -750,15 +758,15 @@ class Canvas:
                 orders = dot_seq[r * 4:r * 4 + 4, c * 2:c * 2 + 2]
                 on = blk > -2
                 fs, bs = fill_seq[r, c], box_seq[r, c]
-                opaque = fs and primitives[fs][2]
-                if opaque: on &= orders > fs
+                barrier = raster["fill_barrier"][r, c]
+                if barrier: on &= orders > barrier
                 data_box = bs and primitives[bs][3] is not None
-                if data_box and (not opaque or bs > fs): on &= orders > bs
+                if data_box and bs > barrier: on &= orders > bs
                 if on.any():
                     cell[r, c] = "─" if shade[r, c] and on.any(1).sum() == 1 and 0 < c < C_ - 1 and shade[r, c - 1] and shade[r, c + 1] else chr(0x2800 + int(BITS[on].sum()))
                     v = blk[on]; sid_at[r, c] = np.bincount(v + 2).argmax() - 2
                     sources[r, c] = frozenset(map(int, np.unique(orders[on])))
-                elif box[r, c] and ((data_box and (not opaque or bs > fs)) or (not data_box and frame[r, c])):
+                elif box[r, c] and ((data_box and bs > barrier) or (not data_box and frame[r, c])):
                     cell[r, c] = BOX[box[r, c]]; sources[r, c] = frozenset((int(bs),))
                 elif shade[r, c]:
                     cell[r, c] = shade[r, c]; sid_at[r, c] = fill[r, c]; sources[r, c] = frozenset((int(fs),))
@@ -939,6 +947,7 @@ class Canvas:
         def coincides(lower, upper):
             """Source geometry, not rounded cells: nearby curves are resolution loss."""
             lk, a, _, _ = primitives[lower]; uk, b, _, _ = primitives[upper]
+            a, b = self.stroke_paths.get(lower, a), self.stroke_paths.get(upper, b)
             if uk == "fill": return True
             if a is None or b is None or lk != uk: return False
             if lk == "mark": return set(map(tuple, a)) <= set(map(tuple, b))
@@ -964,6 +973,7 @@ class Canvas:
         covered = {}
         def overwritten(order, r, c):
             if taken[r, c]: return False
+            if raster["fill_barrier"][r, c] > order: return True
             for later in sources[r, c]:
                 if later <= order or not primitives[later][2]: continue
                 pair = (order, later)

@@ -397,13 +397,15 @@ def test_missing_observations_stay_missing():
     assert heat_cells(cells) == ["▒ █", " ▓ "], cells   # a blank cell where an observation is missing, never a filled one
 
 
+@pytest.mark.parametrize("overlay", [False, True])
 @pytest.mark.parametrize("line_z,alpha,hidden", [(1, 1, True), (6, 1, False), (1, .5, False)])
 @pytest.mark.parametrize("colour", ["red", "black"])
-def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour):
+def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour, overlay):
     def make(line):
         fig, ax = plt.subplots(figsize=(6, 3))
         if line: ax.plot([1, 9], [5, 5], color=colour, label="line", zorder=line_z)
         ax.fill_between([0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        if overlay: ax.fill_between([0, 10], 2, 8, color="green", alpha=.5, zorder=7)
         ax.set(xlim=(0, 10), ylim=(0, 10))
         return fig
     fig, control = make(True), make(False)

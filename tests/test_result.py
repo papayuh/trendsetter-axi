@@ -1166,14 +1166,16 @@ def test_only_opaque_covering_is_occlusion(close, kind, colour, alpha):
     ], r.losses
 
 
+@pytest.mark.parametrize("overlay", [False, True])
 @pytest.mark.parametrize("alpha", [.949, .95, 1])
 @pytest.mark.parametrize("kind", ["line", "markers", "image"])
-def test_opaque_fill_threshold_and_later_images(close, alpha, kind):
+def test_opaque_fill_threshold_and_later_images(close, alpha, kind, overlay):
     def build(ax):
         if kind == "line": ax.plot([1, 9], [5, 5], color="red", label="bottom", zorder=1)
         elif kind == "markers": ax.scatter([2, 5, 8], [5, 5, 5], color="red", label="bottom", zorder=1)
         else: ax.imshow(np.ones((2, 2)), extent=(2, 8, 3, 7), aspect="auto", label="bottom", zorder=1)
         ax.fill_between([0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        if overlay: ax.fill_between([0, 10], 2, 8, color="green", alpha=.5, zorder=6)
         ax.set(xlim=(0, 10), ylim=(0, 10))
     r = tsa.render(figure(build), 60)
     lower = [l for l in r.losses if "'bottom'" in l["what"]]
@@ -1199,3 +1201,73 @@ def test_gallery_histogram_loss_is_newly_detected_not_source_occlusion(close):
     assert [(l["kind"], l["what"], l["detail"], l["material"]) for l in r.losses] == [
         ("lost_artist", "bar", "3 hidden: no visible cell", True)
     ], r.losses
+
+
+@pytest.mark.parametrize("bottom", ["C0", "black"])
+@pytest.mark.parametrize("top", ["C0", "C1", "black"])
+@pytest.mark.parametrize("transpose", [False, True])
+def test_short_identical_lines_keep_colour_independent_verdict(close, bottom, top, transpose):
+    x, y = np.arange(4), np.array([1, 3, 2, 4])
+    if transpose: x, y = y, x
+    def build(ax):
+        ax.plot(x, y, color=bottom, label="bottom")
+        ax.plot(x, y, color=top, label="top")
+    r = tsa.render(figure(build), 60, strict=True)
+    assert [(l["kind"], l["what"], l["material"]) for l in r.losses] == [
+        ("occluded", "Line2D 'bottom'", False)
+    ], r.losses
+
+
+@pytest.mark.parametrize("invert_x", [False, True])
+@pytest.mark.parametrize("invert_y", [False, True])
+def test_flat_mesh_alpha_preserves_cell_opacity(close, invert_x, invert_y):
+    values = np.arange(6).reshape(2, 3)
+    alpha = np.array([[.5, 1, .5], [1, .5, 1]])
+    def make(flat):
+        def build(ax):
+            ax.plot([.2, .8], [.5, .5], color="red", label="visible", zorder=1)
+            ax.plot([1.2, 1.8], [.5, .5], color="red", label="covered", zorder=1)
+            mesh = ax.pcolormesh(values, alpha=alpha.copy(), zorder=5)
+            if flat: mesh.set_array(values.ravel())
+            if invert_x: ax.invert_xaxis()
+            if invert_y: ax.invert_yaxis()
+            ax.set_axis_off()
+        return tsa.render(figure(build), 60, strict=True)
+    flat, grid = make(True), make(False)
+    assert any(ch in flat.text for ch in core.HEAT)
+    assert flat.losses == grid.losses
+    assert [(l["kind"], l["what"], l["material"]) for l in flat.losses] == [
+        ("occluded", "Line2D 'covered'", False)
+    ], flat.losses
+
+
+@pytest.mark.parametrize("linestyle", ["None", "-"])
+@pytest.mark.parametrize("marker", ["o", "|", "_"])
+@pytest.mark.parametrize("cover", ["nearby", "identical", "fill", "layered_fill"])
+def test_single_point_line_markers_are_accounted(close, marker, cover, linestyle):
+    def build(ax):
+        ax.plot([5], [5], marker=marker, linestyle=linestyle, color="C0", label="bottom", zorder=1)
+        if "fill" in cover:
+            ax.fill_between([0, 10], 2, 8, color="C1", zorder=5)
+            if cover == "layered_fill": ax.fill_between([0, 10], 2, 8, color="green", alpha=.5, zorder=6)
+        else:
+            value = 5.001 if cover == "nearby" else 5
+            ax.plot([value], [value], marker=marker, linestyle=linestyle, color="C1", zorder=2)
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+    fig = figure(build)
+    r = tsa.render(fig, 60)
+    lower = [l for l in r.losses if l["what"] == "Line2D 'bottom'"]
+    assert [(l["kind"], l["material"]) for l in lower] == [
+        ("lost_artist", True) if cover == "nearby" else ("occluded", False)
+    ], r.losses
+    if cover == "nearby":
+        with pytest.raises(tsa.RenderLossError, match="bottom"):
+            tsa.render(fig, 60, strict=True)
+    elif cover != "layered_fill":
+        assert tsa.render(fig, 60, strict=True).losses == r.losses
+
+
+@pytest.mark.parametrize("marker,size", [("None", 6), ("o", 0)])
+def test_point_without_marker_geometry_remains_exempt(close, marker, size):
+    fig = figure(lambda ax: ax.plot([5], [5], marker=marker, markersize=size, label="proxy"))
+    assert not tsa.render(fig, 60, strict=True).losses
