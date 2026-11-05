@@ -331,6 +331,96 @@ def test_bar_nondata_transforms_are_unavailable(horizontal, mixed):
     assert answer(rec, 'facts')['marks'] == []
 
 
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('angle', [90, -45])
+@pytest.mark.parametrize('mixed', [False, True])
+def test_rotated_bars_are_unavailable(horizontal, angle, mixed):
+    ax = Figure().subplots()
+    kwargs = {} if mixed else dict(angle=angle)
+    bars = (ax.barh([0, 1], [2, 3], height=.8, label='rotated', **kwargs) if horizontal else
+            ax.bar([0, 1], [2, 3], width=.8, label='rotated', **kwargs))
+    if mixed: bars[1].set_angle(angle)
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any(f'rectangle rotation {angle}' in reason for reason in rec['unavailable'])
+    assert answer(rec, 'facts')['marks'] == []
+
+
+@pytest.mark.parametrize('style', ['default', 'steps-pre', 'steps-post', 'steps-mid', 'markers'])
+@pytest.mark.parametrize('errorbar', [False, True])
+@pytest.mark.parametrize('transform_kind', ['axes', 'blended', 'affine'])
+def test_nondata_lines_are_unavailable(style, errorbar, transform_kind):
+    from matplotlib.transforms import Affine2D
+    ax = Figure().subplots()
+    ax.set(xscale='log', xlim=(1, 100), ylim=(0, 10))
+    transform = {'axes': ax.transAxes, 'blended': ax.get_yaxis_transform(),
+                 'affine': Affine2D().translate(1, 0) + ax.transData}[transform_kind]
+    kwargs = dict(transform=transform, label='transformed')
+    if style == 'markers': kwargs.update(linestyle='none', marker='o')
+    else: kwargs['drawstyle'] = style
+    if errorbar: ax.errorbar([0, 1], [0, 1], yerr=.1, **kwargs)
+    else: ax.plot([0, 1], [0, 1], **kwargs)
+    rec = from_figure(ax.figure)
+    assert rec['marks'] == []
+    assert any(f'non-data transform {type(transform).__name__}' in reason for reason in rec['unavailable'])
+    unavailable(rec, 'value_at', 'transformed', 20)
+    unavailable(rec, 'crossing', 'transformed', 5)
+
+
+def test_data_step_lines_remain_available_on_log_axes():
+    ax = line([1, 100], [0, 10], 'steps-mid')
+    ax.set(xscale='log', xlim=(1, 100), ylim=(0, 10))
+    rec = from_figure(ax.figure)
+    assert answer(rec, 'value_at', 'A', 20) == 0
+    assert answer(rec, 'crossing', 'A', 5) == 50.5
+
+
+@pytest.mark.parametrize('limit,axis', [('lolims', 'y'), ('uplims', 'y'), ('xlolims', 'x'), ('xuplims', 'x')])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_errorbar_limit_diagnostics_belong_to_each_container(limit, axis, reverse):
+    ax = Figure().subplots()
+    names = ['limited', 'ordinary']
+    for name in reversed(names) if reverse else names:
+        ax.errorbar([1, 2], [2, 3], xerr=.2, yerr=.3, label=name,
+                    **({limit: True} if name == 'limited' else {}))
+    rec = from_figure(ax.figure)
+    assert mark(rec, 'limited')[axis + 'err'] == [[None, None], [None, None]]
+    assert np.array(mark(rec, 'ordinary')[axis + 'err']) == pytest.approx(np.full((2, 2), .2 if axis == 'x' else .3))
+    assert 'limited: sample support unavailable; one-sided bounds unknown' in rec['unavailable']
+    assert 'ordinary: sample support unavailable; interval meaning requires declaration' in rec['unavailable']
+    assert not any(reason.startswith('ordinary:') and 'one-sided' in reason for reason in rec['unavailable'])
+
+
+def test_line_free_errorbar_centers_remain_available():
+    ax = Figure().subplots()
+    ax.errorbar([1, 2], [2, 3], yerr=.3, fmt='none', label='inferred')
+    rec = from_figure(ax.figure)
+    assert mark(rec, 'inferred')['kind'] == 'points'
+    assert answer(rec, 'value_at', 'inferred', 1) == 2
+    assert 'inferred: sample support unavailable; centers inferred from segment midpoints' in rec['unavailable']
+
+
+def test_subject_tables_use_declarations_or_explicit_arguments():
+    rec = from_figure(line().figure)
+    rec['records'] = [dict(time=10)]
+    unavailable(rec, 'count_where', 'time >= 6')
+    assert query(rec, 'check', ['count_where', 'time >= 6', '==', 1])['verdict'] == 'unavailable'
+    assert answer(rec, 'count_where', 'time >= 6', [dict(time=10)]) == 1
+    rec['declared']['records'] = [dict(time=2)]
+    assert answer(rec, 'count_where', 'time >= 6') == 0
+    other = copy.deepcopy(rec)
+    other['records'] = [dict(time=2)]
+    assert answer(other, 'count_where', 'time >= 6') == 0
+    assert answer(rec, 'diff', other)['declared'] is None
+    other['declared']['records'] = [dict(time=10)]
+    assert answer(other, 'count_where', 'time >= 6') == 1
+    assert answer(other, 'check', ['count_where', 'time >= 6', '==', 1]) is True
+    assert answer(rec, 'diff', other)['declared'] == dict(before=rec['declared'], after=other['declared'])
+    assert answer(other, 'facts')['declared']['records'] == [dict(time=10)]
+    assert answer(other, 'count_where', 'time >= 6', []) == 0
+    assert answer(other, 'count_where', 'time >= 6', [dict(time=2)]) == 0
+
+
 @pytest.mark.parametrize('polygon', [False, True])
 @pytest.mark.parametrize('offset,transformed', [([1, 2], False), ([0, 0], True)])
 def test_collection_offsets_are_unavailable(polygon, offset, transformed):

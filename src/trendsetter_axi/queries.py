@@ -172,7 +172,7 @@ def _first_x_where(rec, key, predicate):
 
 
 def _count_where(rec, predicate, table=None):
-    if table is None: table = rec.get("records", rec.get("declared", {}).get("records"))
+    if table is None: table = rec.get("declared", {}).get("records")
     if table is None: _need("records table or risk table required (one row per subject, e.g. time and event); duplicated subjects draw the same curve")
     if not isinstance(table, list) or not all(isinstance(r, dict) for r in table): _need("records must be a list of row objects")
     matches = _predicate(predicate)

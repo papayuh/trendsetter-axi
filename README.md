@@ -154,8 +154,8 @@ Crossings between separate axes require matching scale/unit metadata.
 
 Author intent belongs in `record["declared"]`, e.g. `{"interval_level": 0.8}` or
 `{"totals": ["Start", "End"]}`; `facts()` reports these as assertions, not computed
-aggregates. Attach one row per subject at `record["records"]` or
-`record["declared"]["records"]` for subject queries:
+aggregates. Attach one row per subject at `record["declared"]["records"]`
+for subject queries:
 
 ```python
 record["declared"]["records"] = [{"time": 2, "event": 1}, {"time": 10, "event": 0}]

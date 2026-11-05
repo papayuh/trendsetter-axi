@@ -54,6 +54,8 @@ class _Collector:
 
         tr = a.get_data_transform() if hasattr(a, 'get_data_transform') else a.get_transform()
         reason = f"non-data transform {type(tr).__name__}" if raw and tr is not a.axes.transData else None
+        if isinstance(a, mpl.Rectangle) and a.get_angle():
+            reason = f"rectangle rotation {a.get_angle()} degrees"
         if isinstance(a, mpl.Collection):
             offset_tr = a.get_offset_transform()
             if mpl.np.any(a.get_offsets()) or not isinstance(offset_tr, IdentityTransform):
@@ -67,6 +69,7 @@ class _Collector:
     def points(self, j, a, raw, xy, kind, name, **extra):
         from . import mpl
 
+        if isinstance(a, mpl.Line2D) and not self.geometry(a, raw=True): return
         raw = mpl.np.ma.filled(mpl.np.ma.asarray(raw, float), mpl.np.nan).reshape(-1, 2)
         valid = mpl.np.isfinite(raw).all(1)
         indices = mpl.np.flatnonzero(valid)

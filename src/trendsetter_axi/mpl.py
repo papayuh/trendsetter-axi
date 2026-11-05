@@ -815,7 +815,7 @@ def describe(fig, meta, *, record=None):
                                 lo, hi = np.sort(seg[:, axis])
                                 bounds[row] = xy[row, axis] - lo, hi - xy[row, axis]
                     errors[k + 'err'] = bounds
-                errorbars.append((a, c, xy, errors))
+                errorbars.append((a, c, xy, errors, limited))
                 continue
             if not isinstance(c, BarContainer) or not len(c): continue
             handled.update(id(b) for b in c)
@@ -844,7 +844,7 @@ def describe(fig, meta, *, record=None):
             pairs = [f"{fp(p)}={fv(v)}" for p, v in zip(pos, val) if np.isfinite(v)]
             if len(pairs) > 40: i, k = int(np.nanargmin(val)), int(np.nanargmax(val)); pairs = [f"min {fp(pos[i])}={fv(val[i])}", f"max {fp(pos[k])}={fv(val[k])}"]
             series.append(dict(name=_name(c, {}), kind="barh" if h else "bar", axes=j, key=key(bs[0].get_facecolor()), color=to_hex(bs[0].get_facecolor()), n=len(bs), values=pairs))
-        for a, container, raw, errors in [*((a, None, a.get_xydata(), {}) for a in ax.lines if id(a) not in handled), *errorbars]:
+        for a, container, raw, errors, limited in [*((a, None, a.get_xydata(), {}, set()) for a in ax.lines if id(a) not in handled), *errorbars]:
             if container is None and not a.get_visible(): hidden += 1; continue
             if a is not None: handled.add(id(a))
             xy, miss = _valid(raw)
