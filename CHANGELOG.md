@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Replace the unavailable PyPI install with a GitHub install and retain the editable source route. Refresh the README overview of source summaries and loss diagnostics; benchmark numbers remain labelled with measured commit `9288d2b`.
+- Add a scatter brush GIF and standalone `examples/scatter_brush.py` on synthetic data. This is an interaction prototype, not an installed-package feature or renderer API.
+
 - Remove the documented `trendsetter_axi.gallery` module from the installed package: all 50 charts and their CSV now live in `examples/gallery.py` and `examples/data/gas.csv` in the source checkout. Use `from examples.gallery import CHARTS` there, or `python examples/demo.py --section gallery`; the `gallery` extra still installs the optional chart libraries. Move the Matplotlib self-checks to `tests/test_selfchecks.py` and remove `python -m trendsetter_axi.mpl --test`; run them with `python -m pytest tests/test_selfchecks.py`. Rendering APIs are unchanged.
 
 - Require Matplotlib >=3.10.0 and NumPy >=1.23.0, verified together on Python 3.10. Test latest dependencies on Python 3.10, 3.12 and 3.14, plus the dependency floors and a clean, non-editable wheel install with figure/SVG rendering and the renderer regression fixtures. Python classifiers now match the CI matrix; see [installation requirements](README.md#install).
