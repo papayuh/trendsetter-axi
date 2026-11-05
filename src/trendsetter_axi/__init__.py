@@ -29,6 +29,19 @@ def render_styled(source, cols=120, rows=38, *, color=True):
     return draw(source, cols=cols, rows=rows, color=color)
 
 
+def dashboard(figures, *, columns=None, cols=None, rows=None, title='Dashboard',
+              color=True, interactive=False, refresh=None, interval=1.0):
+    """Tile charts on one terminal screen; return text unless interactive=True.
+
+    refresh is an optional no-argument callback returning new figures/records.
+    Live refresh requires interactive=True and a POSIX input/output TTY.
+    """
+    from .dashboard import dashboard as draw
+
+    return draw(figures, columns=columns, cols=cols, rows=rows, title=title,
+                color=color, interactive=interactive, refresh=refresh, interval=interval)
+
+
 def interact(source):
     """Explore a matplotlib Figure or chart record in a POSIX mouse-enabled TTY.
 
