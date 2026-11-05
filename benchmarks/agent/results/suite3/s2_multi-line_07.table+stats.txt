@@ -1,0 +1,6 @@
+multi-line experiment 8
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"Alpha","columns":["x","y"],"total_rows":129,"selected_indices":[0,25,51,76,102,128],"rows":[[0.0,5.116598022071493],[25.0,6.658151635532823],[51.0,-36.802709880615375],[76.0,-48.34017814131379],[102.0,-62.59482722662205],[128.0,-31.733773835175235]]}
+{"name":"Beta","columns":["x","y"],"total_rows":129,"selected_indices":[0,25,51,76,102,128],"rows":[[0.0,-3.2556982749582737],[25.0,38.17813201236545],[51.0,17.376219341552808],[76.0,38.49783317086518],[102.0,21.931831480298083],[128.0,33.856354669558634]]}
+Full-source statistics:
+[{"name":"Alpha","rows":129,"columns":{"x":{"n":129,"min":0.0,"max":128.0,"mean":64.0,"sum":8256.0,"negative":0,"max_ties":1},"y":{"n":129,"min":-63.459989680332406,"max":15.460036960780425,"mean":-30.3448174412617,"sum":-3914.481449922759,"negative":92,"max_ties":1}}},{"name":"Beta","rows":129,"columns":{"x":{"n":129,"min":0.0,"max":128.0,"mean":64.0,"sum":8256.0,"negative":0,"max_ties":1},"y":{"n":129,"min":-13.714361133037158,"max":57.4926913653906,"mean":24.62512199576721,"sum":3176.64073745397,"negative":9,"max_ties":1}}},{"comparison":"Alpha > Beta","count":14}]

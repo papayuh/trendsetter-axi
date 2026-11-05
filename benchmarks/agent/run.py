@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 
 import matplotlib
@@ -331,16 +332,33 @@ def _write_pilot_report(model):
     REPORT.write_text("\n".join(L))
 
 
+def _write_indexed_report(report, manifest, path=None):
+    destination = path or REPORT
+    prefix = (HERE / "RESULTS.md").read_bytes().split(b"# Suite2 benchmark results\n", 1)[0]
+    report(manifest, path=destination)
+    destination.write_bytes(prefix + destination.read_bytes())
+
+
 def write_report(model):
     """Regenerate the current report; isolated historical fixtures keep their grader."""
     if (MANIFESTS / "suite2.json").exists() and model == "claude-sonnet-5-5":
         from suite2 import load as load_suite2, report as report_suite2
-        report_suite2(load_suite2(verify_renderer=False), path=REPORT)
+        _write_indexed_report(report_suite2, load_suite2(verify_renderer=False))
     else:
         _write_pilot_report(model)
 
 
-def main():
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--suite2" in argv:
+        import suite2
+        report = suite2.report
+        suite2.report = partial(_write_indexed_report, report)
+        try:
+            suite2.main([arg for arg in argv if arg != "--suite2"])
+        finally:
+            suite2.report = report
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="claude-sonnet-5-5")
     ap.add_argument("--tag", default="after")
@@ -348,7 +366,7 @@ def main():
     ap.add_argument("--formats", default=",".join(FORMATS), help="comma-separated; none is always asked (it is the token baseline)")
     ap.add_argument("--no-ask", action="store_true")
     ap.add_argument("--replicate", type=int, help="ask every call again under tag TAG#N, reusing no earlier row")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     tag = f"{args.tag}#{args.replicate}" if args.replicate else args.tag
     key = build(args.split)
     if not args.no_ask:
@@ -377,10 +395,4 @@ def main():
 
 
 if __name__ == "__main__":
-    if "--suite2" in sys.argv:
-        # Keep the historical pilot reproducible; suite2 has its own immutable
-        # stimuli, manifest, retries and raw rows, never reused from the pilot.
-        from suite2 import main as suite2_main
-        suite2_main([arg for arg in sys.argv[1:] if arg != "--suite2"])
-    else:
-        main()
+    main()

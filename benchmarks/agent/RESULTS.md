@@ -1,3 +1,53 @@
+# Agent benchmark results
+
+## Suite3: records and query CLI — 2026-11-05
+
+Same 70 suite2 charts/questions/grading, three trials on `claude-sonnet-5-5`,
+effort low, subscription CLI. Protocol, success bars and stimuli committed at
+`4f98a25` before calls. All 630 cells completed; 210/210 chart-trials paired.
+[Full suite3 results](RESULTS-suite3.md) · [frozen protocol](README-suite3.md).
+
+| same-day arm | correct / 840 | wrong | abstain | total input tokens | output tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| record | 828/840 | 1 | 11 | 648,990 | 98,193 |
+| record+query | 825/840 | 6 | 9 | 831,009 | 92,409 |
+| table+stats control | 805/840 | 2 | 33 | 330,342 | 15,383 |
+
+**Earlier-run suite2, not same-day controls:** summary 659/840 (252,243 input
+tokens), hybrid 700/840 (305,481), table+stats 797/840 (330,342). Original report
+and its failed summary criterion remain unchanged below.
+
+Both new arms **pass both predeclared bars**: more correct than earlier
+summary/hybrid pooled and in every trial; within two answers of the same-day
+control in every trial (in fact, ahead). This is descriptive evidence on reused
+charts, not a significance claim or a new held-out evaluation.
+
+**Record access helps accuracy here, not compression.** Plain record gets
+120/120 on scatter and 120/120 on heatmaps; earlier summary got 60/120 and 85/120.
+But records retain full eligible arrays while the control's table is sampled;
+the result does not establish an advantage over a full-source table. Total input
+is **196.5%** of control for record and **251.6%** for record+query. Input includes
+cached tokens and every tool-protocol transcript replay; output is separate.
+
+**No observed additive query benefit:** record+query trails plain record by three
+answers. The agent used the CLI on 22/210 cells, 27 query turns total (maximum two
+observed, cap four); two responses were `unavailable`. The tool protocol is a
+bounded JSON request/reply loop through fresh `claude -p` calls, not a native-tool
+integration. Tool use is optional; this comparison cannot isolate the CLI's
+causal effect. No record/query defect was identified; no implementation was changed.
+
+All attempts cost **$4.740457 list-price equivalent**, below the $20 guide; no
+API-key auth, subscription pause, errors or interrupted cells. Recorded runner
+sessions total 1,539.831 seconds; summed parallel child time is 3,676.261 seconds.
+
+These results support the experimental record as a higher-accuracy input on
+this suite, not a claim that summary/hybrid was fixed, that query tools improve
+accuracy, or that readers for other libraries have been validated. Summary and
+renderer code remain unchanged. A compact record-backed view or another reader
+would need its own frozen evaluation.
+
+---
+
 # Suite2 benchmark results
 
 Frozen renderer `4376145d51b874f8f3f2799bc4fbd4292d9e221d`. Model `claude-sonnet-5-5`; subscription CLI, effort low.

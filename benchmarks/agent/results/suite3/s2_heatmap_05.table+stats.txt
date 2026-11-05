@@ -1,0 +1,5 @@
+heatmap experiment 6
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"grid","columns":["row","column","value"],"shape":[32,37],"total_rows":1184,"selected_indices":[0,65,131,197,262,328,394,460,525,591,657,722,788,854,920,985,1051,1117,1183],"rows":[["R00","K00",0.0],["R01","K28",0.0],["R03","K20",0.0],["R05","K12",0.0],["R07","K03",0.0],["R08","K32",0.0],["R10","K24",0.0],["R12","K16",0.0],["R14","K07",0.0],["R15","K36",0.0],["R17","K28",0.0],["R19","K19",0.0],["R21","K11",0.0],["R23","K03",0.0],["R24","K32",0.0],["R26","K23",0.0],["R28","K15",0.0],["R30","K07",0.0],["R31","K36",0.0]]}
+Full-source statistics:
+[{"name":"grid","rows":1184,"columns":{"value":{"n":1184,"min":0.0,"max":97.0,"mean":0.08192567567567567,"sum":97.0,"negative":0,"max_ties":1}}}]
