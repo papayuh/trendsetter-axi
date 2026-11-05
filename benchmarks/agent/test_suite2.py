@@ -131,15 +131,14 @@ def test_full_results_auth_model_and_manifest():
 
 
 def test_report_without_frozen_commit(monkeypatch, tmp_path):
-    # The aggregate index adds suite3 above the unchanged suite2 report.
-    heading = "# Suite2 benchmark results\n"
-    expected = heading + (s.HERE / "RESULTS.md").read_text().split(heading, 1)[1]
+    heading = b"# Suite2 benchmark results\n"
+    expected = heading + (s.HERE / "RESULTS.md").read_bytes().split(heading, 1)[1]
     def unavailable(*args, **kwargs):
         pytest.fail("Report must not request renderer git history")
     monkeypatch.setattr(s.subprocess, "check_output", unavailable)
-    monkeypatch.setattr(s, "HERE", tmp_path)
-    s.main(["report"])
-    assert (tmp_path / "RESULTS.md").read_text() == expected
+    path = tmp_path / "suite2.md"
+    s.report(s.load(verify_renderer=False), path=path)
+    assert path.read_bytes() == expected
 
 
 @pytest.mark.parametrize("action", ["smoke", "run"])

@@ -1,11 +1,13 @@
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
+import pytest
 
 BENCH = Path(__file__).parent.parent / "benchmarks" / "agent"
 sys.path.insert(0, str(BENCH))
@@ -42,14 +44,62 @@ def test_scores_only_rows_asked_the_current_questions():
     assert "line_stock" not in bench.scored(key, "claude-sonnet-5-5", "after")[3]
 
 
-def test_report_regenerates_from_results(tmp_path, monkeypatch):
+@pytest.mark.parametrize("existing", [False, True])
+def test_report_regenerates_from_results(tmp_path, monkeypatch, existing):
+    expected = (BENCH / "RESULTS.md").read_bytes()
     monkeypatch.setattr(bench, "REPORT", tmp_path / "RESULTS.md")
-    bench.write_report("claude-sonnet-5-5")
-    # RESULTS.md now indexes suite3 above the byte-preserved suite2 report.
-    index = (BENCH / "RESULTS.md").read_text()
-    suite2_heading = "# Suite2 benchmark results\n"
-    assert index.count(suite2_heading) == 1
-    assert bench.REPORT.read_text() == suite2_heading + index.split(suite2_heading, 1)[1]
+    if existing:
+        prefix, heading, _ = expected.partition(b"# Suite2 benchmark results\n")
+        bench.REPORT.write_bytes(prefix + heading + b"stale body\n")
+        monkeypatch.setattr(bench, "HERE", tmp_path)
+    for _ in range(2):
+        bench.write_report("claude-sonnet-5-5")
+        assert bench.REPORT.read_bytes() == expected
+
+
+@pytest.mark.parametrize("action,outcome", [
+    ("report", None), ("smoke", "complete"), ("run", "complete"),
+    ("smoke", "budget"), ("run", "budget"),
+])
+def test_suite2_entrypoint_preserves_aggregate(tmp_path, monkeypatch, action, outcome):
+    import suite2
+
+    expected = (BENCH / "RESULTS.md").read_bytes()
+    prefix, heading, _ = expected.partition(b"# Suite2 benchmark results\n")
+    monkeypatch.setattr(bench, "HERE", tmp_path)
+    monkeypatch.setattr(bench, "REPORT", tmp_path / "RESULTS.md")
+    bench.REPORT.write_bytes(prefix + heading + b"stale body\n")
+    original_report = suite2.report
+    if action != "report":
+        manifest = suite2.load(verify_renderer=False)
+        data = tmp_path / "data"
+        data.mkdir()
+        for name in ("calls.jsonl", "sessions.jsonl"):
+            shutil.copyfile(suite2.DATA / name, data / name)
+        monkeypatch.setattr(suite2, "DATA", data)
+        def load(verify_renderer):
+            assert verify_renderer
+            return manifest
+        monkeypatch.setattr(suite2, "load", load)
+        monkeypatch.setattr(suite2, "run", lambda m, smoke: outcome)
+    def forbidden(*args, **kwargs):
+        pytest.fail("Offline report must not request renderer git history or call a model")
+    monkeypatch.setattr(suite2.subprocess, "check_output", forbidden)
+    monkeypatch.setattr(suite2, "call", forbidden)
+    for _ in range(2):
+        if outcome == "budget":
+            with pytest.raises(SystemExit) as exc:
+                bench.main(["--suite2", action])
+            assert exc.value.code == 2
+        else:
+            bench.main(["--suite2", action])
+        assert suite2.report is original_report
+        if action == "report":
+            assert bench.REPORT.read_bytes() == expected
+        else:
+            direct = tmp_path / "suite2.md"
+            suite2.report(manifest, path=direct)
+            assert bench.REPORT.read_bytes() == prefix + direct.read_bytes()
 
 
 def test_suite3_report_regenerates_from_frozen_results(tmp_path, monkeypatch):
@@ -59,7 +109,7 @@ def test_suite3_report_regenerates_from_frozen_results(tmp_path, monkeypatch):
     manifest = suite3.load(verify_code=False)
     monkeypatch.setattr(suite3, "HERE", tmp_path)
     suite3.report(manifest)
-    assert (tmp_path / "RESULTS-suite3.md").read_text() == (BENCH / "RESULTS-suite3.md").read_text()
+    assert (tmp_path / "RESULTS-suite3.md").read_bytes() == (BENCH / "RESULTS-suite3.md").read_bytes()
 
 
 def test_grade_rejects_malformed_numbers():
