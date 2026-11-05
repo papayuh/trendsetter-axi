@@ -96,6 +96,45 @@ def test_terminal_sequences_are_removed_before_label_wrapping(close):
     assert fig.axes[0].get_title() == label
 
 
+@pytest.mark.parametrize("get_artist", [
+    pytest.param(lambda fig, ax: fig.suptitle(""), id="suptitle"),
+    pytest.param(lambda fig, ax: ax.title, id="title"),
+    pytest.param(lambda fig, ax: ax._left_title, id="left-title"),
+    pytest.param(lambda fig, ax: ax._right_title, id="right-title"),
+    pytest.param(lambda fig, ax: ax.xaxis.label, id="xlabel"),
+    pytest.param(lambda fig, ax: ax.yaxis.label, id="ylabel"),
+    pytest.param(lambda fig, ax: fig.text(.2, .8, ""), id="figure-text"),
+    pytest.param(lambda fig, ax: ax.text(.2, .8, ""), id="axes-text"),
+    pytest.param(lambda fig, ax: ax.annotate("", (.2, .8)), id="annotation"),
+    pytest.param(lambda fig, ax: ax.get_legend().get_texts()[0], id="legend-label"),
+    pytest.param(lambda fig, ax: ax.legend(title="Legend").get_title(), id="legend-title"),
+    pytest.param(lambda fig, ax: fig.legend().get_texts()[0], id="figure-legend-label"),
+    pytest.param(lambda fig, ax: fig.legend(title="Legend").get_title(), id="figure-legend-title"),
+])
+@pytest.mark.parametrize("start,end", [("\x1b]", "\x07"), ("\x1b]", "\x1b\\"), ("\x9d", "\x9c")])
+@pytest.mark.parametrize("cols", [40, 80])
+def test_multiline_terminal_sequences_are_removed_before_drawing(close, get_artist, start, end, cols):
+    fig = figure(two_lines)
+    artist = get_artist(fig, fig.axes[0])
+    artist.set_text(f"before{start}0;evil\npayload{end}after")
+    original = [(t, t.get_text()) for t in fig.findobj(match=matplotlib.text.Text)]
+    size = fig.get_size_inches().copy()
+
+    result = tsa.render(fig, cols, color=True)
+
+    assert all(t.get_text() == text for t, text in original)
+    np.testing.assert_array_equal(fig.get_size_inches(), size)
+    assert "beforeafter" in result.text
+    assert "evil" not in result.text and "payload" not in result.text
+    assert "\x1b]" not in result.text and "\x07" not in result.text
+    assert "\x9d" not in result.text and "\x9c" not in result.text
+    assert "\x1b[38;2;" in result.text
+    artist.set_text("beforeafter")
+    assert result.text == tsa.render(fig, cols, color=True).text
+    for line in result.text.split("\n"):
+        assert width(line) == wcswidth(re.sub(r"\x1b\[[0-9;:]*m", "", line)) <= cols
+
+
 def test_generated_ansi_is_kept_apart_from_labels(close):
     def build(ax):
         two_lines(ax)

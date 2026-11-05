@@ -14,6 +14,7 @@ from matplotlib.colors import to_hex, to_rgb
 from matplotlib.lines import Line2D, CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE
 from matplotlib.container import BarContainer, ErrorbarContainer
 from matplotlib.image import _ImageBase
+from matplotlib.text import Text
 from .core import Canvas
 from .cells import clean_text, truncate, width, wrap
 
@@ -462,6 +463,8 @@ def prepare(fig, cols, rows=None):
 
     Heatmaps and bar charts may need more rows. Only `cols` is a hard budget.
     """
+    for t in fig.findobj(match=Text):
+        t.set_text(clean_text(t.get_text()))
     _ramp(fig, cols); _collapse(fig); fig._tc_ytop = False
     w_in, h_in = fig.get_size_inches()
     rows = max(8, rows) if rows else max(10, min(36, round(cols * (h_in / w_in) * CW / CH)))
@@ -474,7 +477,6 @@ def prepare(fig, cols, rows=None):
     # Wrap titles/xlabels in cells now, so layout reserves their extra lines.
     for t, w, role in [(getattr(fig, "_suptitle", None), cols, "title")] + [(t, max(12, int(ax.get_position().width * cols)), role) for ax in fig.axes for t, role in ((ax.title, "title"), (ax.xaxis.label, "label"))]:
         if t is not None:
-            t.set_text(clean_text(t.get_text()))
             if any(width(line) > w for line in t.get_text().split("\n")):
                 t.set_text("\n".join(wrap(t.get_text(), w))); fig._wrapped.update({l: role for l in t.get_text().split("\n")})
     nl = lambda t: len(t.get_text().split("\n")) * bool(t.get_text()) if t is not None else 0
