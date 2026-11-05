@@ -912,7 +912,8 @@ def losses(fig, meta):
             if out:
                 k = (kind(a), _name(a, bars)); o, t = clipped.get(k, (0, 0)); clipped[k] = (o + out, t + len(pts))
             if out == len(pts): continue   # wholly outside: clipped, not lost
-        if n == 0 or i not in meta["owners_drawn"]:
+        # Compact source-only reports have no measured raster visibility.
+        if "owners_drawn" in meta and (n == 0 or i not in meta["owners_drawn"]):
             if pts is not None and not len(pts) or isinstance(a, Collection) and not any(np.isfinite(p.vertices).all(1).any() for p in a.get_paths()): continue   # no data to draw
             if hasattr(a, "get_path") and np.ptp(a.get_transform().transform(a.get_path().vertices), axis=0).max(initial=0) == 0: continue   # zero-size legend proxies on data axes carry no geometry
             occluded = i in meta["occluded"]

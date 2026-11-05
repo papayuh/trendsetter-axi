@@ -452,7 +452,7 @@ GALLERY_MATERIAL_BASELINE = {'01_mpl_line': 0, '02_mpl_line2': 0, '03_mpl_scatte
 
 @pytest.mark.parametrize("cid", list(GALLERY_MATERIAL_BASELINE))
 def test_gallery_material_losses_do_not_increase(cid):
-    from trendsetter_axi.gallery import CHARTS
+    from examples.gallery import CHARTS
     chart = next(c for c in CHARTS if c["id"] == cid)
     pytest.importorskip(chart["lib"] if chart["lib"] != "matplotlib" else "matplotlib")
     try:

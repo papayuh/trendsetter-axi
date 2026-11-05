@@ -85,13 +85,14 @@ def test_svg_report_discloses_unavailable_values_and_unsupported_effect(rows):
 
 
 @pytest.mark.parametrize('rows', [2, 40])
-def test_fallback_keeps_material_occlusion_losses(rows):
+def test_fallback_keeps_source_occlusion_losses(rows):
     ax = Figure().subplots()
     ax.plot([1, 3, 2, 4], color='tab:blue', label='actual')
     ax.plot([1, 3, 2, 4], color='tab:orange', label='forecast')
     result = render_compact(ax.figure, cols=60, max_rows=rows)
-    assert dict(kind='lost_artist', what="Line2D 'actual'", detail='hidden: no visible cell', material=True) in result.losses
-    assert "lost_artist Line2D 'actual': hidden: no visible cell" in result.summary()
+    # T9: identical source curves are non-material occlusion, also in compact fallbacks.
+    assert dict(kind='occluded', what="Line2D 'actual'", detail='covered by later opaque ink', material=False) in result.losses
+    assert "occluded Line2D 'actual': covered by later opaque ink" in result.summary()
 
 
 def test_heatmap_explanation_keeps_sampling_and_lost_extreme_diagnostics():

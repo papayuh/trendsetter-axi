@@ -1185,7 +1185,7 @@ def test_opaque_fill_threshold_and_later_images(close, alpha, kind):
 
 def test_gallery_histogram_loss_is_newly_detected_not_source_occlusion(close):
     pytest.importorskip("seaborn")
-    from trendsetter_axi.gallery import c25
+    from examples.gallery import c25
     fig = c25()
     fig.canvas.draw()
     pixels = np.asarray(fig.canvas.buffer_rgba()).copy()
