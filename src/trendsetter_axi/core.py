@@ -93,7 +93,7 @@ class Canvas:
         self.hbars = False        # fills are horizontal bars: whole rows with gaps, eighth-width ends
         self.solidfills = False   # opt-in stacks: whole-cell shades, no partial-height segment glyphs
         self.meta = dict(dropped=[], truncated=[], clipped=[], shifted=[], offgrid=0, placed=[], inked=[], guessed=0)
-        self.owner = None         # the data artist being drawn (an adapter's index): which series it inks, for loss accounting
+        self.owner = None         # adapter's data-artist index, used for per-artist loss accounting
         self.owned = {}           # owner -> series ids it drew
         self.inks = {}            # id(primitive) -> ("ink", owner), independent of presentation colour
         self.orders = {}          # id(primitive) -> painter sequence; retained when geometry is snapped
@@ -497,7 +497,7 @@ class Canvas:
         box_seq = np.zeros(box.shape, int)
         fill_seq = np.zeros(fill.shape, int)
         fill_opaque = np.zeros(fill.shape, bool)
-        fill_barrier = np.zeros(fill.shape, int)
+        fill_barrier = np.zeros(fill.shape, int)  # retain opaque coverage even beneath a later translucent fill
         mark_seq = {}
         primitives, inked = {}, {}
         seq = 0
@@ -862,8 +862,7 @@ class Canvas:
     def _place_text(self, raster, cell, sid_at):
         """Place labels, audit visible data, then stamp legend keys."""
         R_, C_ = self.rows, self.cols
-        dots, box, fill = raster["dots"], raster["box"], raster["fill"]
-        marks, mark_sid, inked = raster["marks"], raster["mark_sid"], raster["inked"]
+        fill, inked = raster["fill"], raster["inked"]
         shaded, ridge, alt = raster["shaded"], raster["ridge"], raster["alt"]
         seqs, shade_of = raster["seqs"], raster["shade_of"]
         ramp, glyph, multi = raster["ramp"], raster["glyph"], raster["multi"]

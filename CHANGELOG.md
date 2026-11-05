@@ -8,7 +8,7 @@
 
 - Preserve source summaries and loss reports in `CompactResult`, including bounded explanations; document `render_figure` and `render_svg` as text-only shortcuts. See [bounded displays](README.md#bounded-displays-and-preferences) for report scope and omission diagnostics.
 
-- Respect painter order for opaque fills and strokes, markers and images. Account for matplotlib ink per artist, independent of colour; report opaque source occlusion as non-material `occluded` while resolution losses remain material. This reveals three previously undetected small-bin losses in gallery `25_sns_hist_kde`; see the [loss contract](README.md#what-the-text-lost-render).
+- Fix opaque-fill painter order and colour-dependent artist-loss verdicts; see the [loss contract](README.md#what-the-text-lost-render) for occlusion reporting, newly detected gallery losses and remaining limits.
 
 - Batch dense neutral data lines to avoid per-segment rendering overhead; see [usage](README.md#usage) for scope and compatibility.
 - Add heatmap sampling diagnostics without changing rendered text; see the [loss contract](README.md#what-the-text-lost-render) for `heat_sampled`, `lost_extreme` and mitigation.
