@@ -51,13 +51,16 @@ def nice_ticks(lo, hi, want=5):
     first = math.ceil(lo / step) * step
     out = []
     while first <= hi + step * 1e-6:
-        out.append(round(first, 6))
+        out.append(first)
         first += step
     return out, step
 
 
 def fmt(v, step):
-    return f"{v:.0f}" if step >= 1 else f"{v:.1f}"
+    precision = max(0, -math.floor(math.log10(step)))
+    if not math.isclose(step, round(step, precision)):
+        precision += 1
+    return f"{v:.{precision}f}"
 
 
 def ease(t):
@@ -480,22 +483,23 @@ class App:
                 self.grab = self.box if self.inside_box(col, row) else None
             else:
                 self.press = None
-        elif up:
-            if self.press and not self.dragging and self.grab is None:
+        elif self.press and (up or (motion and held)):
+            if self.dragging or (col, row) != self.press or not up:
+                self.dragging = True
+                if self.grab:
+                    dx, dy = self.x_at(col) - self.x_at(self.press[0]), self.y_at(row) - self.y_at(self.press[1])
+                    x0, x1, y0, y1 = self.grab
+                    self.box = (x0 + dx, x1 + dx, y0 + dy, y1 + dy)
+                else:
+                    cc = max(self.left, min(self.left + self.w - 1, col))
+                    rr = max(self.top, min(self.top + self.h - 1, row))
+                    ax, ay = self.x_at(self.press[0]), self.y_at(self.press[1])
+                    bx, by = self.x_at(cc), self.y_at(rr)
+                    self.box = (min(ax, bx), max(ax, bx), min(ay, by), max(ay, by))
+            elif self.grab is None:
                 self.box = None
+        if up:
             self.press, self.grab, self.dragging = None, None, False
-        elif motion and held and self.press:
-            self.dragging = True
-            if self.grab:
-                dx, dy = self.x_at(col) - self.x_at(self.press[0]), self.y_at(row) - self.y_at(self.press[1])
-                x0, x1, y0, y1 = self.grab
-                self.box = (x0 + dx, x1 + dx, y0 + dy, y1 + dy)
-            else:
-                cc = max(self.left, min(self.left + self.w - 1, col))
-                rr = max(self.top, min(self.top + self.h - 1, row))
-                ax, ay = self.x_at(self.press[0]), self.y_at(self.press[1])
-                bx, by = self.x_at(cc), self.y_at(rr)
-                self.box = (min(ax, bx), max(ax, bx), min(ay, by), max(ay, by))
         self.hover = (col, row)
 
     def key(self, k):
