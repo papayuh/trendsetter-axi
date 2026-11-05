@@ -561,6 +561,18 @@ def _clipped(fig):
     return ""
 
 
+def _layout(fig, renderer):
+    """The geometry part of Figure.draw, without its discarded primitives."""
+    if not fig.get_visible():
+        return
+    fig._get_draw_artists(renderer)  # Figure.draw applies aspect before layout.
+    if fig.axes and fig.get_layout_engine() is not None:
+        try:
+            fig.get_layout_engine().execute(fig)
+        except ValueError:
+            pass  # Figure.draw also tolerates layout failures during resizing.
+
+
 def render(fig, cols=80, color=False, rows=None):
     w, h = prepare(fig, cols, rows)
     cap = _clipped(fig)
@@ -573,11 +585,13 @@ def render(fig, cols=80, color=False, rows=None):
     import warnings
     with warnings.catch_warnings(record=True) as wl:
         warnings.simplefilter("always")
-        fig.draw(rend)                        # pass 1: layout
+        # Only geometry survives this pass. The final draw must still reflow
+        # layout after tick tuning/padding, unless _snap freezes the axes.
+        _layout(fig, rend)
         if any("Tight layout" in str(w.message) for w in wl) or any(min(a.get_position().width, a.get_position().height) < .1 or a.get_position().height > .99 for a in fig.axes):  # plotnine: infeasible gridspec leaves the axes filling the figure   # labels too wide for the grid: layout gave up and kept the old margins, so shorten x labels to their slot and lay out again
             area = lambda: sum(a.get_position().width * a.get_position().height for a in fig.axes)
             a0, old, pos = area(), [(x, x.get_major_formatter()) for a in fig.axes for x in (a.xaxis, a.yaxis)], [a.get_position() for a in fig.axes]
-            _shorten(fig, cols); fig.draw(rend)
+            _shorten(fig, cols); _layout(fig, rend)
             if area() < a0:   # shortening squeezed the plot (side-by-side bar panels): keep the long labels, core drops colliding ones
                 for x, f in old: x.set_major_formatter(f)
                 for a, p in zip(fig.axes, pos): a.set_position(p)
