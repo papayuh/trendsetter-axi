@@ -315,7 +315,8 @@ def build():
                 environment=dict(python=os.sys.version.split()[0], matplotlib=matplotlib.__version__, numpy=np.__version__))
 
 
-def load():
+def load(*, verify_renderer=True):
+    """Reports validate frozen inputs without requiring the renderer's git history."""
     m = json.loads(MANIFEST.read_text())
     if (m["system"], m["model"], m["arms"], m["effort"], m["renderer_commit"]) != (SYSTEM, MODEL, ARMS, "low", BASE):
         raise RuntimeError("Protocol differs from frozen manifest")
@@ -323,11 +324,12 @@ def load():
         for arm, stimulus in c["stimuli"].items():
             if digest((DATA / stimulus["file"]).read_bytes()) != stimulus["sha256"]:
                 raise RuntimeError(f"Frozen stimulus changed: {cid} {arm}")
-    for path in (ROOT / "src").rglob("*.py"):
-        rel = str(path.relative_to(ROOT))
-        original = subprocess.check_output(["git", "show", f"{BASE}:{rel}"], cwd=ROOT)
-        if path.read_bytes() != original:
-            raise RuntimeError(f"Renderer changed since freeze: {rel}")
+    if verify_renderer:
+        for path in (ROOT / "src").rglob("*.py"):
+            rel = str(path.relative_to(ROOT))
+            original = subprocess.check_output(["git", "show", f"{BASE}:{rel}"], cwd=ROOT)
+            if path.read_bytes() != original:
+                raise RuntimeError(f"Renderer changed since freeze: {rel}")
     return m
 
 
@@ -624,7 +626,7 @@ def main(argv=None):
         MANIFEST.write_text(json.dumps(m, indent=1, allow_nan=False) + "\n")
         print("Frozen", len(m["charts"]), "charts; manifest", digest(m))
     else:
-        m = load()
+        m = load(verify_renderer=args.action != "report")
         if args.action in ("smoke", "run"):
             start = time.perf_counter()
             started = datetime.now(timezone.utc).isoformat()

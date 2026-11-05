@@ -128,3 +128,41 @@ def test_full_results_auth_model_and_manifest():
         assert set(r["final"]["modelUsage"]) == {s.MODEL}
         assert r["final"]["subagent_stats"]["spawned"] == 0
     assert sum(r["list_price_usd"] for r in s.rows()) <= s.BUDGET
+
+
+def test_report_without_frozen_commit(monkeypatch, tmp_path):
+    expected = (s.HERE / "RESULTS.md").read_text()
+    def unavailable(*args, **kwargs):
+        pytest.fail("Report must not request renderer git history")
+    monkeypatch.setattr(s.subprocess, "check_output", unavailable)
+    monkeypatch.setattr(s, "HERE", tmp_path)
+    s.main(["report"])
+    assert (tmp_path / "RESULTS.md").read_text() == expected
+
+
+@pytest.mark.parametrize("action", ["smoke", "run"])
+def test_model_run_refuses_missing_frozen_commit(monkeypatch, action):
+    def unavailable(cmd, **kwargs):
+        assert cmd[:2] == ["git", "show"]
+        assert cmd[2].startswith(s.BASE + ":")
+        raise subprocess.CalledProcessError(128, cmd, stderr=b"frozen commit unavailable")
+    def forbidden(*args, **kwargs):
+        pytest.fail("Model run must not start without verifying frozen renderer")
+    monkeypatch.setattr(s.subprocess, "check_output", unavailable)
+    monkeypatch.setattr(s, "run", forbidden)
+    with pytest.raises(subprocess.CalledProcessError):
+        s.main([action])
+
+
+@pytest.mark.parametrize("change,error", [("protocol", "Protocol differs"), ("fixture", "Frozen stimulus changed")])
+def test_report_only_load_keeps_manifest_and_fixture_checks(monkeypatch, tmp_path, change, error):
+    manifest = json.loads(s.MANIFEST.read_text())
+    if change == "protocol":
+        manifest["system"] = "changed prompt"
+    else:
+        next(iter(manifest["charts"].values()))["stimuli"]["summary"]["sha256"] = "changed fixture"
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(s, "MANIFEST", path)
+    with pytest.raises(RuntimeError, match=error):
+        s.load(verify_renderer=False)

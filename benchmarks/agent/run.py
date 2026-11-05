@@ -335,7 +335,7 @@ def write_report(model):
     """Regenerate the current report; isolated historical fixtures keep their grader."""
     if (MANIFESTS / "suite2.json").exists() and model == "claude-sonnet-5-5":
         from suite2 import load as load_suite2, report as report_suite2
-        report_suite2(load_suite2(), path=REPORT)
+        report_suite2(load_suite2(verify_renderer=False), path=REPORT)
     else:
         _write_pilot_report(model)
 
