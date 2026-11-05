@@ -117,8 +117,10 @@ class Screen:
         ch, fg, _ = self.cells[row][col]
         self.cells[row][col] = (ch, fg, bg)
 
-    def canvas(self, canvas):
+    def canvas(self, canvas, knots=()):
         """Use existing renderer primitives/composition, without trimming its grid."""
+        anchors = {(canvas._col(x), canvas._row(y)): index for index, x, y in knots}
+        owner = self.owner
         raster = canvas._rasterize(True)
         cells, sid, heatrgb = canvas._compose_cells(raster)
         _, inv = canvas._place_text(raster, cells, sid)
@@ -127,7 +129,10 @@ class Screen:
                 if cells[r, c] and cells[r, c] != ' ':
                     rgb = tuple(int(v * 255) for v in inv[sid[r, c]]) if sid[r, c] >= 0 else INK
                     bg, fg = heatrgb.get((r, c), (None, rgb))
+                    if owner is not None:
+                        self.owner = (owner[0], anchors.get((c, r), owner[1]))
                     self.put(r, c, cells[r, c], fg, bg)
+        self.owner = owner
 
     def bar(self, bounds, rgb, *, horizontal):
         c0, r0, c1, r1 = bounds
@@ -267,10 +272,11 @@ def draw(viewer, *, interactive=True, color=True):
                 connected.update((left.index, right.index))
             ink = tuple(c / 255 for c in rgb)
             canvas.stroke(paths, ink, clip=clip, role='data')
-            isolated = [p.cell(a.x, a.y) for a in points if a.index not in connected and p.visible(a.x, a.y)]
+            knots = [(point, p.cell(point.x, point.y)) for point in points if p.visible(point.x, point.y)]
+            isolated = [(c, r * 2) for point, (c, r) in knots if point.index not in connected]
             if isolated:
-                canvas.marker([(c, r * 2) for c, r in isolated], ink, clip=clip, role='data')
-            s.canvas(canvas)
+                canvas.marker(isolated, ink, clip=clip, role='data')
+            s.canvas(canvas, [(point.index, c, r * 2) for point, (c, r) in knots])
         elif m['kind'] == 'bars':
             for point in points:
                 s.owner = (m['id'], point.index)
@@ -381,14 +387,12 @@ def draw(viewer, *, interactive=True, color=True):
     # Exact inspection has a stable footer; it never covers the plot or side panel.
     if v.hover:
         a = v.hover
-        if a.kind == 'points':
-            for (c, r), owner in v.hit_cells.items():
-                if owner == (a.mark, a.index):
+        for (c, r), owner in v.hit_cells.items():
+            if owner == (a.mark, a.index):
+                if a.kind == 'bars':
+                    s.shade(r, c, TIP_BG)
+                else:
                     s.put(r, c, '◉', INK, TIP_BG)
-                    break
-        elif p.visible(a.x, a.y):
-            c, r = p.cell(a.x, a.y)
-            s.put(round(r), round(c), '◉', INK, TIP_BG)
         def labeled(text, label):
             label = clean_text(label).replace('\n', ' ').replace('\t', ' ')
             label = truncate(label, max(0, v.cols - 3 - width(text)))

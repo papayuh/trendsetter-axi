@@ -11,7 +11,7 @@ import pytest
 
 from trendsetter_axi import from_figure, interact, render, render_styled
 from trendsetter_axi.cells import SGR, clean_text, width
-from trendsetter_axi.styled import PALETTE, RIGHT, UP, draw
+from trendsetter_axi.styled import PALETTE, RIGHT, TIP_BG, UP, draw
 from trendsetter_axi.viewer import line_edges, make_viewer
 
 
@@ -40,20 +40,22 @@ def open_interaction(monkeypatch):
     return open_source
 
 
-def colored_cells(frame):
-    """Decode foreground colors from the emitted truecolor terminal protocol."""
-    rows, fg = [], None
+def colored_cells(frame, *, background=False):
+    """Decode a color channel from the emitted truecolor terminal protocol."""
+    rows, fg, bg = [], None, None
     for line in frame.splitlines():
         cells, start = [], 0
         for match in SGR.finditer(line):
-            cells.extend((ch, fg) for ch in line[start:match.start()])
+            cells.extend((ch, bg if background else fg) for ch in line[start:match.start()])
             codes = list(map(int, match.group()[2:-1].split(';')))
             if codes[:2] == [38, 2]:
                 fg = tuple(codes[2:5])
+                if codes[5:7] == [48, 2]:
+                    bg = tuple(codes[7:10])
             elif codes == [0]:
-                fg = None
+                fg = bg = None
             start = match.end()
-        cells.extend((ch, fg) for ch in line[start:])
+        cells.extend((ch, bg if background else fg) for ch in line[start:])
         rows.append(cells)
     return rows
 
@@ -1081,3 +1083,193 @@ def test_custom_formatter_without_fixed_locator_and_agent_contracts_stay_unchang
         assert date_tick_labels(frame, v, axis) == expected
     assert from_figure(ax.figure) == original
     assert render(ax.figure).text == plain
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('formatter_kind', ['engineering', 'scientific', 'function', 'concise-date'])
+def test_custom_formatter_context_uses_explicit_static_fallback(axis, formatter_kind, open_interaction):
+    from matplotlib import dates as mdates
+    from matplotlib.ticker import EngFormatter, FixedLocator, FuncFormatter, ScalarFormatter
+
+    ax = Figure().subplots()
+    if formatter_kind == 'concise-date':
+        values = [datetime(2026, 1, day) for day in (1, 2, 3)]
+        locations = mdates.date2num(values)
+        formatter = mdates.ConciseDateFormatter(FixedLocator(locations))
+    else:
+        values = locations = [1_000_000., 1_000_001., 1_000_002.]
+        if formatter_kind == 'engineering':
+            formatter = EngFormatter(unit='Hz', useOffset=True)
+        elif formatter_kind == 'scientific':
+            class CustomScalarFormatter(ScalarFormatter):
+                pass
+            formatter = CustomScalarFormatter(useOffset=False, useMathText=False)
+            formatter.set_powerlimits((0, 0))
+        else:
+            formatter = FuncFormatter(lambda value, pos: str(value - 1_000_000))
+            formatter.set_offset_string('+1000000')
+    if axis == 'x':
+        ax.plot(values, [1, 2, 3])
+    else:
+        ax.plot([1, 2, 3], values)
+    getattr(ax, f'set_{axis}lim')(values[0], values[-1])
+    mpl_axis = getattr(ax, axis + 'axis')
+    mpl_axis.set_major_locator(FixedLocator(locations))
+    mpl_axis.set_major_formatter(formatter)
+    original = from_figure(ax.figure)
+    v = model(ax.figure)
+    assert formatter.get_offset()
+    assert v.projection is None
+    assert v.nearest(38, 18) is None
+    assert v.reason == 'custom formatter offset/multiplier uses static render'
+    opened, interactive = open_interaction(ax.figure)
+    assert opened.projection is None and opened.reason == v.reason
+    for frame in (interactive, render_styled(ax.figure), render_styled(ax.figure, cols=80, rows=24)):
+        header = SGR.sub('', frame).splitlines()[0]
+        assert 'Static view: custom formatter offset/multiplier uses static render' in header
+    expected = [clean_text(line) for line in render(ax.figure, cols=120, rows=35, color=True).text.splitlines()]
+    frame = SGR.sub('', v.frame()).splitlines()
+    if len(expected) <= 35 and max(map(width, expected), default=0) <= 120:
+        assert [line.rstrip() for line in frame[2:2 + len(expected)]] == expected
+    else:
+        assert 'Static chart omitted' in '\n'.join(frame)
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+def test_context_free_engineering_labels_remain_supported(axis):
+    from matplotlib.ticker import EngFormatter, FixedLocator
+
+    ax = Figure().subplots()
+    ax.plot([1, 2, 3], [1, 2, 3])
+    ax.set(xlim=(1, 3), ylim=(1, 3))
+    mpl_axis = getattr(ax, axis + 'axis')
+    mpl_axis.set_major_locator(FixedLocator([1, 2, 3]))
+    formatter = EngFormatter(unit='Hz', useOffset=False)
+    mpl_axis.set_major_formatter(formatter)
+    v = model(ax.figure)
+    assert not formatter.get_offset()
+    assert v.projection is not None and not v.reason
+    text = SGR.sub('', v.frame())
+    assert 'Hz' in text and 'Static view:' not in text
+
+
+@pytest.mark.parametrize('kind', ['points', 'markers', 'gappy-line', 'line', 'step',
+                                  'bars', 'negative-bars', 'barh', 'negative-barh'])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+def test_all_mark_highlights_paint_exactly_owned_raster_cells(kind, saved, inverted):
+    ax = Figure().subplots()
+    if kind == 'points':
+        ax.scatter([11.7, 12.7], [12, 12])
+    elif kind == 'markers':
+        ax.plot([11.7, 12.7], [12, 12], linestyle='None', marker='o')
+    elif kind == 'gappy-line':
+        ax.plot([11.7, math.nan, 12.7], [12, math.nan, 12], marker='o')
+    elif kind in ('line', 'step'):
+        ax.plot([11.7, 12.7], [12, 16], drawstyle='steps-mid' if kind == 'step' else 'default')
+    elif kind == 'bars':
+        ax.bar([11.7, 12.7], [12, 16], width=.08)
+    elif kind == 'negative-bars':
+        ax.bar([11.7, 12.7], [-8, -8], bottom=[20, 24], width=.08)
+    elif kind == 'barh':
+        ax.barh([12, 16], [11.7, 12.7], height=.08)
+    else:
+        ax.barh([12, 16], [-12, -12], left=[23.7, 24.7], height=.08)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    if inverted:
+        ax.invert_xaxis()
+        ax.invert_yaxis()
+    original = from_figure(ax.figure)
+    v = model(original if saved else ax.figure)
+    for cols, rows in ((120, 38), (160, 45)):
+        v.hover = None
+        v.layout(cols, rows)
+        before = colored_cells(v.frame())
+        point = v.points[0]
+        owned = {cell for cell, owner in v.hit_cells.items() if owner == (point.mark, point.index)}
+        assert owned
+        assert all(before[r][c][0] != ' ' for c, r in owned)
+        v.mouse(35, *min(owned), False)
+        assert v.hover == point
+        p = v.projection
+        for frame in (v.frame(), draw(v, interactive=False)):
+            backgrounds = colored_cells(frame, background=True)
+            highlighted = {(c, r) for r in range(p.top, p.top + p.rows)
+                           for c in range(p.left, p.left + p.cols) if backgrounds[r][c][1] == TIP_BG}
+            assert highlighted == owned
+            after = colored_cells(frame)
+            for r in range(p.top, p.top + p.rows):
+                for c in range(p.left, p.left + p.cols):
+                    if (c, r) not in owned or point.kind == 'bars':
+                        assert after[r][c] == before[r][c]
+                    else:
+                        assert after[r][c][0] == '◉'
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('saved', [False, True])
+def test_line_knot_cell_tags_do_not_change_existing_picking(axis, saved):
+    ax = Figure().subplots()
+    if axis == 'x':
+        ax.plot([11.7, math.nan, 12.7], [12, math.nan, 12], marker='o')
+        cells = [(19, 18), (20, 18)]
+    else:
+        ax.plot([12, math.nan, 12], [10.3, math.nan, 9.3], marker='o')
+        cells = [(20, 19), (20, 20)]
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(from_figure(ax.figure) if saved else ax.figure)
+    v.frame()
+    assert [v.nearest(*cell).index for cell in cells] == [0, 0]
+    v.mouse(35, *cells[0], False)
+    after = colored_cells(v.frame())
+    assert after[cells[0][1]][cells[0][0]][0] == '◉'
+    assert after[cells[1][1]][cells[1][0]][0] != '◉'
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('foreground', ['points', 'line'])
+def test_bar_highlight_does_not_cover_foreground_ink(horizontal, foreground):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh([12], [40], left=[10], height=24, label='bar', zorder=1)
+    else:
+        ax.bar([30], [24], width=20, label='bar', zorder=1)
+    if foreground == 'points':
+        ax.scatter([30.4], [12.1], label='front', zorder=3)
+    else:
+        ax.plot([29, 32], [11.9, 11.9], label='front', zorder=3)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(ax.figure)
+    before = colored_cells(v.frame())
+    bar = v.points[0]
+    owned = {cell for cell, owner in v.hit_cells.items() if owner == (bar.mark, bar.index)}
+    assert owned and (38, 18) not in owned
+    v.mouse(35, *min(owned), False)
+    assert v.hover == bar
+    frame = v.frame()
+    assert colored_cells(frame)[18][38] == before[18][38]
+    backgrounds = colored_cells(frame, background=True)
+    assert backgrounds[18][38][1] != TIP_BG
+    assert all(backgrounds[r][c][1] == TIP_BG for c, r in owned)
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+def test_clipped_bar_highlight_never_uses_offscreen_endpoint(horizontal):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh([12], [80], left=[-10], height=.08)
+    else:
+        ax.bar([11.7], [46], bottom=[-10], width=.08)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(ax.figure)
+    v.frame()
+    point = v.points[0]
+    assert not v.projection.visible(point.x, point.y)
+    owned = {cell for cell, owner in v.hit_cells.items() if owner == (point.mark, point.index)}
+    assert owned
+    v.mouse(35, *min(owned), False)
+    assert v.hover == point
+    backgrounds = colored_cells(v.frame(), background=True)
+    assert all(backgrounds[r][c][1] == TIP_BG for c, r in owned)

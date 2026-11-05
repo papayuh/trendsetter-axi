@@ -227,7 +227,7 @@ class Viewer:
         hit = min(nearby, key=lambda rc: (math.dist(rc, cell), -order[self.hit_cells[rc][0]]))
         mark, index = self.hit_cells[hit]
         points = [point for point in self.points if point.mark == mark]
-        if index is not None:
+        if self.marks[mark]['kind'] != 'line':
             return next(point for point in points if point.index == index)
         return min(points, key=lambda point: math.dist(p.cell(point.x, point.y), cell))
 
@@ -367,13 +367,20 @@ def make_viewer(source):
     collected = _collect_figure(source)
     record = collected.result
     axes = [ax for ax in source.axes if not hasattr(ax, '_colorbar') and ax.get_visible()]
+    viewer = Viewer(record, lambda cols, rows: render(source, cols=cols, rows=rows, color=True).text)
     for ax, recorded in zip(axes, record['axes']):
         for k in 'xy':
             formatter = getattr(ax, k + 'axis').get_major_formatter()
-            if recorded[k]['scale'] == 'linear' and type(formatter) is not ScalarFormatter:
+            if type(formatter) is ScalarFormatter:
+                continue
+            ticks = recorded[k]['ticks']
+            labels = formatter.format_ticks([tick['value'] for tick in ticks])
+            if formatter.get_offset():
+                viewer.initial_reason = 'custom formatter offset/multiplier uses static render'
+                return viewer
+            if recorded[k]['scale'] == 'linear':
                 recorded[k]['_custom_ticks'] = True
-                ticks = recorded[k]['ticks']
-                for tick, label in zip(ticks, formatter.format_ticks([tick['value'] for tick in ticks])):
+                for tick, label in zip(ticks, labels):
                     tick['label'] = label
     ranks = [{artist: i for i, artist in enumerate(sorted(ax.get_children(), key=lambda a: a.get_zorder()))}
              for ax in axes]
@@ -401,7 +408,6 @@ def make_viewer(source):
             order.append(key)
     if len(order) != len(set(order)):
         reason = 'interleaved artist painter order unavailable'
-    viewer = Viewer(record, lambda cols, rows: render(source, cols=cols, rows=rows, color=True).text)
     viewer.draw_marks = [viewer.marks[key] for key in order]
     if reason:
         viewer.initial_reason = reason

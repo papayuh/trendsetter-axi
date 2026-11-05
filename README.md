@@ -437,8 +437,9 @@ before changing terminal modes; use the static APIs for captured output.
 
 Line and bar charts get hover too. Current interactive support is one rectilinear
 axis with linear, date or categorical scales. Log axes, multiple or inset/child axes,
-scatter color/size encodings, heatmaps, areas, errorbars, other scales and unread artists
-fall back to the existing static figure renderer with a clear message. Hover picks the
+scatter color/size encodings, custom formatter offsets/multipliers, heatmaps, areas,
+errorbars, other scales and unread artists fall back to the existing static figure
+renderer with a clear message. Hover picks the
 topmost mark drawn in the terminal cell, or the nearest drawn cell within one cell.
 Zoom/pan, row pinning and series toggles are not implemented.
 Resize clears the selection rather than reusing stale screen coordinates.
