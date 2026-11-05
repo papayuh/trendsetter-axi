@@ -752,6 +752,7 @@ class Canvas:
                     (not crossing or primitives[k][0] != "stroke") for k in old): return
             cell[r, c] = g; sid_at[r, c] = sid; sources[r, c] = frozenset((order,))
             heatrgb.pop((r, c), None)
+            return True
 
         for r in range(R_):
             for c in range(C_):
@@ -789,11 +790,11 @@ class Canvas:
             r = self._row(a[1]); c0, c1 = sorted((self._col(a[0]), self._col(b[0] - edge)))
             if 0 <= r < R_:
                 for c in range(max(c0, 0), min(c1, C_ - 1) + 1):
-                    if shade[r, c] and fill[r, c] >= 0 and fill[r, c] != sid: under[r, c] = fill[r, c]   # solid body behind the rule: no black cut-out
                     # A vertical whisker crossing a cap must not turn its centre into braille.
                     crossing = any(primitives[k][0] == "stroke" and primitives[k][1] is not None and
                                    all(np.ptp(p[:, 0]) < .5 for p in primitives[k][1]) for k in sources[r, c])
-                    paint(r, c, order, "─", sid, crossing=crossing)
+                    if paint(r, c, order, "─", sid, crossing=crossing):
+                        if shade[r, c] and fill[r, c] >= 0 and fill[r, c] != sid: under[r, c] = fill[r, c]
 
         # line stamps so several line series stay apart in plain text
         if multi and self.stamp:
@@ -805,7 +806,8 @@ class Canvas:
                     for k in range(int(f * len(rc)), len(rc)):  # walk forward to a cell this series owns alone
                         r, c = rc[k]
                         blk = dots[r * 4:r * 4 + 4, c * 2:c * 2 + 2]
-                        if (blk[blk > -2] == sid).all() and (r, c) not in marks and not shade[r, c]:   # not on a fill: there the line is a ─ rule
+                        occupied = blk[blk > -2]
+                        if occupied.size and (occupied == sid).all() and (r, c) not in marks and not shade[r, c]:   # not on a fill: there the line is a ─ rule
                             marks[(r, c)] = glyph(sid)
                             raster["mark_seq"][(r, c)] = int(dot_seq[r * 4:r * 4 + 4, c * 2:c * 2 + 2].max())
                             raster["mark_sid"][(r, c)] = sid

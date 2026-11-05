@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import trendsetter_axi as tsa
+from trendsetter_axi.cells import SGR
 
 BRAILLE = re.compile("[⠁-⣿]")      # a braille cell with at least one dot
 BLOCKS = re.compile("[▀-▟]")
@@ -289,6 +290,16 @@ def test_svg_clip_rect_with_transform_and_nesting():
     assert cols and 0.375 * 80 - 1 <= cols[0] and cols[-1] <= 0.75 * 80 + 1, cols   # inner clip, moved right by the group transform, cut by the outer one
 
 
+@pytest.mark.parametrize("path", ["M80 10 L80 90", "M10 90 L80 90"])
+def test_svg_clip_edge_does_not_create_empty_stamps(path):
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+<defs><clipPath id="c"><rect x="10" y="10" width="70" height="80"/></clipPath></defs>
+<path d="{path}" stroke="red" fill="none" clip-path="url(#c)"/>
+<path d="M20 20 L60 60" stroke="blue" fill="none"/></svg>'''
+    text = tsa.render_svg(svg, 40)
+    assert "●" not in text and "×" in text
+
+
 def test_svg_clip_outside_everything_draws_nothing():
     assert ink_columns(tsa.render_svg(line_svg('<rect x="0" y="0" width="400" height="100"/>'), 80))   # the same line, unclipped, is there
     assert not ink_columns(tsa.render_svg(line_svg('<rect x="500" y="0" width="10" height="10"/>'), 80))
@@ -400,11 +411,14 @@ def test_missing_observations_stay_missing():
 @pytest.mark.parametrize("overlay", [False, True])
 @pytest.mark.parametrize("line_z,alpha,hidden", [(1, 1, True), (6, 1, False), (1, .5, False)])
 @pytest.mark.parametrize("colour", ["red", "black"])
-def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour, overlay):
+@pytest.mark.parametrize("color", [False, True])
+@pytest.mark.parametrize("split", [False, True])
+def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour, overlay, color, split):
     def make(line):
         fig, ax = plt.subplots(figsize=(6, 3))
-        if line: ax.plot([1, 9], [5, 5], color=colour, label="line", zorder=line_z)
-        ax.fill_between([0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        if line: ax.plot([3, 7] if split else [1, 9], [5, 5], color=colour, label="line", zorder=line_z)
+        ax.fill_between([0, 2] if split else [0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        if split: ax.fill_between([2, 10], 2, 8, color="green", alpha=alpha, zorder=5)
         if overlay: ax.fill_between([0, 10], 2, 8, color="green", alpha=.5, zorder=7)
         ax.set(xlim=(0, 10), ylim=(0, 10))
         return fig
@@ -414,13 +428,13 @@ def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour
             buf = io.BytesIO(); f.savefig(buf, format="png")
             return plt.imread(io.BytesIO(buf.getvalue()))
         assert np.array_equal(pixels(fig), pixels(control)) == hidden
-        r, fill = tsa.render(fig, 60), tsa.render(control, 60)
-        assert tsa.render_figure(fig, 60) == r.text
+        r, fill = tsa.render(fig, 60, color=color), tsa.render(control, 60, color=color)
+        assert tsa.render_figure(fig, 60, color=color) == r.text
         assert (r.text == fill.text) == hidden
         losses = [l for l in r.losses if l["kind"] == "occluded"]
         assert [(l["what"], l["material"]) for l in losses] == ([("Line2D 'line'", False)] if hidden else [])
         if not hidden:
-            assert any(BRAILLE.search(row) or "───" in row for row in body(r.text) if BLOCKS.search(row)), r.text
+            assert any(BRAILLE.search(row) or "───" in row for row in body(SGR.sub("", r.text)) if BLOCKS.search(row)), r.text
     finally:
         plt.close(fig); plt.close(control)
 
