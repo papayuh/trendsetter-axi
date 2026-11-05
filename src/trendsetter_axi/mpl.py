@@ -41,7 +41,7 @@ class TextRenderer(RendererBase):
         return max(width(l) for l in lines) * self.cv.cw, self.cv.ch / 1.2, 0
     def _get_font_height_metrics(self, prop):
         # Matplotlib 3.11+ measures line heights separately from text widths.
-        return self.cv.ch / 1.2, 0, 0  # ascent, descent, line gap in terminal cells
+        return self.cv.ch / 1.2, 0, 0  # ascent, descent, line gap in display units
     def open_group(self, s, gid=None): self.groups.append(gid if gid and gid.startswith('trendsetter_axi-candle-') else s or "")
     def close_group(self, s):
         if self.groups: self.groups.pop()
