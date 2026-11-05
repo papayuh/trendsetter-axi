@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import trendsetter_axi as tsa
+from trendsetter_axi.cells import SGR
 
 BRAILLE = re.compile("[⠁-⣿]")      # a braille cell with at least one dot
 BLOCKS = re.compile("[▀-▟]")
@@ -289,6 +290,16 @@ def test_svg_clip_rect_with_transform_and_nesting():
     assert cols and 0.375 * 80 - 1 <= cols[0] and cols[-1] <= 0.75 * 80 + 1, cols   # inner clip, moved right by the group transform, cut by the outer one
 
 
+@pytest.mark.parametrize("path", ["M80 10 L80 90", "M10 90 L80 90"])
+def test_svg_clip_edge_does_not_create_empty_stamps(path):
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+<defs><clipPath id="c"><rect x="10" y="10" width="70" height="80"/></clipPath></defs>
+<path d="{path}" stroke="red" fill="none" clip-path="url(#c)"/>
+<path d="M20 20 L60 60" stroke="blue" fill="none"/></svg>'''
+    text = tsa.render_svg(svg, 40)
+    assert "●" not in text and "×" in text
+
+
 def test_svg_clip_outside_everything_draws_nothing():
     assert ink_columns(tsa.render_svg(line_svg('<rect x="0" y="0" width="400" height="100"/>'), 80))   # the same line, unclipped, is there
     assert not ink_columns(tsa.render_svg(line_svg('<rect x="500" y="0" width="10" height="10"/>'), 80))
@@ -395,3 +406,83 @@ def test_missing_observations_stay_missing():
     grid = np.array([[1, np.nan, 3], [np.nan, 2, np.nan]])
     cells = heat(grid / 4)   # levels 1 2 3 of 0..3
     assert heat_cells(cells) == ["▒ █", " ▓ "], cells   # a blank cell where an observation is missing, never a filled one
+
+
+@pytest.mark.parametrize("overlay", [False, True])
+@pytest.mark.parametrize("line_z,alpha,hidden", [(1, 1, True), (6, 1, False), (1, .5, False)])
+@pytest.mark.parametrize("colour", ["red", "black"])
+@pytest.mark.parametrize("color", [False, True])
+@pytest.mark.parametrize("split", [False, True])
+def test_line_under_opaque_fill_does_not_resurface(line_z, alpha, hidden, colour, overlay, color, split):
+    def make(line):
+        fig, ax = plt.subplots(figsize=(6, 3))
+        if line: ax.plot([3, 7] if split else [1, 9], [5, 5], color=colour, label="line", zorder=line_z)
+        ax.fill_between([0, 2] if split else [0, 10], 2, 8, color="blue", alpha=alpha, zorder=5)
+        if split: ax.fill_between([2, 10], 2, 8, color="green", alpha=alpha, zorder=5)
+        if overlay: ax.fill_between([0, 10], 2, 8, color="green", alpha=.5, zorder=7)
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+        return fig
+    fig, control = make(True), make(False)
+    try:
+        def pixels(f):
+            buf = io.BytesIO(); f.savefig(buf, format="png")
+            return plt.imread(io.BytesIO(buf.getvalue()))
+        assert np.array_equal(pixels(fig), pixels(control)) == hidden
+        r, fill = tsa.render(fig, 60, color=color), tsa.render(control, 60, color=color)
+        assert tsa.render_figure(fig, 60, color=color) == r.text
+        assert (r.text == fill.text) == hidden
+        losses = [l for l in r.losses if l["kind"] == "occluded"]
+        assert [(l["what"], l["material"]) for l in losses] == ([("Line2D 'line'", False)] if hidden else [])
+        if not hidden:
+            assert any(BRAILLE.search(row) or "───" in row for row in body(SGR.sub("", r.text)) if BLOCKS.search(row)), r.text
+    finally:
+        plt.close(fig); plt.close(control)
+
+
+@pytest.mark.parametrize("kind", ["markers", "image"])
+def test_markers_and_images_keep_order(kind):
+    fig, ax = plt.subplots(figsize=(6, 3))
+    try:
+        if kind == "markers":
+            ax.fill_between([0, 10], 2, 8, color="blue", zorder=1)
+            ax.scatter([3, 5, 7], [5, 5, 5], color="red", zorder=5, label="marks")
+        else:
+            ax.imshow(np.full((2, 2, 3), [.1, .2, .8]), extent=(0, 10, 2, 8), aspect="auto", zorder=1)
+            ax.plot([1, 9], [5, 5], color="red", zorder=5, label="line")
+        ax.set(xlim=(0, 10), ylim=(0, 10))
+        r = tsa.render(fig, 60, strict=True)
+        assert tsa.render_figure(fig, 60) == r.text
+        inside = "".join(body(r.text))
+        assert BLOCKS.search(inside)
+        assert (any(ch in inside for ch in "•●×▲◆") if kind == "markers" else bool(BRAILLE.search(inside) or "───" in inside))
+        assert not [l for l in r.losses if l["kind"] in ("lost_artist", "occluded")]
+    finally:
+        plt.close(fig)
+
+
+# Material loss counts on main before T9, at 80 columns (all 50 gallery charts).
+# Approved exception: 25_sns_hist_kde's three small bins aggregate into one loss,
+# newly detected, not newly caused. Agg still shows each bin; text resolution does not.
+GALLERY_MATERIAL_BASELINE = {'01_mpl_line': 0, '02_mpl_line2': 0, '03_mpl_scatter': 0, '04_mpl_bar': 0, '05_mpl_groupbar': 0, '06_mpl_stackbar': 0, '07_mpl_hist': 0, '08_mpl_box': 0, '09_mpl_violin': 0, '10_mpl_imshow': 0, '11_mpl_fill_between': 0, '12_mpl_pie': 0, '13_mpl_step': 0, '14_mpl_errorbar': 0, '15_mpl_semilogy': 0, '16_mpl_dates': 0, '17_mpl_subplots': 0, '18_mpl_annotate': 0, '19_mpl_4line': 0, '20_mpl_barh': 0, '21_sns_line': 0, '22_sns_scatter': 0, '23_sns_heatmap': 0, '24_sns_box': 0, '25_sns_hist_kde': 1, '26_pd_line': 0, '27_pd_stackbar': 0, '28_pd_area': 0, '29_pn_facet': 0, '30_pn_line': 0, '31_plotly_line': 0, '32_plotly_groupbar': 0, '33_plotly_scatter': 0, '34_plotly_heatmap': 1, '35_plotly_pie': 0, '36_plotly_facet': 0, '37_plotly_box': 0, '38_alt_line': 0, '39_alt_stackbar': 0, '40_alt_scatter': 0, '41_alt_area': 0, '42_alt_rect': 1, '43_mpl_empty': 0, '44_mpl_longtitle': 0, '45_mpl_negbar': 0, '46_mpl_spaghetti': 0, '47_mpl_point': 0, '48_mpl_nan': 0, '49_mpl_huge': 0, '50_mpl_twinx': 0}
+
+
+@pytest.mark.parametrize("cid", list(GALLERY_MATERIAL_BASELINE))
+def test_gallery_material_losses_do_not_increase(cid):
+    from examples.gallery import CHARTS
+    chart = next(c for c in CHARTS if c["id"] == cid)
+    pytest.importorskip(chart["lib"] if chart["lib"] != "matplotlib" else "matplotlib")
+    try:
+        obj = chart["make"]()
+        if chart["lib"] == "plotnine": obj = obj.draw()
+        if chart["lib"] == "plotly":
+            pytest.importorskip("kaleido")
+            obj = obj.to_image(format="svg").decode()
+        elif chart["lib"] == "altair":
+            vlc = pytest.importorskip("vl_convert")
+            obj = vlc.vegalite_to_svg(obj.to_dict())
+        r = tsa.render(obj, 80)
+        assert (tsa.render_svg(obj, 80) if isinstance(obj, str) else tsa.render_figure(obj, 80)) == r.text
+        count = sum(l["material"] for l in r.losses)
+        assert count <= GALLERY_MATERIAL_BASELINE[cid], (cid, r.losses)
+    finally:
+        plt.close("all")

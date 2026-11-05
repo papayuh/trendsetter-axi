@@ -65,6 +65,19 @@ def test_text_and_serialization_keep_the_existing_output(color):
     }
 
 
+@pytest.mark.parametrize("vertical", [False, True])
+def test_clipped_raster_overlay_does_not_create_empty_stamps(vertical):
+    cv = Canvas(100, 100, 40)
+    rgb = np.full((80, 80, 3), (1., 0., 0.))
+    alpha = np.zeros((80, 80))
+    if vertical: alpha[:, 64] = 1
+    else: alpha[72, :] = 1
+    cv.image(0, 0, 100, 100, rgb, alpha=alpha, clip=np.array([10, 10, 80, 90]))
+    cv.stroke([np.array([[20, 20], [60, 60]])], (0., 0., 1.), role="data")
+    text = cv.render()
+    assert "●" not in text and "×" in text
+
+
 def test_legend_keys_do_not_count_as_visible_data():
     cv = Canvas(160, 80, 16)
     cv.stroke([np.array([[20, 50], [40, 50]])], (0.1, 0.3, 0.9), role="legend")

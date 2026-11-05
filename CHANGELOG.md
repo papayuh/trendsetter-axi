@@ -8,6 +8,8 @@
 
 - Preserve source summaries and loss reports in `CompactResult`, including bounded explanations; document `render_figure` and `render_svg` as text-only shortcuts. See [bounded displays](README.md#bounded-displays-and-preferences) for report scope and omission diagnostics.
 
+- Fix opaque-fill painter order and colour-dependent artist-loss verdicts; see the [loss contract](README.md#what-the-text-lost-render) for occlusion reporting, newly detected gallery losses and remaining limits.
+
 - Batch dense neutral data lines to avoid per-segment rendering overhead; see [usage](README.md#usage) for scope and compatibility.
 - Add heatmap sampling diagnostics without changing rendered text; see the [loss contract](README.md#what-the-text-lost-render) for `heat_sampled`, `lost_extreme` and mitigation.
 - Validate `render(rows=...)` as `None` or a positive integer excluding booleans; the height remains preferred (minimum 8), not a hard cap.
