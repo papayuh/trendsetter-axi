@@ -3,6 +3,10 @@
 
 def from_figure(fig):
     """Return a JSON-safe record of eligible source geometry, not inferred intent."""
+    return _collect_figure(fig).result
+
+
+def _collect_figure(fig):
     from . import mpl
 
     collector = _Collector()
@@ -12,11 +16,12 @@ def from_figure(fig):
     collector.result.update(title=mpl.clean_text(title.get_text()) if title is not None and title.get_visible() else '',
                             not_described=[list(item) for item in meta["record_not_described"]], hidden=meta["hidden"])
     collector.result["unavailable"] += [f"{n} {kind}: reader unavailable" for kind, n in meta["record_not_described"]]
-    return collector.result
+    return collector
 
 
 class _Collector:
     def __init__(self):
+        self.artists = []
         self.result = dict(version=1, source="matplotlib", axes=[], marks=[], declared={}, unavailable=[
             "Subject counts and sample support require a records table; duplicated subjects can draw identical curves.",
             "Interval meaning, totals and pairing intent require author declarations."])
@@ -47,6 +52,7 @@ class _Collector:
             return v
         marks = self.result["marks"]
         marks.append(dict(id=f"m{len(marks)}", axes=j, kind=kind, name=name or mpl._name(a, {}), **plain(values)))
+        self.artists.append(a)
 
     def geometry(self, a, *, raw=False):
         from . import mpl

@@ -117,11 +117,12 @@ def _points(mark):
     name = mark.get("name") or mark["id"]
     if mark["kind"] == "bars":
         horizontal = mark.get("orientation") == "h"
+        labels = mark.get('labels')
         for i, (pos, base, top) in enumerate(zip(mark["x"], mark["base"], mark["top"])):
             if not all(v is not None and math.isfinite(v) for v in (pos, base, top)):
                 continue
             yield Point(mark["id"], name, i, "bars", top if horizontal else pos,
-                        pos if horizontal else top, base, top, mark.get("labels", [""] * len(mark["x"]))[i])
+                        pos if horizontal else top, base, top, labels[i] if labels is not None else '')
     elif mark["kind"] in ("points", "line"):
         for i, (x, y) in enumerate(zip(mark["x"], mark["y"])):
             if x is not None and y is not None and math.isfinite(x) and math.isfinite(y):
@@ -159,6 +160,7 @@ class Viewer:
         self.record, self.static = record, static
         self.points = [p for m in record["marks"] for p in _points(m)]
         self.marks = {m["id"]: m for m in record["marks"]}
+        self.draw_marks = record['marks']
         self.has_scatter = any(m['kind'] == 'points' for m in record['marks'])
         self.hover = self.box = self.press = self.grab = None
         self.projection = None
@@ -186,7 +188,12 @@ class Viewer:
             return
         if not self.reason:
             try:
-                self.projection = Projection(self.record["axes"][0], 8, 6, cols - 52, rows - 13)
+                projection = Projection(self.record["axes"][0], 8, 6, cols - 52, rows - 13)
+                for k in 'xy':
+                    if projection.axis[k]['scale'] == 'log' and any(
+                            point.kind == 'line' and getattr(point, k) <= 0 for point in self.points):
+                        raise ValueError(f'nonpositive {k} line coordinates on log axis')
+                self.projection = projection
             except ValueError as exc:
                 self.reason = str(exc)
 
@@ -195,7 +202,8 @@ class Viewer:
         horizontal = m.get("orientation") == "h"
         pos = point.y if horizontal else point.x
         # Saved v1 records contain exact centers/endpoints but omit widths.
-        w = m.get("width", [0.8] * len(m["x"]))[point.index]
+        widths = m.get('width')
+        w = widths[point.index] if widths is not None else 0.8
         footprint = sorted((pos - w / 2, pos + w / 2))
         value = sorted((point.base, point.top))
         intervals = (value, footprint) if horizontal else (footprint, value)
@@ -216,38 +224,38 @@ class Viewer:
         p = self.projection
         if p is None or not p.inside(col, row):
             return None
-        best, score = None, 2.5
-        for point in reversed(self.points):
-            if point.kind == "bars":
-                c0, r0, c1, r1 = self.bar_bounds(point)
-                if c0 <= col <= c1 and r0 <= row <= r1:
-                    return point
-            if not p.visible(point.x, point.y):
-                continue
-            c, r = p.cell(point.x, point.y)
-            distance = math.hypot(c - col, 2 * (r - row))
-            if distance < score:
-                best, score = point, distance
-        # Sparse lines must remain inspectable between knots. Hit the drawn
-        # segment, but report its nearest original endpoint, never an invented y.
-        for mark in self.record['marks']:
-            if mark['kind'] != 'line':
-                continue
-            points = [v for v in self.points if v.mark == mark['id']]
-            for path, left, right in line_edges(mark, points, p):
-                for a, b in zip(path, path[1:]):
-                    dx, dy = b[0] - a[0], b[1] - a[1]
-                    length = math.hypot(dx, dy)
-                    along = (col - a[0]) * (dx / length) + (row * 2 - a[1]) * (dy / length) if length else 0
-                    t = max(0, min(1, along / length)) if length else 0
-                    distance = math.hypot(col - (a[0] + t * dx), row * 2 - (a[1] + t * dy))
-                    if distance < score:
-                        def endpoint_distance(point):
-                            c, r = p.cell(point.x, point.y)
-                            return math.hypot(c - col, 2 * (r - row))
-                        best = min((left, right), key=endpoint_distance)
-                        score = distance
-        return best
+        for mark in reversed(self.draw_marks):
+            points = [point for point in self.points if point.mark == mark['id']]
+            best, score = None, 2.5
+            for point in reversed(points):
+                if point.kind == 'bars':
+                    c0, r0, c1, r1 = self.bar_bounds(point)
+                    if c0 <= col <= c1 and r0 <= row <= r1:
+                        return point
+                    continue
+                if not p.visible(point.x, point.y):
+                    continue
+                c, r = p.cell(point.x, point.y)
+                distance = math.hypot(c - col, 2 * (r - row))
+                if distance < score:
+                    best, score = point, distance
+            if mark['kind'] == 'line':
+                for path, left, right in line_edges(mark, points, p):
+                    for a, b in zip(path, path[1:]):
+                        dx, dy = b[0] - a[0], b[1] - a[1]
+                        length = math.hypot(dx, dy)
+                        along = (col - a[0]) * (dx / length) + (row * 2 - a[1]) * (dy / length) if length else 0
+                        t = max(0, min(1, along / length)) if length else 0
+                        distance = math.hypot(col - (a[0] + t * dx), row * 2 - (a[1] + t * dy))
+                        if distance < score:
+                            def endpoint_distance(point):
+                                c, r = p.cell(point.x, point.y)
+                                return math.hypot(c - col, 2 * (r - row))
+                            best = min((left, right), key=endpoint_distance)
+                            score = distance
+            if best is not None:
+                return best
+        return None
 
     def chosen(self):
         p = self.projection
@@ -372,22 +380,50 @@ def run(viewer, stdin=None, stdout=None):
 
 
 def make_viewer(source):
-    """Read source once; private width hints never change the public record."""
+    """Read source once; artist order and width hints stay private to the viewer."""
     if isinstance(source, dict):
         return Viewer(source)
-    from . import from_figure, render
+    from . import render
+    from .record import _collect_figure
+    from matplotlib.collections import PathCollection
     from matplotlib.container import BarContainer
+    import numpy as np
 
-    record = from_figure(source)
+    collected = _collect_figure(source)
+    record = collected.result
     axes = [ax for ax in source.axes if not hasattr(ax, '_colorbar') and ax.get_visible()]
-    for j, ax in enumerate(axes):
-        bars = [m for m in record['marks'] if m['axes'] == j and m['kind'] == 'bars']
-        containers = [c for c in ax.containers if isinstance(c, BarContainer) and any(b.get_visible() for b in c)]
-        for m, c in zip(bars, containers):
-            patches = [b for b in c if b.get_visible() and all(math.isfinite(v) for v in (b.get_x(), b.get_y(), b.get_width(), b.get_height()))]
-            if len(patches) == len(m['x']):
-                m['width'] = [b.get_height() if c.orientation == 'horizontal' else b.get_width() for b in patches]
+    ranks = [{artist: i for i, artist in enumerate(sorted(ax.get_children(), key=lambda a: a.get_zorder()))}
+             for ax in axes]
+    painter, reason = [], ''
+    for mark, artist in zip(record['marks'], collected.artists):
+        artists = [artist]
+        if isinstance(artist, BarContainer):
+            artists = [b for b in artist if b.get_visible() and all(math.isfinite(v) for v in
+                       (b.get_x(), b.get_y(), b.get_width(), b.get_height()))]
+            if len(artists) == len(mark['x']):
+                mark['width'] = [b.get_height() if artist.orientation == 'horizontal' else b.get_width() for b in artists]
+            else:
+                reason = 'bar geometry unavailable'
+        positions = [ranks[mark['axes']].get(a, -1) for a in artists]
+        if -1 in positions or positions != sorted(positions):
+            reason = 'source painter order unavailable'
+        painter.extend((mark['axes'], rank, mark['id']) for rank in positions)
+        if isinstance(artist, PathCollection) and (artist.get_array() is not None or any(
+                len(np.unique(values, axis=0)) > 1 for values in
+                (artist.get_sizes(), artist.get_facecolors(), artist.get_edgecolors(), artist.get_linewidths()))):
+            reason = 'unsupported scatter encodings'
+    order = []
+    for _, _, key in sorted(painter):
+        if not order or order[-1] != key:
+            order.append(key)
+    if len(order) != len(set(order)):
+        reason = 'interleaved artist painter order unavailable'
     viewer = Viewer(record, lambda cols, rows: render(source, cols=cols, rows=rows, color=True).text)
+    viewer.draw_marks = [viewer.marks[key] for key in order]
+    if reason:
+        viewer.initial_reason = reason
+    if any(hasattr(ax, '_colorbar') and ax.get_visible() for ax in source.axes):
+        viewer.initial_reason = 'unsupported colorbar encoding'
     if any(ax.name != 'rectilinear' for ax in axes):
         viewer.initial_reason = 'non-rectilinear axes'
     return viewer

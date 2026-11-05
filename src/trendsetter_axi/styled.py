@@ -4,7 +4,7 @@ The agent-facing render/summary/record contracts are deliberately unchanged.
 """
 import math
 
-from .cells import clean_text, clusters, truncate, width
+from .cells import clean_text, clusters, pack_entries, truncate, width
 
 BG, INK = (15, 17, 21), (236, 236, 232)
 MUTED, FAINT, GHOST = (150, 152, 158), (84, 87, 96), (100, 104, 114)
@@ -160,7 +160,20 @@ def draw(viewer, *, interactive=True, color=True):
             s.put(row, side + 15, f"{m['kind']} ({count})", MUTED)
     # Common bounds for both static and interactive geometry, including inverted/log axes.
     clip = (p.left, p.top * 2, p.left + p.cols, (p.top + p.rows) * 2)
-    for j, m in enumerate(v.record['marks']):
+    if v.box and len(chosen) > 2 and a['slope'] is not None:
+        canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
+        canvas.stamp = False
+        lo, hi = min(q.x for q in chosen), max(q.x for q in chosen)
+        run = []
+        for i in range(max(2, p.cols * 2)):
+            x = lo + (hi - lo) * i / max(1, p.cols * 2 - 1)
+            y = a['mean_y'] + a['slope'] * (x - a['mean_x'])
+            c, r = p.cell(x, y)
+            run.append((c, r * 2))
+        canvas.stroke([run], (0.92, 0.92, 0.91), clip=clip, role='data')
+        s.canvas(canvas)
+    for m in v.draw_marks:
+        j = list(v.marks).index(m['id'])
         rgb = PALETTE[j % len(PALETTE)]
         points = [a for a in v.points if a.mark == m['id']]
         if m['kind'] == 'line':
@@ -177,32 +190,19 @@ def draw(viewer, *, interactive=True, color=True):
         elif m['kind'] == 'bars':
             for point in points:
                 s.bar(v.bar_bounds(point), rgb, horizontal=m.get('orientation') == 'h')
-    if v.box and len(chosen) > 2 and a['slope'] is not None:
-        canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
-        canvas.stamp = False
-        lo, hi = min(q.x for q in chosen), max(q.x for q in chosen)
-        run = []
-        for i in range(max(2, p.cols * 2)):
-            x = lo + (hi - lo) * i / max(1, p.cols * 2 - 1)
-            y = a['mean_y'] + a['slope'] * (x - a['mean_x'])
-            c, r = p.cell(x, y)
-            run.append((c, r * 2))
-        canvas.stroke([run], (0.92, 0.92, 0.91), clip=clip, role='data')
-        s.canvas(canvas)
-    # Dense scatter points use the renderer's braille bit map, not enlarged glyph stamps.
-    cells = {}
-    for point in scatter:
-        c, r = p.cell(point.x, point.y)
-        ix, iy = min(p.cols * 2 - 1, round((c - p.left) * 2)), min(p.rows * 4 - 1, round((r - p.top) * 4))
-        j = list(v.marks).index(point.mark)
-        cell = cells.setdefault((p.top + iy // 4, p.left + ix // 2), {})
-        active = v.box is None or (point.mark, point.index) in selected
-        key = j if active else -1
-        bits, count = cell.get(key, (0, 0))
-        cell[key] = (bits | int(BITS[iy % 4, ix % 2]), count + 1)
-    for (r, c), groups in cells.items():
-        key = max(groups, key=lambda k: (k >= 0, groups[k][1]))
-        s.put(r, c, chr(0x2800 + groups[key][0]), PALETTE[key % len(PALETTE)] if key >= 0 else GHOST)
+        elif m['kind'] == 'points':
+            cells = {}
+            for point in points:
+                if not p.visible(point.x, point.y):
+                    continue
+                c, r = p.cell(point.x, point.y)
+                ix, iy = min(p.cols * 2 - 1, round((c - p.left) * 2)), min(p.rows * 4 - 1, round((r - p.top) * 4))
+                cell = cells.setdefault((p.top + iy // 4, p.left + ix // 2), {})
+                active = v.box is None or (point.mark, point.index) in selected
+                cell[active] = cell.get(active, 0) | int(BITS[iy % 4, ix % 2])
+            for (r, c), groups in cells.items():
+                active = max(groups)
+                s.put(r, c, chr(0x2800 + groups[active]), rgb if active else GHOST)
     # Linked marginals: visible context in gray, selected portion in yellow.
     hx, hy, sx, sy = [0] * p.cols, [0] * p.rows, [0] * p.cols, [0] * p.rows
     for point in scatter:
@@ -277,10 +277,18 @@ def draw(viewer, *, interactive=True, color=True):
         c, r = p.cell(a.x, a.y)
         if p.visible(a.x, a.y):
             s.put(round(r), round(c), '◉', INK, TIP_BG)
-        text = f'{a.name} [{a.index}]  x={a.x!r}  y={a.y!r}'
-        s.put(v.rows - 3, 1, truncate(text, v.cols - 2), INK, TIP_BG)
+        def labeled(text, label):
+            label = clean_text(label).replace('\n', ' ').replace('\t', ' ')
+            label = truncate(label, max(0, v.cols - 3 - width(text)))
+            return f'{label} {text}' if label else text
+        bar_lines = pack_entries('', [f'base={a.base!r}', f'top={a.top!r}', f'value={a.top - a.base!r}'],
+                                 v.cols - 2) if a.kind == 'bars' else []
+        row = v.rows - 2 - max(1, len(bar_lines))
+        text = f'[{a.index}]  x={a.x!r}  y={a.y!r}'
+        s.put(row, 1, labeled(text, a.name), INK, TIP_BG)
         if a.kind == 'bars':
-            s.put(v.rows - 2, 1, f'{a.label}  base={a.base!r}  top={a.top!r}  value={a.top - a.base!r}', MUTED)
+            for i, line in enumerate(bar_lines, row + 1):
+                s.put(i, 1, labeled(line, a.label) if i == v.rows - 2 else line, MUTED)
         else:
             labels = []
             for key, val in (('x', a.x), ('y', a.y)):
@@ -289,7 +297,7 @@ def draw(viewer, *, interactive=True, color=True):
                     labels.extend(f'{key}: {label}' for label, pos in scale.get('mapping', {}).items() if pos == val)
                 elif scale['scale'] == 'date':
                     labels.append(f"{key}: matplotlib date days ({scale.get('timezone', 'UTC')})")
-            s.put(v.rows - 2, 1, ' | '.join(labels), MUTED)
+            s.put(v.rows - 2, 1, truncate(clean_text(' | '.join(labels)).replace('\n', ' ').replace('\t', ' '), v.cols - 2), MUTED)
     else:
         caption = 'gray: context · yellow: selection · white: OLS trend (data units)' if v.has_scatter else 'Hover inspects exact source values; lines report the nearest stored knot.'
         s.put(v.rows - 3, 1, caption, MUTED)

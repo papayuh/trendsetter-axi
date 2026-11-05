@@ -288,3 +288,185 @@ def test_gappy_line_traversal_has_linear_comparison_cost_for_draw_and_hover():
     point = v.points[len(v.points) // 2]
     assert v.nearest(*v.projection.cell(point.x, point.y)) == point
     assert CountedIndex.comparisons <= len(v.points) * 4
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('style', ['default', 'steps-pre', 'steps-post', 'steps-mid'])
+@pytest.mark.parametrize('nonpositive', [0, -1])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+def test_nonpositive_log_lines_use_explicit_fallback(axis, style, nonpositive, inverted, saved):
+    ax = Figure().subplots()
+    xs, ys = ([nonpositive, 10], [1, 2]) if axis == 'x' else ([1, 2], [nonpositive, 10])
+    ax.plot(xs, ys, drawstyle=style, marker='o')
+    getattr(ax, f'set_{axis}scale')('log')
+    getattr(ax, f'set_{axis}lim')(1, 10)
+    if inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    original = from_figure(ax.figure)
+    source = original if saved else ax.figure
+    v = model(source)
+    assert v.projection is None
+    assert f'nonpositive {axis} line coordinates' in v.reason
+    assert v.nearest(20, 15) is None
+    assert 'Static view:' in SGR.sub('', v.frame())
+    assert 'Static view:' in render_styled(source, color=False)
+    v.layout(160, 45)
+    assert v.projection is None and v.reason
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('first,second', [(a, b) for a in ('bars', 'line', 'points')
+                                         for b in ('bars', 'line', 'points')])
+@pytest.mark.parametrize('zorders', [(0, 3), (3, 0), (2, 2)])
+def test_actual_figure_painter_order_controls_drawing_and_picking(first, second, zorders):
+    ax = Figure().subplots()
+    for kind, name, zorder in zip((first, second), ('first', 'second'), zorders):
+        if kind == 'bars':
+            ax.bar([30], [24], width=20, label=name, zorder=zorder)
+        elif kind == 'line':
+            ax.plot([0, 67], [12, 12], label=name, zorder=zorder)
+        else:
+            count = 3 if name == 'first' else 1
+            ax.scatter([30] * count, [12] * count, label=name, zorder=zorder)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    original = from_figure(ax.figure)
+    v = model(ax.figure)
+    assert not v.reason
+    index = 0 if zorders[0] > zorders[1] else 1
+    name = ('first', 'second')[index]
+    kind = (first, second)[index]
+    c, r = map(round, v.projection.cell(30, 12))
+    expected = {'bars': '█', 'line': '─', 'points': '⠁'}[kind]
+    for frame in (v.frame(), render_styled(ax.figure)):
+        assert colored_cells(frame)[r][c][0] == expected
+    assert v.nearest(c, r).name == name
+    v.mouse(35, c, r, False)
+    assert v.hover.name == name
+    assert from_figure(ax.figure) == original
+    assert all('width' not in mark for mark in original['marks'])
+
+
+@pytest.mark.parametrize('reverse_patches', [False, True])
+def test_unrepresentable_bar_patch_order_uses_explicit_figure_fallback(reverse_patches):
+    ax = Figure().subplots()
+    bars = ax.bar([1, 1], [3, 3], zorder=1)
+    ax.plot([0, 2], [1, 1], zorder=2)
+    bars[0 if reverse_patches else 1].set_zorder(3)
+    v = model(ax.figure)
+    assert v.projection is None
+    assert 'painter order unavailable' in v.reason
+    assert 'Static view:' in SGR.sub('', v.frame())
+
+
+@pytest.mark.parametrize('kind', ['points', 'line', 'bars', 'barh'])
+@pytest.mark.parametrize('cols', [80, 120])
+@pytest.mark.parametrize('saved', [False, True])
+def test_long_labels_cannot_displace_exact_hover_numbers(kind, cols, saved):
+    ax = Figure().subplots()
+    name = 'series-name-' * 20
+    label = 'category-界' * 20
+    x, y = 1.2345678901234567e200, -2.345678901234567e180
+    if kind == 'points':
+        ax.scatter([x], [y], label=name)
+    elif kind == 'line':
+        ax.plot([x], [y], marker='o', label=name)
+    elif kind == 'bars':
+        ax.bar([label], [2.345678901234567e200], bottom=[-1.2345678901234567e200], label=name)
+    else:
+        ax.barh([label], [2.345678901234567e200], left=[-1.2345678901234567e200], label=name)
+    original = from_figure(ax.figure)
+    v = model(original if saved else ax.figure, cols, 38)
+    point = v.points[0]
+    v.hover = point
+    fields = [f'x={point.x!r}', f'y={point.y!r}']
+    if point.kind == 'bars':
+        assert len(point.label) > 100
+        fields += [f'base={point.base!r}', f'top={point.top!r}', f'value={point.top - point.base!r}']
+    for frame in (v.frame(), draw(v, interactive=False, color=False)):
+        lines = SGR.sub('', frame).splitlines()
+        footer = lines[-4:-1]
+        assert all(any(field in line for line in footer) for field in fields)
+        assert all(width(line) == cols for line in lines)
+        assert '…' in '\n'.join(footer)
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('widths', [False, True])
+@pytest.mark.parametrize('labels', [False, True])
+def test_bar_defaults_do_not_access_whole_series_per_point(widths, labels):
+    class CountedList(list):
+        length_calls = 0
+
+        def __len__(self):
+            self.length_calls += 1
+            return super().__len__()
+
+    ax = Figure().subplots()
+    ax.bar(range(300), [1] * 300)
+    ax.set(xlim=(-1, 301), ylim=(0, 2))
+    source_viewer = model(ax.figure)
+    record = source_viewer.record
+    mark = record['marks'][0]
+    if not widths:
+        mark.pop('width')
+    if not labels:
+        mark.pop('labels')
+    xs = CountedList(mark['x'])
+    mark['x'] = xs
+    v = model(record)
+    assert len(v.points) == 300
+    assert xs.length_calls <= 4
+    xs.length_calls = 0
+    for point in v.points:
+        assert all(map(math.isfinite, v.bar_bounds(point)))
+    assert v.frame()
+    assert v.nearest(*v.projection.cell(150, 1.8)) is None
+    assert xs.length_calls <= 4
+    point = v.points[150]
+    assert point.label == (mark['labels'][150] if labels else '')
+    c0, _, c1, _ = v.bar_bounds(point)
+    expected = v.projection.cell(point.x + .4, 0)[0] - v.projection.cell(point.x - .4, 0)[0]
+    assert c1 - c0 == pytest.approx(expected)
+
+
+@pytest.mark.parametrize('encoding', ['mapped-color', 'colorbar', 'literal-color', 'size', 'edge-color',
+                                      'alpha', 'linewidth'])
+def test_scatter_encodings_use_explicit_fallback_without_changing_public_records(encoding):
+    ax = Figure().subplots()
+    options = {
+        'mapped-color': {'c': [10, 20]},
+        'colorbar': {'c': [10, 20]},
+        'literal-color': {'c': ['red', 'blue']},
+        'size': {'s': [10, 100]},
+        'edge-color': {'edgecolors': ['red', 'blue']},
+        'alpha': {'alpha': [.2, .8]},
+        'linewidth': {'linewidths': [1, 5]},
+    }[encoding]
+    collection = ax.scatter([1, 2], [2, 3], **options)
+    if encoding == 'colorbar':
+        ax.figure.colorbar(collection, ax=ax)
+    original = from_figure(ax.figure)
+    v = model(ax.figure)
+    assert v.projection is None
+    assert 'encoding' in v.reason
+    assert 'Static view:' in SGR.sub('', v.frame())
+    assert 'Static view:' in render_styled(ax.figure, color=False)
+    assert v.nearest(20, 15) is None
+    assert from_figure(ax.figure) == original
+
+
+def test_uniform_scatter_style_and_hidden_encoded_artists_remain_interactive():
+    ax = Figure().subplots()
+    ax.scatter([1, 2], [2, 3], s=[20, 20], c=['red', 'red'], linewidths=[2, 2], label='uniform')
+    hidden = ax.scatter([3, 4], [4, 5], s=[10, 100], c=[1, 2], visible=False)
+    colorbar = ax.figure.colorbar(hidden, ax=ax)
+    colorbar.ax.set_visible(False)
+    original = from_figure(ax.figure)
+    v = model(ax.figure)
+    assert not v.reason and v.projection is not None
+    assert len(v.points) == 2
+    for point in v.points:
+        assert v.nearest(*v.projection.cell(point.x, point.y)) == point
+    assert 'Static view:' not in render_styled(ax.figure, color=False)
+    assert from_figure(ax.figure) == original
