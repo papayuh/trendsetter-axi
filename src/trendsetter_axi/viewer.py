@@ -130,21 +130,22 @@ def _points(mark):
 
 def line_edges(mark, points, projection):
     """Draw/hit-test the same source segments, including gaps and step rules."""
+    breaks = set(mark.get('breaks', []))
+    style = mark.get('interp', 'linear')
     for left, right in zip(points, points[1:]):
-        if right.index in mark.get('breaks', []) or right.index != left.index + 1:
+        if right.index in breaks or right.index != left.index + 1:
             continue
         x0, y0 = projection.cell(left.x, left.y)
         x1, y1 = projection.cell(right.x, right.y)
         if not all(map(math.isfinite, (x0, y0, x1, y1))):
             continue
         path = [(x0, y0 * 2)]
-        style = mark.get('interp', 'linear')
         if style == 'step-pre':
             path.append((x0, y1 * 2))
         elif style == 'step-post':
             path.append((x1, y0 * 2))
         elif style == 'step-mid':
-            mid = (x0 + x1) / 2
+            mid, _ = projection.cell(left.x / 2 + right.x / 2, left.y)
             path.extend([(mid, y0 * 2), (mid, y1 * 2)])
         path.append((x1, y1 * 2))
         yield path, left, right
@@ -195,15 +196,19 @@ class Viewer:
         pos = point.y if horizontal else point.x
         # Saved v1 records contain exact centers/endpoints but omit widths.
         w = m.get("width", [0.8] * len(m["x"]))[point.index]
-        a, b = pos - w / 2, pos + w / 2
-        base = point.base
-        scale = self.projection.axis['x' if horizontal else 'y']
-        if scale['scale'] == 'log' and base <= 0:
-            base = min(scale['range'])
-        xy0 = (base, a) if horizontal else (a, base)
-        xy1 = (point.top, b) if horizontal else (b, point.top)
-        c0, r0 = self.projection.cell(*xy0)
-        c1, r1 = self.projection.cell(*xy1)
+        footprint = sorted((pos - w / 2, pos + w / 2))
+        value = sorted((point.base, point.top))
+        intervals = (value, footprint) if horizontal else (footprint, value)
+        clipped = []
+        for k, (lo, hi) in zip('xy', intervals):
+            lower, upper = sorted(self.projection.axis[k]['range'])
+            lo, hi = max(lo, lower), min(hi, upper)
+            if lo > hi:
+                return (float('nan'),) * 4
+            clipped.append((lo, hi))
+        (x0, x1), (y0, y1) = clipped
+        c0, r0 = self.projection.cell(x0, y0)
+        c1, r1 = self.projection.cell(x1, y1)
         return min(c0, c1), min(r0, r1), max(c0, c1), max(r0, r1)
 
     def nearest(self, col, row):

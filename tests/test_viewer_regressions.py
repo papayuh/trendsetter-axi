@@ -1,0 +1,290 @@
+"""Behavioral regressions for shared styled drawing and interaction geometry."""
+import math
+
+from matplotlib.figure import Figure
+import pytest
+
+from trendsetter_axi import from_figure, render_styled
+from trendsetter_axi.cells import SGR, clean_text, width
+from trendsetter_axi.styled import PALETTE, RIGHT, UP, draw
+from trendsetter_axi.viewer import line_edges, make_viewer
+
+
+def model(source, cols=120, rows=38):
+    viewer = make_viewer(source)
+    viewer.layout(cols, rows)
+    return viewer
+
+
+def colored_cells(frame):
+    """Decode foreground colors from the emitted truecolor terminal protocol."""
+    rows, fg = [], None
+    for line in frame.splitlines():
+        cells, start = [], 0
+        for match in SGR.finditer(line):
+            cells.extend((ch, fg) for ch in line[start:match.start()])
+            codes = list(map(int, match.group()[2:-1].split(';')))
+            if codes[:2] == [38, 2]:
+                fg = tuple(codes[2:5])
+            elif codes == [0]:
+                fg = None
+            start = match.end()
+        cells.extend((ch, fg) for ch in line[start:])
+        rows.append(cells)
+    return rows
+
+
+def rectangle_cells(cells, bounds):
+    c0, r0, c1, r1 = bounds
+    return [cells[r][c]
+            for r in range(math.floor(r0), math.ceil(r1))
+            for c in range(math.floor(c0), math.ceil(c1))]
+
+
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('yscale', ['linear', 'log'])
+@pytest.mark.parametrize('saved', [False, True])
+def test_log_steps_mid_projects_arithmetic_data_midpoint(inverted, yscale, saved):
+    ax = Figure().subplots()
+    ax.plot([1, 100], [1, 100], drawstyle='steps-mid')
+    ax.set(xscale='log', yscale=yscale, xlim=(1, 100), ylim=(1, 100))
+    if inverted:
+        ax.invert_xaxis()
+        ax.invert_yaxis()
+    v = model(from_figure(ax.figure) if saved else ax.figure)
+    p = v.projection
+    path, left, right = next(line_edges(v.record['marks'][0], v.points, p))
+    mid, _ = p.cell(50.5, 1)
+    assert path[1][0] == pytest.approx(mid)
+    assert path[2][0] == pytest.approx(mid)
+    row = (path[1][1] + path[2][1]) / 4
+    assert v.nearest(mid, row) in (left, right)
+    cells = colored_cells(v.frame())
+    assert any(cells[r][c][0] != ' '
+               for r in range(math.floor(row) - 1, math.floor(row) + 2)
+               for c in range(math.floor(mid) - 1, math.floor(mid) + 2))
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('negative_width', [False, True])
+@pytest.mark.parametrize('negative_value', [False, True])
+def test_bar_rectangles_clip_both_log_axes_before_projection(
+        horizontal, inverted, negative_width, negative_value):
+    ax = Figure().subplots()
+    widths = [-4, -2] if negative_width else [4, 2]
+    values, bases = ([-3, 1], [2, 2]) if negative_value else ([2, 2], [0, 1])
+    if horizontal:
+        ax.barh([1, 10], values, left=bases, height=widths)
+    else:
+        ax.bar([1, 10], values, bottom=bases, width=widths)
+    position_range, value_range = (.1, 20), (.1, 4)
+    ax.set(xscale='log', yscale='log',
+           xlim=value_range if horizontal else position_range,
+           ylim=position_range if horizontal else value_range)
+    if inverted:
+        ax.invert_xaxis()
+        ax.invert_yaxis()
+    v = model(ax.figure)
+    p, point = v.projection, v.points[0]
+    xy0 = (.1, .1)
+    xy1 = (2, 3) if horizontal else (3, 2)
+    a, b = p.cell(*xy0), p.cell(*xy1)
+    expected = min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
+    bounds = v.bar_bounds(point)
+    assert bounds == pytest.approx(expected)
+    c0, r0, c1, r1 = bounds
+    assert v.nearest((c0 + c1) / 2, (r0 + r1) / 2) == point
+    assert any(ch != ' ' and rgb == PALETTE[0]
+               for ch, rgb in rectangle_cells(colored_cells(v.frame()), bounds))
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+def test_saved_log_bar_footprint_clips_estimated_width(horizontal, inverted):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh([.1], [2])
+    else:
+        ax.bar([.1], [2])
+    ax.set(xscale='log', yscale='log', xlim=(.01, 5), ylim=(.01, 5))
+    if inverted:
+        ax.invert_xaxis()
+        ax.invert_yaxis()
+    v = model(from_figure(ax.figure))
+    bounds = v.bar_bounds(v.points[0])
+    assert all(map(math.isfinite, bounds))
+    c0, r0, c1, r1 = bounds
+    assert v.nearest((c0 + c1) / 2, (r0 + r1) / 2) == v.points[0]
+    assert any(rgb == PALETTE[0] for _, rgb in rectangle_cells(colored_cells(v.frame()), bounds))
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+def test_log_bars_wholly_outside_domain_have_no_drawable_rectangle(horizontal):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh([-3, 2], [2, -2], left=[0, -1])
+    else:
+        ax.bar([-3, 2], [2, -2], bottom=[0, -1])
+    ax.set(xscale='log', yscale='log', xlim=(.1, 5), ylim=(.1, 5))
+    v = model(ax.figure)
+    assert all(not any(map(math.isfinite, v.bar_bounds(point))) for point in v.points)
+    p = v.projection
+    assert v.nearest(p.left + p.cols / 2, p.top + p.rows / 2) is None
+    cells = colored_cells(v.frame())
+    assert not any(rgb == PALETTE[0] and ch != ' '
+                   for r in range(p.top, p.top + p.rows)
+                   for ch, rgb in cells[r][p.left:p.left + p.cols])
+
+
+def test_oversized_actual_figure_fallback_omits_whole_chart_not_last_bars():
+    ax = Figure().subplots()
+    ax.barh([f'bar-{i}' for i in range(20)], range(1, 21))
+    ax.set_xscale('symlog')
+    v = model(ax.figure, 80, 24)
+    assert len(v.static(80, 21).splitlines()) > 21
+    frame = SGR.sub('', v.frame())
+    assert 'Static chart omitted' in frame
+    assert 'complete output does not fit' in frame
+    assert 'bar-0' not in frame
+    assert len(frame.splitlines()) == 24
+    assert all(width(line) == 80 for line in frame.splitlines())
+    assert 'omitted' in render_styled(ax.figure, 80, 24, color=False)
+
+
+@pytest.mark.parametrize('series,points', [(1, 40), (8, 2)])
+def test_saved_overview_checks_width_and_height_without_partial_data(series, points):
+    ax = Figure().subplots()
+    for i in range(series):
+        ax.plot(range(points), range(points), label=f'series-{i}')
+    ax.set_xscale('symlog')
+    v = model(from_figure(ax.figure), 80, 24)
+    overview = v.static_record().splitlines()
+    assert len(overview) > 21 or max(map(width, overview)) > 80
+    frame = SGR.sub('', v.frame())
+    assert 'data overview omitted' in frame
+    assert 'series-0' not in frame
+    assert len(frame.splitlines()) == 24
+    assert all(width(line) == 80 for line in frame.splitlines())
+
+
+def test_fitting_fallback_keeps_complete_output():
+    ax = Figure().subplots()
+    ax.plot([1, 2], [3, 4])
+    ax.set_xscale('symlog')
+    v = model(from_figure(ax.figure))
+    lines = v.static_record().splitlines()
+    frame = SGR.sub('', v.frame()).splitlines()
+    assert 'omitted' not in '\n'.join(frame)
+    assert [line.rstrip() for line in frame[2:2 + len(lines)]] == list(map(clean_text, lines))
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('cols,rows', [(80, 24), (120, 38)])
+def test_saved_bar_width_notice_never_overwrites_exact_hover_footer(horizontal, cols, rows):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh([1], [5], left=[100])
+    else:
+        ax.bar([1], [5], bottom=[100])
+    v = model(from_figure(ax.figure), cols, rows)
+    v.hover = v.points[0]
+    for frame in (v.frame(), draw(v, interactive=False, color=False)):
+        lines = SGR.sub('', frame).splitlines()
+        assert 'widths estimated: 0.8' in lines[2]
+        assert 'base=100.0' in lines[-2]
+        assert 'top=105.0' in lines[-2]
+        assert 'value=5.0' in lines[-2]
+
+
+@pytest.mark.parametrize('xs', [[1], [1, math.nan, 10, 100], [1, math.nan, 10, math.nan, 100]])
+@pytest.mark.parametrize('saved', [False, True])
+def test_isolated_marked_line_knots_are_drawn_and_hoverable(xs, saved):
+    ax = Figure().subplots()
+    ax.plot(xs, [2] * len(xs), marker='o')
+    ax.set(xscale='log', xlim=(.5, 200), ylim=(1, 4))
+    ax.invert_xaxis()
+    v = model(from_figure(ax.figure) if saved else ax.figure)
+    edges = list(line_edges(v.record['marks'][0], v.points, v.projection))
+    connected = {point.index for _, left, right in edges for point in (left, right)}
+    for frame in (v.frame(), render_styled(from_figure(ax.figure) if saved else ax.figure)):
+        cells = colored_cells(frame)
+        for point in v.points:
+            if point.index in connected:
+                continue
+            c, r = v.projection.cell(point.x, point.y)
+            ch, rgb = cells[math.floor(r)][math.floor(c)]
+            assert ch != ' ' and rgb is not None
+            assert v.nearest(c, r) == point
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('negative', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+def test_discrete_bars_keep_palette_and_sub_eighth_nonzero_coverage(horizontal, negative, inverted, saved):
+    ax = Figure().subplots()
+    values = [-.01, -10] if negative else [.01, 10]
+    for positions, label in (([1, 3], 'first'), ([2, 4], 'second')):
+        if horizontal:
+            ax.barh(positions, values, label=label)
+        else:
+            ax.bar(positions, values, label=label)
+    value_range = (-10, 0) if negative else (0, 10)
+    ax.set(xlim=value_range if horizontal else (0, 5),
+           ylim=(0, 5) if horizontal else value_range)
+    if inverted:
+        ax.invert_xaxis()
+        ax.invert_yaxis()
+    source = from_figure(ax.figure) if saved else ax.figure
+    v = model(source)
+    for frame in (v.frame(), render_styled(source)):
+        cells = colored_cells(frame)
+        for point in v.points:
+            ink = [(ch, rgb) for ch, rgb in rectangle_cells(cells, v.bar_bounds(point)) if ch != ' ']
+            series = list(v.marks).index(point.mark)
+            assert ink and all(rgb == PALETTE[series] for _, rgb in ink)
+            if point.index == 0:
+                assert all(ch in (RIGHT if horizontal else UP)[1:8] for ch, _ in ink)
+            else:
+                assert any(ch == '█' for ch, _ in ink)
+
+
+@pytest.mark.parametrize('bars_last', [False, True])
+def test_mixed_line_and_bar_drawing_preserves_record_painter_order(bars_last):
+    ax = Figure().subplots()
+    ax.bar([2], [10], width=2)
+    ax.plot([0, 4], [5, 5])
+    ax.set(xlim=(0, 4), ylim=(0, 10))
+    record = from_figure(ax.figure)
+    record['marks'].sort(key=lambda mark: (mark['kind'] == 'bars') == bars_last)
+    v = model(record)
+    c, r = map(round, v.projection.cell(2, 5))
+    cells = colored_cells(v.frame())
+    assert cells[r][c][0] == ('█' if bars_last else '─')
+
+
+def test_gappy_line_traversal_has_linear_comparison_cost_for_draw_and_hover():
+    class CountedIndex(int):
+        comparisons = 0
+        __hash__ = int.__hash__
+
+        def __eq__(self, other):
+            type(self).comparisons += 1
+            return int.__eq__(self, other)
+
+    ax = Figure().subplots()
+    xs = [value for i in range(2000) for value in (i, math.nan)]
+    ax.plot(xs, [1] * len(xs), marker='o')
+    v = model(ax.figure)
+    mark = v.record['marks'][0]
+    mark['breaks'] = list(map(CountedIndex, mark['breaks']))
+    assert not list(line_edges(mark, v.points, v.projection))
+    assert CountedIndex.comparisons <= len(v.points) * 4
+    CountedIndex.comparisons = 0
+    assert v.frame()
+    assert CountedIndex.comparisons <= len(v.points) * 4
+    CountedIndex.comparisons = 0
+    point = v.points[len(v.points) // 2]
+    assert v.nearest(*v.projection.cell(point.x, point.y)) == point
+    assert CountedIndex.comparisons <= len(v.points) * 4

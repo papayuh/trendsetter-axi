@@ -53,6 +53,16 @@ class Screen:
                     bg, fg = heatrgb.get((r, c), (None, rgb))
                     self.put(r, c, cells[r, c], fg, bg)
 
+    def bar(self, bounds, rgb, *, horizontal):
+        c0, r0, c1, r1 = bounds
+        if not all(map(math.isfinite, bounds)) or c0 >= c1 or r0 >= r1:
+            return
+        for r in range(max(0, math.floor(r0)), min(self.rows, math.ceil(r1))):
+            for c in range(max(0, math.floor(c0)), min(self.cols, math.ceil(c1))):
+                coverage = min(c + 1, c1) - max(c, c0) if horizontal else min(r + 1, r1) - max(r, r0)
+                level = max(1, min(8, math.ceil(coverage * 8)))
+                self.put(r, c, (RIGHT if horizontal else UP)[level], rgb)
+
     def text(self, color=True):
         out, last = [], None
         for r, row in enumerate(self.cells):
@@ -83,8 +93,15 @@ def draw(viewer, *, interactive=True, color=True):
             text = v.static(v.cols, v.rows - 3) if v.static else v.static_record()
         except Exception as exc:
             text = f'Static rendering unavailable: {type(exc).__name__}: {exc}'
-        for i, line in enumerate(text.splitlines()[:v.rows - 3], 2):
-            s.put(i, 0, truncate(clean_text(line), v.cols))
+        lines = [clean_text(line) for line in text.splitlines()]
+        needed_cols = max(map(width, lines), default=0)
+        if len(lines) > v.rows - 3 or needed_cols > v.cols:
+            label = 'Static chart' if v.static else 'Saved record: data overview'
+            lines = [f'{label} omitted: complete output does not fit.',
+                     f'Needs {needed_cols}x{len(lines)} cells; available {v.cols}x{v.rows - 3}.',
+                     'Resize terminal to see complete output.']
+        for i, line in enumerate(lines, 2):
+            s.put(i, 0, line)
         return s.text(color)
     p = v.projection
     axis = v.record['axes'][0]
@@ -96,6 +113,8 @@ def draw(viewer, *, interactive=True, color=True):
     visible = [a for a in v.points if p.visible(a.x, a.y)]
     caption = f'{len(scatter):,} visible scatter points' if v.has_scatter else f'{len(visible):,} visible knots / bar endpoints'
     s.put(1, 1, caption + (f'   {len(chosen):,} selected' if v.box else ''), MUTED)
+    if any(m['kind'] == 'bars' and 'width' not in m for m in v.record['marks']):
+        s.put(2, 1, 'Saved bar widths estimated: 0.8', MUTED)
     side, panel = p.left + p.cols + 9, v.cols - (p.left + p.cols + 9) - 1
     header = 'Selection'.ljust(14) + 'selected'.rjust(8) + ' ' + 'visible'.rjust(9) if v.has_scatter else 'Source values'
     s.put(1, side, header, MUTED)
@@ -141,22 +160,26 @@ def draw(viewer, *, interactive=True, color=True):
             s.put(row, side + 15, f"{m['kind']} ({count})", MUTED)
     # Common bounds for both static and interactive geometry, including inverted/log axes.
     clip = (p.left, p.top * 2, p.left + p.cols, (p.top + p.rows) * 2)
-    canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
-    canvas.stamp = False
     for j, m in enumerate(v.record['marks']):
-        rgb = tuple(c / 255 for c in PALETTE[j % len(PALETTE)])
+        rgb = PALETTE[j % len(PALETTE)]
         points = [a for a in v.points if a.mark == m['id']]
         if m['kind'] == 'line':
-            paths = [path for path, _, _ in line_edges(m, points, p)]
-            canvas.stroke(paths, rgb, clip=clip, role='data')
+            canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
+            canvas.stamp = False
+            edges = list(line_edges(m, points, p))
+            ink = tuple(c / 255 for c in rgb)
+            canvas.stroke([path for path, _, _ in edges], ink, clip=clip, role='data')
+            connected = {point.index for _, left, right in edges for point in (left, right)}
+            isolated = [p.cell(a.x, a.y) for a in points if a.index not in connected and p.visible(a.x, a.y)]
+            if isolated:
+                canvas.marker([(c, r * 2) for c, r in isolated], ink, clip=clip, role='data')
+            s.canvas(canvas)
         elif m['kind'] == 'bars':
             for point in points:
-                c0, r0, c1, r1 = v.bar_bounds(point)
-                if not all(map(math.isfinite, (c0, r0, c1, r1))):
-                    continue
-                canvas.fill([[(c0, r0 * 2), (c1, r0 * 2), (c1, r1 * 2), (c0, r1 * 2)]],
-                            rgb, clip=clip, role='data', continuous=True)
+                s.bar(v.bar_bounds(point), rgb, horizontal=m.get('orientation') == 'h')
     if v.box and len(chosen) > 2 and a['slope'] is not None:
+        canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
+        canvas.stamp = False
         lo, hi = min(q.x for q in chosen), max(q.x for q in chosen)
         run = []
         for i in range(max(2, p.cols * 2)):
@@ -165,7 +188,7 @@ def draw(viewer, *, interactive=True, color=True):
             c, r = p.cell(x, y)
             run.append((c, r * 2))
         canvas.stroke([run], (0.92, 0.92, 0.91), clip=clip, role='data')
-    s.canvas(canvas)
+        s.canvas(canvas)
     # Dense scatter points use the renderer's braille bit map, not enlarged glyph stamps.
     cells = {}
     for point in scatter:
@@ -270,8 +293,6 @@ def draw(viewer, *, interactive=True, color=True):
     else:
         caption = 'gray: context · yellow: selection · white: OLS trend (data units)' if v.has_scatter else 'Hover inspects exact source values; lines report the nearest stored knot.'
         s.put(v.rows - 3, 1, caption, MUTED)
-    if any(m['kind'] == 'bars' and 'width' not in m for m in v.record['marks']):
-        s.put(v.rows - 2, 1, 'Saved record: bar widths estimated at 0.8; positions and values are exact.', MUTED)
     controls = 'drag brush  hover inspect  x clear  q quit' if v.has_scatter else 'hover inspect  q quit'
     s.put(v.rows - 1, 1, controls if interactive else 'trendsetter-axi · static terminal view · call interact(fig) to explore', MUTED)
     return s.text(color)
