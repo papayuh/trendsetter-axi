@@ -1,5 +1,8 @@
 """Behavioral regressions for shared styled drawing and interaction geometry."""
+from datetime import datetime, timedelta
 import math
+import re
+from zoneinfo import ZoneInfo
 
 from matplotlib.figure import Figure
 import numpy as np
@@ -775,3 +778,162 @@ def test_cell_hover_rebuilds_rendered_ownership_after_resize():
     assert v.nearest(38, 18).name == 'mark'
     v.layout(160, 45)
     assert v.nearest(38, 18).name == 'bar'
+
+
+@pytest.mark.parametrize('markers', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('axis', ['x', 'y'])
+def test_hover_returns_point_contributing_to_winning_drawn_cell(markers, saved, axis):
+    ax = Figure().subplots()
+    xs, ys = ([11.7, 12.7], [12, 12]) if axis == 'x' else ([12, 12], [10.3, 9.3])
+    if markers:
+        ax.plot(xs, ys, linestyle='None', marker='o', label='samples')
+    else:
+        ax.scatter(xs, ys, label='samples')
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    original = from_figure(ax.figure)
+    v = model(original if saved else ax.figure)
+    first, second = ((19, 18), (20, 18)) if axis == 'x' else ((20, 19), (20, 20))
+    for frame in (v.frame(), draw(v, interactive=False)):
+        cells = colored_cells(frame)
+        for index, (c, r) in enumerate((first, second)):
+            assert cells[r][c][0] != ' '
+            assert v.nearest(c, r) == v.points[index]
+    v.mouse(35, *second, False)
+    assert v.hover == v.points[1]
+    assert 'samples [1]' in SGR.sub('', v.frame())
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('markers', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+def test_cell_hover_returns_last_point_in_displayed_selection_group(markers, saved):
+    ax = Figure().subplots()
+    xs, ys = [12.1, 11.9, 12.2, 11.8], [12] * 4
+    if markers:
+        ax.plot(xs, ys, linestyle='None', marker='o')
+    else:
+        ax.scatter(xs, ys)
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    v = model(from_figure(ax.figure) if saved else ax.figure)
+    v.frame()
+    assert v.nearest(20, 18) == v.points[3]
+    assert v.nearest(20, 17) == v.points[3]
+    v.box = (20, 18, 21, 19)
+    assert [point.index for point in v.chosen()] == [0, 2]
+    for frame in (v.frame(), draw(v, interactive=False)):
+        assert colored_cells(frame)[18][20][0] == '┌'
+        assert v.nearest(20, 18) == v.points[2]
+        assert v.nearest(20, 17) == v.points[2]
+    v.key('x')
+    v.frame()
+    assert v.nearest(20, 18) == v.points[3]
+    v.layout(120, 38)
+    assert v.nearest(20, 18) == v.points[3]
+
+
+def date_tick_labels(frame, viewer, axis):
+    lines = SGR.sub('', frame).splitlines()
+    p = viewer.projection
+    if axis == 'x':
+        return lines[p.top + p.rows + 1][p.left:p.left + p.cols].split()
+    return [line[:6].strip() for line in lines[p.top:p.top + p.rows] if line[7] == '┤']
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('cols', [80, 120])
+def test_january_date_axis_ticks_keep_distinguishing_days_and_hours(axis, saved, inverted, cols):
+    ax = Figure().subplots()
+    dates = [datetime(2026, 1, day) for day in (1, 2, 3)]
+    if axis == 'x':
+        ax.plot(dates, [1, 2, 3])
+        ax.set_xlim(dates[0], dates[-1])
+    else:
+        ax.plot([1, 2, 3], dates)
+        ax.set_ylim(dates[0], dates[-1])
+    if inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    original = from_figure(ax.figure)
+    source = original if saved else ax.figure
+    v = model(source, cols)
+    p = v.projection
+    side = p.left + p.cols + 9
+    for frame in (v.frame(), render_styled(source, cols=cols)):
+        lines = SGR.sub('', frame).splitlines()
+        if axis == 'x':
+            tick_region = lines[p.top + p.rows + 1][p.left:p.left + p.cols]
+            labels = re.findall(r'\d{2} \d{2}', tick_region)
+        else:
+            labels = date_tick_labels(frame, v, axis)
+            tick_region = ' '.join(labels)
+        assert len(labels) >= 2 and len(set(labels)) == len(labels)
+        assert all(re.fullmatch(r'0[123] (00|06|12|18)', label) for label in labels)
+        assert '…' not in tick_region
+        context = lines[9 if axis == 'x' else 10][side:].strip()
+        assert f'{axis} 2026-01-DD HH' in context
+        assert context.endswith('+0000')
+        assert all(width(line) == cols for line in lines)
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('scope', ['year', 'month', 'day', 'hour', 'minute', 'second', 'microsecond',
+                                  'minute-boundary', 'dst-fold'])
+def test_date_ticks_preserve_time_precision_with_bounded_shared_context(axis, saved, scope):
+    from matplotlib import dates as mdates
+    from matplotlib.ticker import FixedLocator
+
+    base = datetime(2026, 1, 1, 12, 34, 56)
+    if scope == 'year':
+        dates, expected = [datetime(year, 1, 1) for year in (2026, 2027, 2028)], [2026, 2027, 2028]
+    elif scope == 'month':
+        dates, expected = [datetime(2026, month, 1) for month in (1, 2, 3)], [1, 2, 3]
+    elif scope == 'day':
+        dates, expected = [datetime(2026, 1, day) for day in (1, 2, 3)], [1, 2, 3]
+    elif scope == 'hour':
+        dates, expected = [base + timedelta(hours=i) for i in range(3)], [12, 13, 14]
+    elif scope == 'minute':
+        dates, expected = [base + timedelta(minutes=i) for i in range(3)], [34, 35, 36]
+    elif scope == 'second':
+        dates, expected = [base + timedelta(seconds=i) for i in range(3)], [56, 57, 58]
+    elif scope == 'microsecond':
+        dates = [base + timedelta(microseconds=i) for i in (50, 100, 150)]
+        expected = [50, 100, 150]
+    elif scope == 'minute-boundary':
+        base = datetime(2026, 1, 1, 12, 34, 59, 999950)
+        dates = [base + timedelta(microseconds=i) for i in (0, 100, 200)]
+        expected = [0, 100, 200]
+    else:
+        zone = ZoneInfo('America/New_York')
+        dates = [datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=fold) for fold in (0, 1)]
+        dates.append(datetime(2026, 11, 1, 2, 30, tzinfo=zone))
+        expected = [0, 1, 2]
+    ax = Figure().subplots()
+    if axis == 'x':
+        ax.plot(dates, [1, 2, 3])
+    else:
+        ax.plot([1, 2, 3], dates)
+    getattr(ax, f'set_{axis}lim')(dates[0], dates[-1])
+    getattr(ax, f'{axis}axis').set_major_locator(FixedLocator(mdates.date2num(dates)))
+    original = from_figure(ax.figure)
+    source = original if saved else ax.figure
+    v = model(source)
+    side = v.projection.left + v.projection.cols + 9
+    for frame in (v.frame(), render_styled(source)):
+        labels = date_tick_labels(frame, v, axis)
+        assert len(labels) == 3 and len(set(labels)) == 3
+        assert all(len(label) <= (9 if axis == 'x' else 6) and '…' not in label for label in labels)
+        displayed = expected if axis == 'x' else expected[::-1]
+        assert list(map(float, labels)) == pytest.approx(displayed, abs=1 if scope == 'minute-boundary' else 0)
+        lines = SGR.sub('', frame).splitlines()
+        context = lines[9 if axis == 'x' else 10][side:].strip()
+        assert context.startswith(axis + ' ')
+        if scope in ('minute-boundary', 'dst-fold'):
+            assert 'Z +' in context
+        else:
+            assert context.endswith('+0000')
+        assert all(width(line) == 120 for line in lines)
+    assert from_figure(ax.figure) == original

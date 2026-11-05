@@ -30,6 +30,33 @@ def _number(value, cols, *, signed=False):
     raise ValueError('number does not fit terminal cell')
 
 
+def _date_ticks(scale, ticks, cols):
+    from matplotlib import dates as mdates
+
+    if not ticks:
+        return [], ''
+    values = [tick['value'] for tick in ticks]
+    dates = mdates.num2date(values, tz=scale.get('timezone', 'UTC'))
+    full = [date.replace(tzinfo=None).isoformat(sep=' ', timespec='microseconds') for date in dates]
+    fields = [(0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19), (20, 26)]
+    varying = [i for i, (lo, hi) in enumerate(fields) if len({text[lo:hi] for text in full}) > 1]
+    lo, hi = fields[min(varying, default=6)][0], fields[max(varying, default=6)][1]
+    labels = [text[lo:hi] for text in full]
+    template = 'YYYY-MM-DD HH:MM:SS.ffffff'
+    context = full[0][:lo] + template[lo:hi] + full[0][hi:] + dates[0].strftime(' %z')
+    if (max(map(len, labels)) <= cols and len(set(labels)) == len(set(values)) and
+            len({date.utcoffset() for date in dates}) == 1 and len(context) <= 32):
+        return labels, context
+    origin = min(values)
+    seconds = (max(values) - origin) * 86400
+    unit, divisor = next((name, size) for name, size in
+                         [('d', 86400), ('h', 3600), ('m', 60), ('s', 1), ('ms', .001), ('us', .000001)]
+                         if seconds >= size or name == 'us')
+    labels = [_number((value - origin) * 86400 / divisor, cols) for value in values]
+    context = mdates.num2date(origin).replace(tzinfo=None).isoformat(sep=' ', timespec='microseconds') + f'Z +{unit}'
+    return labels, context
+
+
 class Screen:
     def __init__(self, cols, rows):
         self.cols, self.rows = cols, rows
@@ -229,10 +256,13 @@ def draw(viewer, *, interactive=True, color=True):
                 ix, iy = min(p.cols * 2 - 1, round((c - p.left) * 2)), min(p.rows * 4 - 1, round((r - p.top) * 4))
                 cell = cells.setdefault((p.top + iy // 4, p.left + ix // 2), {})
                 active = v.box is None or (point.mark, point.index) in selected
-                cell[active] = cell.get(active, 0) | int(BITS[iy % 4, ix % 2])
+                bits, _ = cell.get(active, (0, point.index))
+                cell[active] = (bits | int(BITS[iy % 4, ix % 2]), point.index)
             for (r, c), groups in cells.items():
                 active = max(groups)
-                s.put(r, c, chr(0x2800 + groups[active]), rgb if active else GHOST)
+                bits, index = groups[active]
+                s.owner = (m['id'], index)
+                s.put(r, c, chr(0x2800 + bits), rgb if active else GHOST)
     s.owner = None
     v.hit_cells = s.owners
     # Linked marginals: visible context in gray, selected portion in yellow.
@@ -288,13 +318,23 @@ def draw(viewer, *, interactive=True, color=True):
     s.put(p.top + p.rows, p.left - 1, '└' + '─' * p.cols, FAINT)
     occupied = {'x': set(), 'y': set()}
     for k in 'xy':
-        for tick in axis[k].get('ticks', []):
+        ticks = [tick for tick in axis[k].get('ticks', []) if
+                 p.visible(tick['value'] if k == 'x' else axis['x']['range'][0],
+                           tick['value'] if k == 'y' else axis['y']['range'][0])]
+        cols = 6 if k == 'y' else 9
+        labels = [truncate(clean_text(tick['label']), cols) for tick in ticks]
+        if axis[k]['scale'] == 'date':
+            labels, context = _date_ticks(axis[k], ticks, cols)
+            if context:
+                s.put(9 if k == 'x' else 10, side, f'{k} {context}', MUTED)
+        seen = set()
+        for tick, label in zip(ticks, labels):
+            if axis[k]['scale'] == 'date' and label in seen:
+                continue
+            seen.add(label)
             x = tick['value'] if k == 'x' else axis['x']['range'][0]
             y = tick['value'] if k == 'y' else axis['y']['range'][0]
-            if not p.visible(x, y):
-                continue
             c, r = map(round, p.cell(x, y))
-            label = truncate(clean_text(tick['label']), 6 if k == 'y' else 9)
             if k == 'x':
                 c = max(p.left, min(p.left + p.cols - width(label), c - width(label) // 2))
                 span = set(range(c - 1, c + width(label) + 1))

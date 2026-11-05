@@ -226,9 +226,9 @@ class Viewer:
             return None
         hit = min(nearby, key=lambda rc: (math.dist(rc, cell), -order[self.hit_cells[rc][0]]))
         mark, index = self.hit_cells[hit]
-        points = [point for point in self.points if point.mark == mark and
-                  (index is None or point.index == index) and
-                  (point.kind != 'points' or p.visible(point.x, point.y))]
+        points = [point for point in self.points if point.mark == mark]
+        if index is not None:
+            return next(point for point in points if point.index == index)
         return min(points, key=lambda point: math.dist(p.cell(point.x, point.y), cell))
 
     def chosen(self):
