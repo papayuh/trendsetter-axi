@@ -10,8 +10,9 @@ PYTHONPATH=src pytest -q tests/test_cells.py tests/test_work_budget.py
 The fixture is an 8×4-inch matplotlib figure with `sin(x)`, x=0…10,
 80 terminal columns, and title `Dense sine`. Times include figure copying,
 layout/draw, rasterization and serialization. Each measurement is the median
-of three runs after warming caches. No Rust implementation or figure-copy
-optimization was needed.
+of three runs after warming caches. These raster-sampler measurements predate
+the [figure-copy/layout optimization](speed-trim.md); that report owns the later
+compatibility results and timings.
 
 ## Before / after
 

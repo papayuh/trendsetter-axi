@@ -2,14 +2,14 @@
 
 ## Summary
 
-- Use geometry-only preliminary layout only when every figure artist has an exact type in a short allow-list (Figure, Axes, XAxis/YAxis, XTick/YTick, Spine, Line2D, Text, Rectangle). Unknown artists and subclasses, including quiver, legends, annotations, collections and custom artists, retain the original full preliminary draw. The same boundary handles the shortening retry.
+- Skip discarded drawing only on the conservative `_layout` fast path, shared by the initial layout and shortening retry. Its exact-type allow-list and compatibility invariant live in [`mpl.py`](../src/trendsetter_axi/mpl.py).
 - Clone the artist graph with matplotlib's pickle protocol rather than Python's recursive deepcopy. Keep the existing plotnine-aware deepcopy fallback for local functions and custom objects that reject serialization.
 - Preserve the baseline's pre-copy tick materialization: otherwise each disposable clone constructs the initial Tick artists again in `prepare`.
 - No new dependencies, public API/import-surface changes, cross-call result caches, renderer rewrite, or feature removal.
 
 ## Revised compatibility results
 
-Focused review run: Python 3.14.6, matplotlib 3.11.2, numpy 2.4.4, Agg. **25 tests passed** in `tests/test_figure_work.py`. All **32 new quiver/custom-artist records** (18 rows, 60/80 columns, color and ASCII independently off/on) match archived base `4376145` in exact text bytes and losses; previous HEAD `bf2f34d` differs. The full gallery identity matrix and full suite were not rerun in this review phase.
+Focused review run: Python 3.14.6, matplotlib 3.11.2, numpy 2.4.4, Agg. **25 tests passed** in `tests/test_figure_work.py`. The archived quiver/custom-artist records (18 rows, 60/80 columns, color and ASCII independently off/on) match base `4376145` in exact text bytes and losses; previous HEAD `bf2f34d` differs. The full gallery identity matrix and full suite were not rerun in this review phase.
 
 Warm structured gallery medians, **seven samples per chart**, 80 columns, imports/construction excluded. Separate processes ran sequentially in base/previous/fixed order, not interleaved; shared-host load and the different dependency versions mean these cannot be compared directly with the original timings below.
 
@@ -28,7 +28,7 @@ The attempted seven-sample alternating cold-figure/warm-structured/warm-text ben
 
 ## Before / after medians (original optimization, before compatibility fix)
 
-Base: current main `4376145` (includes painter-order changes). Head: `fm/ts-speed-trim`.
+Base: `4376145` (includes painter-order changes). Original optimization: `bf2f34d`, before compatibility fix `e386a9f`.
 Python 3.10.22, matplotlib 3.10.9, numpy 2.2.6, wcwidth 0.9.3; Agg backend.
 
 The first measurement, before editing current main, gave cold figure **367.5 ms**, warm structured **84.1 ms**, and warm text **106.5 ms**. The dense-line budget gave **64.0 / 68.1 / 109.4 ms** for 1k / 10k / 100k points. These were remeasured rather than reusing the older `1956a78` numbers.
@@ -90,7 +90,7 @@ The following full-matrix and full-suite results predate the compatibility fix; 
 
 ## Reproduce
 
-With the development/gallery dependencies and SVG exporters available:
+Use an installed source development environment ([setup](../README.md#development)), with the gallery dependencies and SVG exporters available. `startup_routes.py` also requires installed `trendsetter-axi` distribution metadata; `PYTHONPATH` alone is insufficient.
 
 ```sh
 mkdir -p .scratch/speed-base

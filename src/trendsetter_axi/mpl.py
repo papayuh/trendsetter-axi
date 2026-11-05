@@ -570,7 +570,12 @@ _LAYOUT_ONLY_TYPES = frozenset({Figure, Axes, XAxis, YAxis, XTick, YTick, Spine,
 
 
 def _layout(fig, renderer):
-    """Use geometry-only layout for known artists, otherwise draw normally."""
+    """Skip preliminary drawing only for exact types with no draw-dependent geometry.
+
+    Unknown artists and subclasses must draw before padding changes the limits:
+    quiver, for example, caches its automatic scale on its first draw. Keep this
+    boundary for shortening retries too; see tests/test_figure_work.py.
+    """
     if not fig.get_visible():
         return
     if not all(type(a) in _LAYOUT_ONLY_TYPES for a in fig.findobj()):
@@ -600,7 +605,8 @@ def render(fig, cols=80, color=False, rows=None):
         if any("Tight layout" in str(w.message) for w in wl) or any(min(a.get_position().width, a.get_position().height) < .1 or a.get_position().height > .99 for a in fig.axes):  # plotnine: infeasible gridspec leaves the axes filling the figure   # labels too wide for the grid: layout gave up and kept the old margins, so shorten x labels to their slot and lay out again
             area = lambda: sum(a.get_position().width * a.get_position().height for a in fig.axes)
             a0, old, pos = area(), [(x, x.get_major_formatter()) for a in fig.axes for x in (a.xaxis, a.yaxis)], [a.get_position() for a in fig.axes]
-            _shorten(fig, cols); _layout(fig, rend)
+            _shorten(fig, cols)
+            _layout(fig, rend)
             if area() < a0:   # shortening squeezed the plot (side-by-side bar panels): keep the long labels, core drops colliding ones
                 for x, f in old: x.set_major_formatter(f)
                 for a, p in zip(fig.axes, pos): a.set_position(p)
