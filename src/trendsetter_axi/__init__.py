@@ -85,8 +85,11 @@ def render(source, cols=80, *, color=False, strict=False, ascii=False, rows=None
 
     ascii=True draws the same cells in ASCII (lines in ' - _ / \\ |, bars in #, heat levels in . : = #, series keys
     o x ^ ...): coarser than braille, a fraction of the tokens for a model to read. Frame and labels are unchanged.
-    rows is the preferred height in lines (at least 8; a heatmap or bar chart takes more so each row or bar keeps a line);
-    by default it follows the figure's aspect. SVG input ignores it."""
+    rows must be None or a positive int (not bool). It is the preferred height in lines, with a minimum of 8;
+    heatmaps and bar charts may take more rows so each row or bar keeps a line. By default it follows the figure's
+    aspect. SVG input ignores this preference. cols is the hard terminal-cell budget per line."""
+    if rows is not None and (isinstance(rows, bool) or not isinstance(rows, int) or rows < 1):
+        raise ValueError("rows must be a positive int")
     if isinstance(source, (str, bytes)):
         from . import svg as _svg
 

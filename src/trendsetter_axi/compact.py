@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, replace
 import math
 from numbers import Integral
 
-from .cells import DisplayCapacityError, SGR, width, wrap
+from .cells import CONTROLS, DisplayCapacityError, SGR, width, wrap
 from .result import FIGURE, SVG, RenderResult, build
 
 
@@ -60,7 +60,7 @@ def _budget(cols, max_rows):
 
 def _plain(value):
     text = SGR.sub('', str(value))
-    if any(ord(c) < 32 or 127 <= ord(c) < 160 for c in text):
+    if CONTROLS.search(text):
         raise ValueError('display labels must not contain control characters')
     return text
 

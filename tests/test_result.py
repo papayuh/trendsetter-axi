@@ -1,11 +1,13 @@
 """render(): the RenderResult says what the text shows, what it lost, and refuses misleading text when strict."""
 import io
+import re
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from wcwidth import wcswidth
 
 import trendsetter_axi as tsa
 from trendsetter_axi import core
@@ -44,6 +46,106 @@ def test_color_option(close):
     r = tsa.render(fig, 60, color=True)
     assert "\x1b[38;2;" in r.text and r.text == tsa.render_figure(fig, 60, color=True)
     assert r.dimensions["width"] <= 60 and "\x1b[" not in tsa.render_figure(fig, 60)
+
+
+@pytest.mark.parametrize("rows", [0, -5, 2.5, True, "12"])
+def test_rows_must_be_a_positive_int(close, rows):
+    with pytest.raises(ValueError, match="rows"):
+        tsa.render(figure(two_lines), 80, rows=rows)
+
+
+@pytest.mark.parametrize("rows", [12, None])
+def test_valid_rows_work(close, rows):
+    result = tsa.render(figure(two_lines), 80, rows=rows)
+    assert result.text and result.dimensions["width"] <= 80
+
+
+def test_controls_are_stripped_from_text_and_summary(close):
+    name = "quoted\nname"
+
+    def build(ax):
+        ax.plot([0, 1, 2], [1, 2, 1], label=name)
+        ax.set(title="T\x1b[31mRED\x1b[0m\nlosses: none\nfake", xlabel="x\x1b]0;evil\x07",
+               ylabel="first\nsecond")
+
+    r = tsa.render(figure(build), 80)
+    summary = r.summary()
+    assert "\x1b" not in r.text and "\x07" not in r.text
+    assert "\x1b" not in summary and "\x07" not in summary
+    assert summary.count("losses:") == 1
+    title = next(line for line in summary.splitlines() if line.startswith("title:"))
+    assert title == r"title: TRED / losses\: none / fake"
+    assert "x: x" in summary.splitlines() and "evil" not in summary
+    assert "y: first / second" in summary.splitlines()
+    assert repr(name) in summary
+    assert r.scales[0]["title"] == "TRED\nlosses: none\nfake"
+    assert r.scales[0]["x"]["label"] == "x"
+
+
+def test_terminal_sequences_are_removed_before_label_wrapping(close):
+    label = "before\x1b]0;" + "evil" * 100 + "\x1b\\after"
+
+    def build(ax):
+        ax.plot([0, 1], [1, 2])
+        ax.set(title=label, xlabel=label)
+
+    fig = figure(build)
+    r = tsa.render(fig, 40)
+    assert "beforeafter" in r.text
+    assert "evil" not in r.text and "\x1b" not in r.text
+    assert fig.axes[0].get_title() == label
+
+
+@pytest.mark.parametrize("get_artist", [
+    pytest.param(lambda fig, ax: fig.suptitle(""), id="suptitle"),
+    pytest.param(lambda fig, ax: ax.title, id="title"),
+    pytest.param(lambda fig, ax: ax._left_title, id="left-title"),
+    pytest.param(lambda fig, ax: ax._right_title, id="right-title"),
+    pytest.param(lambda fig, ax: ax.xaxis.label, id="xlabel"),
+    pytest.param(lambda fig, ax: ax.yaxis.label, id="ylabel"),
+    pytest.param(lambda fig, ax: fig.text(.2, .8, ""), id="figure-text"),
+    pytest.param(lambda fig, ax: ax.text(.2, .8, ""), id="axes-text"),
+    pytest.param(lambda fig, ax: ax.annotate("", (.2, .8)), id="annotation"),
+    pytest.param(lambda fig, ax: ax.get_legend().get_texts()[0], id="legend-label"),
+    pytest.param(lambda fig, ax: ax.legend(title="Legend").get_title(), id="legend-title"),
+    pytest.param(lambda fig, ax: fig.legend().get_texts()[0], id="figure-legend-label"),
+    pytest.param(lambda fig, ax: fig.legend(title="Legend").get_title(), id="figure-legend-title"),
+])
+@pytest.mark.parametrize("start,end", [("\x1b]", "\x07"), ("\x1b]", "\x1b\\"), ("\x9d", "\x9c")])
+@pytest.mark.parametrize("cols", [40, 80])
+def test_multiline_terminal_sequences_are_removed_before_drawing(close, get_artist, start, end, cols):
+    fig = figure(two_lines)
+    artist = get_artist(fig, fig.axes[0])
+    artist.set_text(f"before{start}0;evil\npayload{end}after")
+    original = [(t, t.get_text()) for t in fig.findobj(match=matplotlib.text.Text)]
+    size = fig.get_size_inches().copy()
+
+    result = tsa.render(fig, cols, color=True)
+
+    assert all(t.get_text() == text for t, text in original)
+    np.testing.assert_array_equal(fig.get_size_inches(), size)
+    assert "beforeafter" in result.text
+    assert "evil" not in result.text and "payload" not in result.text
+    assert "\x1b]" not in result.text and "\x07" not in result.text
+    assert "\x9d" not in result.text and "\x9c" not in result.text
+    assert "\x1b[38;2;" in result.text
+    artist.set_text("beforeafter")
+    assert result.text == tsa.render(fig, cols, color=True).text
+    for line in result.text.split("\n"):
+        assert width(line) == wcswidth(re.sub(r"\x1b\[[0-9;:]*m", "", line)) <= cols
+
+
+def test_generated_ansi_is_kept_apart_from_labels(close):
+    def build(ax):
+        two_lines(ax)
+        ax.set(title="T\x1b[31mRED\x1b[0m", xlabel="x\x1b]0;evil\x07")
+
+    r = tsa.render(figure(build), 80, color=True)
+    assert "\x1b[38;2;" in r.text
+    assert "\x1b[31m" not in r.text and "\x1b]" not in r.text and "\x07" not in r.text
+    for line in r.text.split("\n"):
+        plain = re.sub(r"\x1b\[[0-9;:]*m", "", line)
+        assert width(line) == wcswidth(plain) <= 80
 
 
 def test_lost_data_artist_is_counted(close, monkeypatch):
