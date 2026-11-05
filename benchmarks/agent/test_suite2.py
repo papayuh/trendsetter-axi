@@ -73,7 +73,8 @@ def test_manifest_fixture_integrity_and_budget():
 def test_auth_guard_and_usage(monkeypatch, auth, stop):
     m = s.load()
     final = dict(type="result", result='{"q1":null}', usage=dict(input_tokens=100, output_tokens=8,
-                 cache_read_input_tokens=20, cache_creation_input_tokens=10), total_cost_usd=.002, is_error=False)
+                 cache_read_input_tokens=20, cache_creation_input_tokens=10), total_cost_usd=.002, is_error=False,
+                 modelUsage={s.MODEL: {}})
     out = "\n".join(json.dumps(e) for e in [dict(type="system", apiKeySource=auth), final])
     def fake(cmd, **kwargs):
         assert "--safe-mode" in cmd
@@ -86,3 +87,44 @@ def test_auth_guard_and_usage(monkeypatch, auth, stop):
     assert row["is_error"] == stop
     assert row["input_tokens"] == 130
     assert row["list_price_usd"] == .002
+
+
+def test_interrupted_batch_reserves_only_unrecorded_attempts(monkeypatch, tmp_path):
+    monkeypatch.setattr(s, "DATA", tmp_path)
+    m = {"schema": 2}
+    pending = s.journal_batch([("chart", "table", 1), ("chart", "summary", 1)])
+    (tmp_path / "calls.jsonl").write_text(json.dumps(dict(**pending[0], is_error=False, list_price_usd=.01)) + "\n")
+    s.recover_pending(m)
+    recovered = s.rows()
+    assert len(recovered) == 2
+    assert recovered[1]["attempt_id"] == pending[1]["attempt_id"]
+    assert recovered[1]["list_price_usd"] == s.CALL_CAP
+    assert recovered[1]["wall_unknown"]
+    s.recover_pending(m)
+    assert len(s.rows()) == 2
+
+
+def test_completed_rerun_makes_no_calls(monkeypatch):
+    m = s.load()
+    if len([r for r in s.rows() if not r["is_error"]]) != 1470:
+        pytest.skip("Full raw results not yet present")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Completed cells must never be re-asked")
+    monkeypatch.setattr(s, "call", forbidden)
+    assert s.run(m) == "complete"
+
+
+def test_full_results_auth_model_and_manifest():
+    m = s.load()
+    good = [r for r in s.rows() if not r["is_error"]]
+    if not good:
+        pytest.skip("No model calls yet")
+    assert len(good) == len({(r["chart"], r["arm"], r["trial"]) for r in good})
+    for r in good:
+        assert r["manifest_sha256"] == s.digest(m)
+        assert r["stimulus_sha256"] == m["charts"][r["chart"]]["stimuli"][r["arm"]]["sha256"]
+        assert r["auth_sources"] == ["none"]
+        assert not r["api_key_auth"]
+        assert set(r["final"]["modelUsage"]) == {s.MODEL}
+        assert r["final"]["subagent_stats"]["spawned"] == 0
+    assert sum(r["list_price_usd"] for r in s.rows()) <= s.BUDGET

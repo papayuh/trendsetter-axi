@@ -20,9 +20,17 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 - Output size: `render` bounds every line with `cols`; its `rows` remains a preferred height, which heatmaps and bar charts can exceed. The opt-in [`render_compact`](#bounded-displays-and-preferences) also enforces a hard `max_rows`, titles and omissions included. `ascii=True` uses cheaper drawing glyphs; `dimensions` reports cells and lines used.
 - Diagnostics: `r.losses` lists what the renderer detects the text does not show. See [loss reporting and strict mode](#what-the-text-lost-render) for materiality and known limits.
 
-Agent evidence: [suite2 results](benchmarks/agent/RESULTS.md#pooled-paired-results), with direct-data `table` / `table+stats` baselines, seven arms and three paired trials. See the [predeclared criterion](benchmarks/agent/README.md#predeclared-success-criterion-written-before-calls). An incomplete run establishes no accuracy or token-saving claim for the current renderer.
+Agent evidence at renderer `4376145`: 70 new charts, three trials on `claude-sonnet-5-5`, seven paired arms ([results cells](benchmarks/agent/RESULTS.md#pooled-paired-results)).
 
-The human-readable preview and optional hybrid remain available; this is not a claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays.
+| input | correct / 840 answers | total input tokens, three trials |
+| --- | ---: | ---: |
+| direct `table+stats` | 797/840 | 330,342 |
+| `summary()` | 659/840 | 252,243 |
+| hybrid | 700/840 | 305,481 |
+| PNG | 756/840 | 307,560 |
+| terminal text | 380/840 | 412,284 |
+
+Summary **failed** the [predeclared criterion](benchmarks/agent/RESULTS.md#predeclared-criterion): 138 fewer correct answers than `table+stats`, using 76.4% of its input tokens rather than ≤40%. Recommendation narrows to the human-readable preview and optional hybrid, not a claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays; retain them when correctness matters.
 
 [Historical pilot only](benchmarks/agent/RESULTS.md#historical-pilot-not-rerun-not-comparable), `after` at 9288d2b: summary 79/81 dev and 37/39 held-out; hybrid 78/81 and 39/39; PNG 80/81 and 39/39. Median chart tokens respectively 102/114, 316/326 and 408/408. Those single-model, single-run results had no direct-data baseline and do not validate later renderer changes.
 

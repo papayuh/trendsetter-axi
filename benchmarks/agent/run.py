@@ -21,6 +21,7 @@ import base64
 import hashlib
 import json
 import math
+import os
 import re
 import statistics
 import subprocess
@@ -125,9 +126,15 @@ def ask(model, cid, fmt, questions, env, tag):
            "--no-session-persistence", "--system-prompt", SYSTEM,
            "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
     start = time.perf_counter()
-    out = subprocess.run(cmd, input=json.dumps(prompt(cid, fmt, questions)) + "\n", capture_output=True, text=True, timeout=300)
+    env = os.environ.copy()
+    for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        env.pop(key, None)
+    out = subprocess.run(cmd, input=json.dumps(prompt(cid, fmt, questions)) + "\n", capture_output=True, text=True, timeout=300, env=env)
     wall = time.perf_counter() - start
-    final = json.loads(out.stdout.strip().splitlines()[-1])
+    events = [json.loads(line) for line in out.stdout.strip().splitlines()]
+    if any(str(e.get("apiKeySource", "none")).lower() not in ("none", "null", "", "claude.ai", "oauth") for e in events):
+        raise RuntimeError("API-key auth reported; refusing historical benchmark call")
+    final = events[-1]
     u = final["usage"]
     return dict(chart=cid, format=fmt, model=model, reply=final.get("result", ""), is_error=final.get("is_error"),
                 input_tokens=u["input_tokens"] + u["cache_creation_input_tokens"] + u["cache_read_input_tokens"],
@@ -283,7 +290,7 @@ def section(split, key, model, tag):
     return L + [""]
 
 
-def write_report(model):
+def _write_pilot_report(model):
     keys = {split: json.loads(path.read_text()) for split, (_, path) in SPLITS.items() if path.exists()}
     every = [r for r in rows() if r["model"] == model]
     w, h = next(iter(keys["dev"].values()))["png"]
@@ -322,6 +329,15 @@ def write_report(model):
     L += [f"Cost reported by the CLI, every call in results.jsonl including tuning rounds: ${sum(r['cost_usd'] or 0 for r in every if not r.get('reused_from')):.2f}. "
           f"Environment: {'; '.join(sorted({ENV.format(**r) for r in every}))}.", ""]
     REPORT.write_text("\n".join(L))
+
+
+def write_report(model):
+    """Regenerate the current report; isolated historical fixtures keep their grader."""
+    if (MANIFESTS / "suite2.json").exists() and model == "claude-sonnet-5-5":
+        from suite2 import load as load_suite2, report as report_suite2
+        report_suite2(load_suite2(), path=REPORT)
+    else:
+        _write_pilot_report(model)
 
 
 def main():

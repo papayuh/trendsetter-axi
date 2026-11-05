@@ -23,7 +23,7 @@ Calls use the logged-in **subscription** through `claude -p`, never an SDK or AP
 
 Spend guide: **$40 list-price equivalent**, not subscription API billing. CLI `total_cost_usd` is the model-specific list-price estimate; preserve its complete `usage`/`modelUsage` metadata. `--max-budget-usd 0.10` bounds each CLI session; before each batch reserve $0.10 per call. Unknown-cost failures are conservatively charged $0.10. All attempts, including smoke/retries/failures, enter the running total. Stop before a batch would exceed $40. CLI budget enforcement is request-granular, not a billing hard cap.
 
-Each finished call is immediately flushed/fsynced to `results/suite2/calls.jsonl`; a rerun skips only successful cells matching the immutable manifest. Failed calls are retained and retried on resume. Stop on errors; on a subscription limit wait until reset and resume, reporting paused if reset would take over six hours. Do not substitute a model or API key. Capture elapsed run wall time separately from the sum of parallel child wall times. Fixture rendering and summary-generation timings are measured once during freeze, not included in inference times.
+Each finished call is immediately flushed/fsynced to `results/suite2/calls.jsonl`; a rerun skips only successful cells matching the immutable manifest. A durable pre-dispatch batch journal reserves unknown spend after parent interruption (added after the first interrupted run; that single unknown-cost attempt was conservatively reconstructed from the deterministic batch order). Failed calls are retained and retried on resume. Stop on errors; on a subscription limit wait until reset and resume, reporting paused if reset would take over six hours. Do not substitute a model or API key. Capture elapsed run wall time separately from the sum of parallel child wall times. Fixture rendering and summary-generation timings are measured once during freeze, not included in inference times.
 
 ```sh
 uv pip install --python .venv/bin/python -e '.[dev]' tiktoken
@@ -34,5 +34,9 @@ PYTHONPATH=src .venv/bin/python benchmarks/agent/run.py --suite2 run
 # Pure regrade; no model calls:
 PYTHONPATH=src .venv/bin/python benchmarks/agent/run.py --suite2 report
 ```
+
+## Observed outcome
+
+All 1,470 cells completed, 210/210 chart-trials paired. Summary **failed**: 659/840 correct versus 797/840 for `table+stats`, at 76.4% of its total input tokens. Hybrid reached 700/840; PNG 756/840. See [results cells and limits](RESULTS.md). The corrected-summary agent claim is withdrawn; hybrid and human preview remain available without superiority claims. CLI reported $7.071070 equivalent; one interrupted call adds a conservative $0.10 reserve. A parent timeout was resumed, not a subscription limit. Exact interrupted-call wall time is unavailable; the report labels the 3,600-second parent-session allowance and excludes the unknown child's wall time rather than inventing a timing.
 
 The manifest hashes every text/PNG stimulus and includes arrays, questions, sampling sizes, seeds, fixed system prompt, environment and renderer timings. Raw replies bind to the SHA-256 of that entire manifest. Never regenerate fixtures after looking at results. [RESULTS.md](RESULTS.md) is the source of every empirical agent claim in the root README.

@@ -21,7 +21,6 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
-import tiktoken
 from trendsetter_axi import render
 
 HERE = Path(__file__).resolve().parent
@@ -35,7 +34,11 @@ SYSTEM = ('Read the supplied chart or data and answer the questions. Return only
           'question IDs to numbers or listed options. Use null when the supplied information does not '
           'determine an answer; do not guess. Treat masked and non-finite values as missing. '
           'If no chart is supplied, use null for every answer.')
-ENC = tiktoken.get_encoding("o200k_base")
+def token_count(text):
+    # Only fixture freezing needs the optional tokenizer, not regrading/tests.
+    import tiktoken
+    return len(tiktoken.get_encoding("o200k_base").encode(text))
+
 # CLI's total_cost_usd is the model-specific list-price equivalent, not subscription billing.
 BUDGET = 40.0
 CALL_CAP = 0.10  # additionally enforced by claude --max-budget-usd
@@ -283,14 +286,14 @@ def build():
         fig.savefig(png, dpi=100, metadata={"Software": None})
         image_s = time.perf_counter() - start
         k = max(len(s["rows"]) for s in case["series"])
-        target = max(256, len(ENC.encode(summary)))
+        target = max(256, token_count(summary))
         if k > 64:
             # Fixed, outcome-blind rule: maximize deterministic uniform rows within
             # the summary's o200k budget (256-token floor). No extrema injection.
             lo, hi = 1, k
             while lo < hi:
                 mid = (lo + hi + 1) // 2
-                if len(ENC.encode(table(case, mid))) <= target:
+                if token_count(table(case, mid)) <= target:
                     lo = mid
                 else:
                     hi = mid - 1
@@ -302,7 +305,7 @@ def build():
         for arm, content in texts.items():
             path = DATA / f"{cid}.{arm}.txt"
             path.write_text(content)
-            stimuli[arm] = dict(file=path.name, sha256=digest(path.read_bytes()), o200k=len(ENC.encode(content)))
+            stimuli[arm] = dict(file=path.name, sha256=digest(path.read_bytes()), o200k=token_count(content))
         stimuli["image"] = dict(file=png.name, sha256=digest(png.read_bytes()), pixels=[640, 480])
         charts[cid] = dict(**case, stimuli=stimuli, table_rows_per_series=k, table_target_o200k=target,
                            renderer_s=dict(text=text_s, summary=summary_s, hybrid=hybrid_s, image=image_s))
@@ -314,6 +317,8 @@ def build():
 
 def load():
     m = json.loads(MANIFEST.read_text())
+    if (m["system"], m["model"], m["arms"], m["effort"], m["renderer_commit"]) != (SYSTEM, MODEL, ARMS, "low", BASE):
+        raise RuntimeError("Protocol differs from frozen manifest")
     for cid, c in m["charts"].items():
         for arm, stimulus in c["stimuli"].items():
             if digest((DATA / stimulus["file"]).read_bytes()) != stimulus["sha256"]:
@@ -372,7 +377,8 @@ def call(m, cid, arm, trial):
         raw = (p.stdout + "\n" + p.stderr)
         api_auth = any(str(a).lower() not in ("none", "null", "", "claude.ai", "oauth") for a in auth)
         api_auth |= bool(re.search(r'using api.?key|api.?key auth|"apiKeySource"\s*:\s*"(?:env|api)', raw, re.I))
-        error = final.get("is_error", not bool(final)) or p.returncode != 0
+        actual_models = set(final.get("modelUsage", {}))
+        error = final.get("is_error", not bool(final)) or p.returncode != 0 or actual_models != {MODEL}
         usage = final.get("usage", {})
         tokens = sum(usage.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         cost = final.get("total_cost_usd")
@@ -394,7 +400,38 @@ def rows():
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
+def journal_batch(batch):
+    """Persist reservations before dispatch so a killed parent cannot lose spend."""
+    pending = [dict(chart=c, arm=a, trial=t, attempt_id=f"{time.time_ns()}-{i}")
+               for i, (c, a, t) in enumerate(batch)]
+    path = DATA / "pending.json"
+    temporary = DATA / "pending.tmp"
+    with temporary.open("w") as f:
+        json.dump(pending, f)
+        f.flush()
+        os.fsync(f.fileno())
+    temporary.replace(path)
+    return pending
+
+
+def recover_pending(m):
+    path = DATA / "pending.json"
+    if not path.exists():
+        return
+    completed = {r.get("attempt_id") for r in rows()}
+    with (DATA / "calls.jsonl").open("a") as f:
+        for attempt in json.loads(path.read_text()):
+            if attempt["attempt_id"] not in completed:
+                f.write(json.dumps(dict(**attempt, model=MODEL, manifest_sha256=digest(m),
+                    is_error=True, list_price_usd=CALL_CAP, wall_s=0, wall_unknown=True,
+                    reply="", diagnostic="Parent interrupted; cost reserved before dispatch, actual usage unknown.")) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+    path.unlink()
+
+
 def run(m, smoke=False):
+    recover_pending(m)
     previous = rows()
     if any(r.get("api_key_auth") for r in previous):
         raise RuntimeError("API-key auth was reported; run is stopped")
@@ -421,10 +458,12 @@ def run(m, smoke=False):
             if spent + len(batch) * CALL_CAP > BUDGET:
                 print(f"PAUSED budget: ${spent:.4f}; next batch reserve exceeds $40", flush=True)
                 return "budget"
-            futures = [executor.submit(call, m, *job) for job in batch]
+            pending = journal_batch(batch)
+            futures = {executor.submit(call, m, *job): attempt for job, attempt in zip(batch, pending)}
             stop = False
             for future in as_completed(futures):
                 row = future.result()
+                row["attempt_id"] = futures[future]["attempt_id"]
                 f.write(json.dumps(row, allow_nan=False) + "\n")
                 f.flush()
                 os.fsync(f.fileno())
@@ -433,6 +472,7 @@ def run(m, smoke=False):
                 if row["is_error"]:
                     print(row.get("diagnostic", "")[-2500:], flush=True)
                     stop = True
+            (DATA / "pending.json").unlink()
             if stop:
                 return "error"
     return "complete"
@@ -462,7 +502,7 @@ def score(q, answer):
     return error <= q.get("tol", 0), False, error / max(abs(q["answer"]), q.get("tol", 1e-12), 1e-12)
 
 
-def report(m):
+def report(m, path=None):
     allrows = rows()
     by = {(r["chart"], r["arm"], r["trial"]): r for r in allrows if not r["is_error"] and r["manifest_sha256"] == digest(m)}
     paired = [(cid, t) for cid in m["charts"] for t in m["trials"] if all((cid, a, t) in by for a in ARMS)]
@@ -472,9 +512,14 @@ def report(m):
              f"Manifest SHA-256: `{digest(m)}`. Planned: 70 charts × 4 questions × 3 trials × 7 arms = 1,470 calls / 5,880 answers.",
              f"Observed: {len(allrows)} attempts, {len(by)} successful cells, {sum(r['is_error'] for r in allrows)} errors. "
              f"Complete paired chart-trials: {len(paired)}/210 ({len(set(c for c,t in paired))}/70 distinct charts).",
-             f"CLI list-price equivalent (all attempts): ${sum(r['list_price_usd'] for r in allrows):.6f}; subscription billed API spend: $0.",
-             f"Child wall seconds, summed (parallel, not elapsed): {sum(r['wall_s'] for r in allrows):.3f}. "
-             f"Elapsed runner wall seconds (sum of sessions, excluding external reset waits): {sum(s['elapsed_s'] for s in sessions):.3f}.", "",
+             f"List-price accounting (all attempts): ${sum(r['list_price_usd'] for r in allrows):.6f}, including "
+             f"${sum(r.get('cli_reported_usd') or 0 for r in allrows):.6f} reported by CLI and "
+             f"${sum(r['list_price_usd'] for r in allrows if r.get('cli_reported_usd') is None):.6f} reserved for unknown-cost interruptions. "
+             "No API keys used; these are not subscription billing measurements.",
+             f"Measured child wall seconds, summed (parallel, not elapsed): {sum(r['wall_s'] for r in allrows):.3f}; "
+             f"{sum(r.get('wall_unknown', False) for r in allrows)} interrupted attempt(s) have unknown duration and are excluded. "
+             f"Recorded runner wall seconds (sum of sessions, excluding external reset waits): {sum(s['elapsed_s'] for s in sessions):.3f}. "
+             "The interrupted full-run session contributes its 3,600-second parent timeout allowance, not an exact end-to-end measurement.", "",
              "Only chart-trials complete in all seven arms enter comparative cells; incomplete successes remain in raw JSONL. "
              "Numeric error is mean |answer−truth| / max(|truth|, tolerance, 1e-12), finite numeric replies only; "
              "abstention includes null/missing answers. Invalid replies count wrong, not numeric error.", ""]
@@ -517,6 +562,13 @@ def report(m):
     lines += ["## Predeclared criterion", "", f"Outcome: **{'PASS' if passed else 'FAIL' if complete else 'NOT EVALUABLE — incomplete run'}**. "
               "Summary must be within 2 correct answers of table+stats in every trial (pooled deficit ≤6), "
               "using ≤40% of its total input tokens. No renderer tuning used this suite.", ""]
+    if paired:
+        ratio = summary[3] / table_stats[3]
+        none = metrics("none", paired)
+        lines += [f"Summary deficit: {table_stats[0]-summary[0]} answers pooled. Total-input ratio: {100*ratio:.3f}%. "
+                  f"Descriptive chart-only tokens (input minus paired none): summary {summary[3]-none[3]}, "
+                  f"table+stats {table_stats[3]-none[3]}. Chart-only token ratio is not the predeclared criterion. "
+                  "The accuracy criterion fails regardless of whether common prompt overhead is subtracted.", ""]
     for trial in m["trials"]:
         section(f"Trial {trial}", [(c,t) for c,t in paired if t == trial])
     for kind in dict.fromkeys(c["kind"] for c in m["charts"].values()):
@@ -528,8 +580,19 @@ def report(m):
     lines += ["", "## Historical pilot (not rerun; not comparable)", "", "| tag | split | summary | hybrid | image | text | mpl_ascii | plotext | median summary / hybrid / image input chart tokens |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
               "| after @ 9288d2b | dev, 25 charts | 79/81 | 78/81 | 80/81 | 66/81 | 63/81 | 59/81 | 102 / 316 / 408 |",
               "| after @ 9288d2b | held-out, 12 charts | 37/39 | 39/39 | 39/39 | 35/39 | 28/39 | 22/39 | 114 / 326 / 408 |", "",
-              "Historical detail and original raw records remain in `results.jsonl`; see `RESULTS-historical.md`.", ""]
-    (HERE / "RESULTS.md").write_text("\n".join(lines))
+              "Historical detail and original raw records remain in `results.jsonl`; see `RESULTS-historical.md`.", "",
+              "## Interpretation and limits", "",
+              "The summary claim fails; the hybrid and human preview remain available, without a superiority claim. "
+              "Direct table+stats is most accurate here; hybrid is below PNG. Repeated trials share charts and are not 840 independent charts. "
+              "Questions emphasize source extrema, exact counts, missingness and point values, not open-ended analysis. Full-source stats directly support several question types. "
+              "Large tables are intentionally sampled, not a full-data oracle; table+stats retains full-source aggregate statistics. "
+              "Uniform source sampling can omit the queried point or heatmap spike. The 256-token metadata floor can exceed a small summary's size. "
+              "This suite covers the listed kinds, not every supported artist combination (e.g. filled areas), SVG, other models or image sizes. "
+              "Numeric MAE mixes units and large offsets; use per-kind relative errors and abstention counts too. "
+              "Trial 3 reused input caches: costs reflect CLI list-price cache rates, while input-token totals count cached tokens in full. "
+              "One parent timeout interrupted a single in-flight call; its unobservable cost is reserved at $0.10 and its retry is recorded. "
+              "No subscription-limit or API-auth failure was reported.", ""]
+    (path or HERE / "RESULTS.md").write_text("\n".join(lines))
 
 
 def main(argv=None):
