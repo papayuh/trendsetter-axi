@@ -1,0 +1,14 @@
+                        bar experiment 9
+    ┌─────────────────────────────────────────────────────┐
+    │                                    24               │
+  25│   =    =_ =    =      =#        _ ==#  =            │
+    │  ##    ##=#    #      ##=##    =# ###  # _   #      │
+    │  ##   =####    #  =   #####    ## ###  # ##  #      │
+   0│    ooo     o  # ## oo      o#oo  #      o  ooo  o#  │
+    │                  "          "    "                  │
+    └─────────────────────────────────────────────────────┘
+      C00 C05 C09 C14 C18 C22 C27 C31 C36 C40 C45 C49 C54
+
+title: bar experiment 9
+bar n=55 min C23=-12 max C39=24
+losses: lost_artist bar: 12 hidden: no visible cell; text tick 'C01': dropped (ink); text tick 'C02': dropped (ink); text tick 'C03': dropped (overlap); text tick 'C04': dropped (overlap); text tick 'C06': dropped (ink); text tick 'C07': dropped (ink); text tick 'C08': dropped (overlap); text tick 'C10': dropped (ink); text tick 'C11': dropped (ink); text tick 'C12': dropped (overlap); text tick 'C13': dropped (overlap); text tick 'C15': dropped (ink); text tick 'C16': dropped (ink); text tick 'C17': dropped (overlap); text tick 'C19': dropped (ink); text tick 'C20': dropped (ink); text tick 'C21': dropped (overlap); text tick 'C23': dropped (ink); text tick 'C24': dropped (ink); text tick 'C25': dropped (ink); text tick 'C26': dropped (overlap); text tick 'C28': dropped (ink); text tick 'C29': dropped (ink); text tick 'C30': dropped (overlap); text tick 'C32': dropped (ink); text tick 'C33': dropped (ink); text tick 'C34': dropped (ink); text tick 'C35': dropped (overlap); text tick 'C37': dropped (ink); text tick 'C38': dropped (ink); text tick 'C39': dropped (overlap); text tick 'C41': dropped (ink); text tick 'C42': dropped (ink); text tick 'C43': dropped (ink); text tick 'C44': dropped (overlap); text tick 'C46': dropped (ink); text tick 'C47': dropped (ink); text tick 'C48': dropped (overlap); text tick 'C50': dropped (ink); text tick 'C51': dropped (ink); text tick 'C52': dropped (ink); text tick 'C53': dropped (overlap)

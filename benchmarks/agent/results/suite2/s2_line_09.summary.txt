@@ -1,0 +1,4 @@
+title: line experiment 10
+lines at x: 0 50 100 150 200 250 256
+  'signal' n=257: 1.2 5.1 6.2 4.1 1.2 2 -0.1 (min 76=-2.3 max 155=7.4)
+losses: none

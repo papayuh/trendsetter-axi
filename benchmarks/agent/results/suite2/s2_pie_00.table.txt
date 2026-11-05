@@ -1,0 +1,3 @@
+pie experiment 1
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"slices","columns":["category","value"],"total_rows":4,"selected_indices":[0,1,2,3],"rows":[["Oak",23],["Pine",18],["Elm",26],["Ash",22]]}

@@ -21,21 +21,23 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 - Source summaries: eligible source observations, errorbar bounds, axis/tick identity and unsupported-artist coverage, not values reverse-engineered from terminal glyphs. Masked/non-finite line and scatter rows and hidden artists are excluded; missing counts and summary omissions remain explicit. See the [summary contract](#what-the-text-lost-render) for sampling and precision.
 - Diagnostics: `r.losses` includes heatmap sampling and per-artist visibility diagnostics. Strict mode rejects material losses, not every approximation. See [loss reporting and strict mode](#what-the-text-lost-render) for painter order, materiality and known limits, and [SVG limits](#svg-limits) for bounded traversal and decoding.
 
-What it saves, measured with `claude-sonnet-5-5` on 81 questions about 25 charts, and on 39 questions about 12 held-out charts that were not used for tuning ([benchmark](benchmarks/agent/README.md)):
+Agent evidence at renderer `4376145`: 70 new charts, three trials on `claude-sonnet-5-5`, seven paired arms ([results cells](benchmarks/agent/RESULTS.md#pooled-paired-results)).
 
-| what the model gets | accuracy, dev / held-out | tokens per chart (median), dev / held-out |
-| --- | ---: | ---: |
-| `summary()` | 98% (79/81) / 95% (37/39) | 102 / 114 |
-| hybrid: 60×12 ASCII chart + `summary()` | 96% (78/81) / 100% (39/39) | 316 / 326 |
-| 640×480 PNG | 99% (80/81) / 100% (39/39) | 408 / 408 |
-| `render(fig, 80, ascii=True).text` | 79% (64/81) / 90% (35/39) | 422 / 421 |
-| `render(fig, 80).text`, the terminal chart | 81% (66/81) / 90% (35/39) | 639 / 701 |
+| input | correct / 840 answers | wrong (non-abstained) | abstained | total input tokens, three trials |
+| --- | ---: | ---: | ---: | ---: |
+| direct `table+stats` | 797/840 | 10 | 33 | 330,342 |
+| `summary()` | 659/840 | 14 | 167 | 252,243 |
+| hybrid | 700/840 | 11 | 129 | 305,481 |
+| PNG | 756/840 | 59 | 25 | 307,560 |
+| terminal text | 380/840 | 156 | 304 | 412,284 |
 
-This is a single-model pilot measured at commit 9288d2b: one run per format, no repeats, no baseline that hands the model the data directly. Later changes to `summary()` are not re-measured until the next benchmark run.
+Summary **failed** the [predeclared criterion](benchmarks/agent/RESULTS.md#predeclared-criterion): 138 fewer correct answers than `table+stats`. Total-input ratio: 76.4%; chart-only input (subtracting paired `none`): **31,623 vs 109,722 tokens, 28.8%**. The ≤40% total-input target was unreachable as written: `none` alone uses 220,620 input tokens, 66.8% of `table+stats`. The frozen criterion and FAIL remain unchanged because the accuracy deficit fails independently.
 
-The token saving comes from `summary()` and the hybrid, not from the terminal chart: that one is for the person. When the model can take images, the PNG is as accurate as the hybrid for about a quarter more input tokens.
+Summary mostly declines rather than invents: 167 abstentions versus 14 wrong answers. Misses concentrate in point lookups it does not carry, such as scatter y-at-x and heatmap cell queries. Across all questions of those kinds, summary scores [60/120 with 54 abstentions on scatter and 85/120 with 35 abstentions on heatmaps](benchmarks/agent/RESULTS.md#wrong-answers-versus-abstention).
 
-Other ways to get a matplotlib figure into a terminal, checked in the same benchmark: [mpl_ascii](https://github.com/chriscave/mpl_ascii) 1.0.1 is a matplotlib backend (`plt.show()`, or `savefig("x.txt")`) whose width follows the figure size at 12 characters per inch, and [plotext](https://github.com/piccolomo/plotext) 6.1.0 converts a figure's lines, scatter points and bar rectangles with `plotext.matplotlib(fig)`. On the same questions their text scored 78% and 73%, against 81%. Neither drew the three heatmaps; mpl_ascii raised on the log-scale chart and plotext drew it on a linear axis. Neither has a data summary or reports what it dropped.
+Recommendation narrows to the human-readable preview and optional hybrid, not a claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays; retain them when correctness matters.
+
+[Historical pilot only](benchmarks/agent/RESULTS.md#historical-pilot-not-rerun-not-comparable), `after` at 9288d2b: summary 79/81 dev and 37/39 held-out; hybrid 78/81 and 39/39; PNG 80/81 and 39/39. Median chart tokens respectively 102/114, 316/326 and 408/408. Those single-model, single-run results had no direct-data baseline and do not validate later renderer changes.
 
 ## Install
 
@@ -150,7 +152,7 @@ Fields:
 - `warnings`: notes about how the input was read, such as strokes taken for gridlines by colour. One entry counts skipped hidden artists and axes; a hidden axes counts once, not once per child artist.
 - `supported_features`: what this kind of input lets the renderer know. A figure has `artist_roles`, `source_values` and `artist_losses`; SVG has shapes only, so those are false.
 
-`summary()` is the compact form for an agent: scales, series values and losses in a few lines, far fewer tokens than the chart itself. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line still lists render losses only. Step lines now carry `drawstyle` (e.g. `steps-post`, right-continuous) so straight and step controls differ. Separate `summary_omissions` disclose unavailable sample support for errorbars (and midpoint-inferred centers without a data line), unsupported one-sided limits and paired bounds/sample support for filled areas; global extrema are not per-x bounds. Sample denominators and risk sets are not inferred from geometry. Counts such as line `n` count plotted points, not subjects. See `series` above for errorbar bounds and unsupported-artist coverage.
+`summary()` supplies an agent with scales, sampled series values and losses. Measured accuracy and token counts belong to the [benchmark results](benchmarks/agent/RESULTS.md#pooled-paired-results), not a general token-saving guarantee. Lines that share their x positions share one `lines at x:` row. For SVG input it says `values unavailable`: SVG carries shapes, not data, so a series is a colour and a kind with no values. The summary's `losses:` line still lists render losses only. Step lines now carry `drawstyle` (e.g. `steps-post`, right-continuous) so straight and step controls differ. Separate `summary_omissions` disclose unavailable sample support for errorbars (and midpoint-inferred centers without a data line), unsupported one-sided limits and paired bounds/sample support for filled areas; global extrema are not per-x bounds. Sample denominators and risk sets are not inferred from geometry. Counts such as line `n` count plotted points, not subjects. See `series` above for errorbar bounds and unsupported-artist coverage.
 
 Artist text and labels are sanitised: ANSI/OSC sequences and C0/C1 controls (including DEL) are removed, except layout newlines and tabs. Renderer-generated ANSI styling remains available with `color=True`. Summary titles and axis labels join newlines with ` / ` and escape colons as `\:` so labels cannot introduce diagnostic field markers; series names remain `repr`-quoted. Text escaping is hygiene, not a guarantee that a model ignores a malicious label.
 

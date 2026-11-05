@@ -1,0 +1,14 @@
+                      scatter experiment 2
+     ┌────────────────────────────────────────────────────┐
+  5.0│     o                                              │
+     │                                      o   o         │
+     │         o                                    o   o │
+     │                          o                         │
+  0.0│ o                                                  │
+     │             o                o   o                 │
+     └────────────────────────────────────────────────────┘
+       0                   5                   10
+
+title: scatter experiment 2
+scatter 'signal' n=11 x=0..12 y=-0.9..5.4 missing=2 mean=6.3,1.9 r=0.09
+losses: none

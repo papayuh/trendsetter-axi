@@ -1,0 +1,14 @@
+                     scatter experiment 10
+    ┌─────────────────────────────────────────────────────┐
+  10│            o                o                       │
+    │     oo   o oo            o          o o             │
+    │ ooooooooo o oo oo oooo ooooo ooooo oooooooooooooo o │
+    │  oooo ooooooooooooooooooooooooooooooooooooooooo oo  │
+   0│  o o o o ooooooooo   o o  oo ooooooo oo   oooo ooo  │
+    │             o           o      o          o      o  │
+    └─────────────────────────────────────────────────────┘
+      0                  100                200
+
+title: scatter experiment 10
+scatter 'signal' n=257 x=0..256 y=-2.4..10.6 mean=128,3 r=-0.04
+losses: none

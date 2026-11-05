@@ -1,0 +1,4 @@
+subplot experiment 3
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"Left","columns":["x","y"],"total_rows":9,"selected_indices":[0,1,2,3,4,5,6,7,8],"rows":[[0.0,-5.0],[1.0,7.0],[2.0,12.0],[3.0,14.0],[4.0,-3.0],[5.0,12.0],[6.0,2.0],[7.0,7.0],[8.0,3.0]]}
+{"name":"Right","columns":["x","y"],"total_rows":9,"selected_indices":[0,1,2,3,4,5,6,7,8],"rows":[[0.0,5.0],[1.0,-5.0],[2.0,-9.0],[3.0,13.0],[4.0,7.0],[5.0,-7.0],[6.0,-7.0],[7.0,0.0],[8.0,13.0]]}

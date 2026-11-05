@@ -1,0 +1,3 @@
+title: scatter experiment 8
+scatter 'signal' n=257 x=0..256 y=-2.4..8.5 mean=128,2.9 r=0.02
+losses: none

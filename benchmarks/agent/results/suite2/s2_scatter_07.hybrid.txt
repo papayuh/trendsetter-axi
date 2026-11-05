@@ -1,0 +1,14 @@
+                      scatter experiment 8
+  10┌─────────────────────────────────────────────────────┐
+    │          o  o    o           o                 o    │
+    │  o oooo o o  ooo  o     o ooo o oo    o oooooo  oo  │
+    │  oooooo ooooooo oo ooooooooooooooooooooooooooooooo  │
+    │  oooooooooooooooooooooooooooooooo ooooooooooo oo oo │
+   0│ o oo o ooo o   o   o  o oo   o   oooo oo   o  o oo  │
+    │         o      o  o  o     oo  oo                   │
+    └─────────────────────────────────────────────────────┘
+      0                  100                200
+
+title: scatter experiment 8
+scatter 'signal' n=257 x=0..256 y=-2.4..8.5 mean=128,2.9 r=0.02
+losses: none

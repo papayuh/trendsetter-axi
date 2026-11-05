@@ -1,0 +1,13 @@
+                      pie experiment 1
+
+                     Pine ====####  Oak
+                        =20.2%######
+                       =======#25.8%#
+                      ::::::::#######
+                       :::::::.......
+                        29.2%:.24.7%
+                     Elm :::::..... Ash
+
+title: pie experiment 1
+losses: none
+not described: 4 Wedge

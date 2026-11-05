@@ -1,0 +1,5 @@
+scatter experiment 1
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"signal","columns":["x","y"],"x_aliases":null,"x_unit":"index","total_rows":13,"selected_indices":[0,1,2,3,4,5,6,7,8,9,10,11,12],"rows":[[0.0,1.7412209898943456],[1.0,2.2456322646043576],[2.0,null],[3.0,1.7624665688736578],[4.0,3.5760681640462986],[5.0,0.837108092841671],[6.0,-1.0338503958346514],[7.0,null],[8.0,-1.1281760923552548],[9.0,-0.25336677853288503],[10.0,8.640429841857081],[11.0,4.34388018015598],[12.0,null]]}
+Full-source statistics:
+[{"name":"signal","rows":13,"columns":{"x":{"n":13,"min":0.0,"max":12.0,"mean":6.0,"sum":78.0,"negative":0,"max_ties":1},"y":{"n":10,"min":-1.1281760923552548,"max":8.640429841857081,"mean":2.0731412835550604,"sum":20.731412835550604,"negative":3,"max_ties":1}}}]

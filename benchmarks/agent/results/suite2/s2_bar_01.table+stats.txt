@@ -1,0 +1,5 @@
+bar experiment 2
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"categories","columns":["category","value"],"total_rows":12,"selected_indices":[0,1,2,3,4,5,6,7,8,9,10,11],"rows":[["C00",14],["C01",7],["C02",11],["C03",11],["C04",21],["C05",19],["C06",16],["C07",15],["C08",18],["C09",5],["C10",4],["C11",13]]}
+Full-source statistics:
+[{"name":"categories","rows":12,"columns":{"value":{"n":12,"min":4.0,"max":21.0,"mean":12.833333333333334,"sum":154.0,"negative":0,"max_ties":1}}}]

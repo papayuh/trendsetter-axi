@@ -1,0 +1,6 @@
+subplot experiment 3
+Direct source data; null denotes missing. Sampling is not interpolation.
+{"name":"Left","columns":["x","y"],"total_rows":9,"selected_indices":[0,1,2,3,4,5,6,7,8],"rows":[[0.0,-5.0],[1.0,7.0],[2.0,12.0],[3.0,14.0],[4.0,-3.0],[5.0,12.0],[6.0,2.0],[7.0,7.0],[8.0,3.0]]}
+{"name":"Right","columns":["x","y"],"total_rows":9,"selected_indices":[0,1,2,3,4,5,6,7,8],"rows":[[0.0,5.0],[1.0,-5.0],[2.0,-9.0],[3.0,13.0],[4.0,7.0],[5.0,-7.0],[6.0,-7.0],[7.0,0.0],[8.0,13.0]]}
+Full-source statistics:
+[{"name":"Left","rows":9,"columns":{"x":{"n":9,"min":0.0,"max":8.0,"mean":4.0,"sum":36.0,"negative":0,"max_ties":1},"y":{"n":9,"min":-5.0,"max":14.0,"mean":5.444444444444445,"sum":49.0,"negative":2,"max_ties":1}}},{"name":"Right","rows":9,"columns":{"x":{"n":9,"min":0.0,"max":8.0,"mean":4.0,"sum":36.0,"negative":0,"max_ties":1},"y":{"n":9,"min":-9.0,"max":13.0,"mean":1.1111111111111112,"sum":10.0,"negative":4,"max_ties":2}}}]

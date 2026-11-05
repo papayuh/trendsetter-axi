@@ -1,93 +1,42 @@
-# Can an agent read the chart? Text vs summary vs image
+# Subscription-only agent benchmark, suite2
 
-The same factual questions about the same charts, asked with each chart given one of these ways:
+## Predeclared success criterion (written before calls)
 
-- `text`: `render(fig, cols=80).text`, the terminal chart a person reads
-- `summary`: `RenderResult.summary()`: scales, series values from the figure's data, losses
-- `ascii`: `render(fig, 80, ascii=True, rows=16).text`, the same chart drawn in ASCII and shorter
-- `ascii_tall`: `render(fig, 80, ascii=True).text`, ASCII at the default height
-- `hybrid`: `render(fig, 60, ascii=True, rows=12)`'s text, a blank line, then that result's `summary()`
-- `image`: the figure saved as PNG, matplotlib's default 6.4×4.8 in at 100 dpi (640×480 px)
-- `mpl_ascii`: the same figure through [mpl_ascii](https://github.com/chriscave/mpl_ascii) 1.0.1 (`str(FigureCanvasAscii(fig).draw_canvas())`, what its `savefig("x.txt")` writes)
-- `plotext`: the same figure through [plotext](https://github.com/piccolomo/plotext) 6.1.0's `plotext.matplotlib(fig)` converter, `plot_size(80, 30)`, colourless
-- `none`: no chart, to show what the model guesses from the questions alone
+The corrected `summary` must match `table+stats` within **2 correct answers in each trial** (pooled deficit at most 6), using **no more than 40% of its total input tokens**, on all 70 charts. Otherwise the agent claim narrows to the hybrid and the human-readable preview; neither is claimed superior without a corresponding results cell. An incomplete run cannot pass. Output tokens are reported separately, not hidden in this ratio. This criterion is deliberately based on total input, including common prompt overhead, not a favorable subtraction of the no-data arm.
 
-Numbers: [RESULTS.md](RESULTS.md). Raw replies, token counts and timings: `results.jsonl`. Answer keys: `questions.json` (dev) and `questions-heldout.json`. Rendered text: `fixtures/`.
+No renderer tuning against this suite. Renderer frozen at current main commit **`4376145d51b874f8f3f2799bc4fbd4292d9e221d`**. `src/` must match that commit before every run. The complete suite, questions, answer key, stimuli and manifest are committed before any model call. The historical `after` pilot is not a new observation: it remains labeled in [RESULTS.md](RESULTS.md), with original details in [RESULTS-historical.md](RESULTS-historical.md) and [README-historical.md](README-historical.md).
 
-## Reproduce
+## Design
+
+- 70 new charts, four array-derived questions each: 12 line, 10 multi-line, 10 bar (horizontal and vertical), 10 scatter, 10 heatmap, 8 histogram, 5 errorbar, 4 subplot, 1 unsupported pie.
+- Independent fixed seeds `22000 + kind_index*100 + variant`. Features include masked points/cells, NaN gaps, ties, constant series, `1e-8` values, negatives, `1e9` offsets, timestamps one second apart, explicit tick aliases, uncertainty endpoints, a lone heatmap spike, two panels and unsupported wedges.
+- Arms: `table` (direct arrays and metadata), `table+stats` (identical table plus full-array statistics), `summary` (`render(fig,80).summary()`), `text` (`render(fig,80).text`), `hybrid` (60×12 ASCII text plus its summary), `image` (640×480 PNG), `none`.
+- Table sampling is declared independently of answers. Up to 64 rows per source series: all rows. Larger sources: deterministic uniform source indices including endpoints, no min/max or queried-point injection. Choose the largest per-series sample size fitting the summary's **o200k token count**, with a 256-token floor. The metadata plus one row may exceed the budget; manifest records the target and actual tokens. Identical sampled table in `table+stats`; its added full-source stats are not budget-clipped. No model-tokenizer equivalence is assumed.
+- Tables retain source precision, missing values as null, aliases, series/panel names, histogram edges/counts, error widths and heatmap coordinates. Statistics are finite-column n/min/max/mean/sum, negative count and max ties, plus paired-series above counts; no textual answer key is supplied. Tables describe the source, not the renderer's sampled/rounded output.
+- 3 independent trials on exactly `claude-sonnet-5-5`, effort low. One call per chart/arm/trial with all four questions. 1,470 planned calls; 5,880 answer opportunities. No cross-trial or historical reply reuse. The 35 smoke calls (five charts × seven arms) are part of trial 1, not extra observations. Smoke selection is fixed: masked line, tiny scatter, tied bar, lone large heatmap spike, gapped errorbar.
+- Trial chart order and per-chart arm order are seeded/shuffled, at most four calls concurrently. Comparisons use only chart-trials complete across all seven arms. Incomplete successes and all failures remain auditable in raw rows.
+- Numeric tolerance: 2% of source span, floor `1e-12`; exact counts, case-insensitive labels. Malformed replies count wrong. Null/missing answers count as abstentions. Relative numeric error and mixed-unit absolute error are reported only for finite numeric answers, with denominator counts, so abstaining cannot silently improve accuracy.
+
+## Auth, budget, resume
+
+Calls use the logged-in **subscription** through `claude -p`, never an SDK or API key. Child environment unsets `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, third-party-provider toggles and a custom Anthropic endpoint. No credential files are read by benchmark code. CLI safe mode disables project instructions, plugins, hooks, memory and customizations; tools, Chrome, slash commands, MCP and session persistence are disabled. Do not use `--bare`: it disables OAuth. Every raw row preserves the auth source reported by CLI initialization. Any API-key auth report stops the run, including on resume.
+
+Spend guide: **$40 list-price equivalent**, not subscription API billing. CLI `total_cost_usd` is the model-specific list-price estimate; preserve its complete `usage`/`modelUsage` metadata. `--max-budget-usd 0.10` bounds each CLI session; before each batch reserve $0.10 per call. Unknown-cost failures are conservatively charged $0.10. All attempts, including smoke/retries/failures, enter the running total. Stop before a batch would exceed $40. CLI budget enforcement is request-granular, not a billing hard cap.
+
+Each finished call is immediately flushed/fsynced to `results/suite2/calls.jsonl`; a rerun skips only successful cells matching the immutable manifest. A durable pre-dispatch batch journal reserves unknown spend after parent interruption (added after the first interrupted run; that single unknown-cost attempt was conservatively reconstructed from the deterministic batch order). Failed calls are retained and retried on resume. Stop on errors; on a subscription limit wait until reset and resume, reporting paused if reset would take over six hours. Do not substitute a model or API key. Capture elapsed run wall time separately from the sum of parallel child wall times. Fixture rendering and summary-generation timings are measured once during freeze, not included in inference times.
 
 ```sh
-uv pip install -e '.[dev]' tiktoken mpl_ascii==1.0.1 plotext==6.1.0
-PYTHONPATH=src python benchmarks/agent/run.py --no-ask                     # rebuild dev fixtures, regrade results.jsonl, rewrite RESULTS.md
-PYTHONPATH=src python benchmarks/agent/run.py --tag after                  # also make dev calls missing for that tag, every format
-PYTHONPATH=src python benchmarks/agent/run.py --tag after --split heldout  # the same for the held-out charts
-PYTHONPATH=src python benchmarks/agent/run.py --tag after --replicate 2    # every dev call again, as tag after#2, nothing reused
+uv pip install --python .venv/bin/python -e '.[dev]' tiktoken
+# Already committed; freeze refuses to overwrite an existing manifest:
+PYTHONPATH=src .venv/bin/python benchmarks/agent/run.py --suite2 freeze
+PYTHONPATH=src .venv/bin/python benchmarks/agent/run.py --suite2 smoke
+PYTHONPATH=src .venv/bin/python benchmarks/agent/run.py --suite2 run
+# Pure regrade; no model calls:
+PYTHONPATH=src .venv/bin/python benchmarks/agent/run.py --suite2 report
 ```
 
-Model calls use the locally logged-in `claude -p` (Claude Code CLI): no API key, no tools, no MCP servers, no settings files, one short system prompt. Every row in `results.jsonl` records its tag, the questions it asked, a hash of the chart it showed and the CLI, matplotlib and Python versions it ran under (the environment line in RESULTS.md comes from these). A call is re-made when the questions or the chart changed; a call whose chart and questions are identical to an earlier one is reused under the new tag (marked `reused_from`), so the image, mpl_ascii, plotext and no-chart calls were made once. `--formats` limits a run to some formats; `--model` picks another model.
+## Observed outcome
 
-`manifests/<tag>.json` maps each chart and format a tag asked about to the hash of the chart it showed; a run writes it before asking. A row is graded only when its hash matches its tag's manifest, and RESULTS.md counts the rows left out that way. The `after` manifest was taken from the committed fixtures (the PNG hashes from the rows, since the PNGs are not committed). `before` and `iter1` are historical: their manifests are rebuilt from their own rows' hashes (`"reconstructed": true`), so they are self-attested, not checked against a fixture. Numbers are graded strictly: a JSON number, or a string that is one after dropping whitespace, a leading currency sign, thousands commas or a trailing `%`; anything else (`"1/0"`, `"10 or 11"`, `[10]`) is wrong. A chart missing any format under a tag is left out of every table and listed as incomplete.
+All 1,470 cells completed, 210/210 chart-trials paired. Summary **failed**: 659/840 correct versus 797/840 for `table+stats`, at 76.4% of its total input tokens. Hybrid reached 700/840; PNG 756/840. See [results cells and limits](RESULTS.md). The corrected-summary agent claim is withdrawn; hybrid and human preview remain available without superiority claims. CLI reported $7.071070 equivalent; one interrupted call adds a conservative $0.10 reserve. A parent timeout was resumed, not a subscription limit. Exact interrupted-call wall time is unavailable; the report labels the 3,600-second parent-session allowance and excludes the unknown child's wall time rather than inventing a timing.
 
-## Method
-
-- Dev split (`charts.py`): 25 charts, 81 questions. 6 lines, 5 multi-line, 5 bars (vertical, horizontal, grouped, negative, 15 categories), 3 scatters, 3 heatmaps, 3 histograms. The data is synthetic but shaped like real data (prices, temperatures, traffic), with fixed seeds.
-- Held-out split (`heldout.py`): 12 charts, 39 questions of the same kinds, written and scored on the old renderer before any change. It was not used to tune anything.
-- Questions: 3 or 4 per chart: max and min, which series is higher at some x, trend direction, a value read at a point, counts over a threshold. Every answer is computed from the arrays the chart is drawn from.
-- Grading is automatic and unchanged across rounds: labels must match (case-insensitive), counts exactly, numbers within a tolerance that is mostly 5% of the plotted data's span (15% of the value on a log axis). Each question's tolerance is in the answer keys.
-- One call per chart and format, with all of that chart's questions in it, on `claude-sonnet-5-5`. One run per tag, no repeats. Total cost of every call, tuning rounds included: see the last line of RESULTS.md.
-- Tokens: input tokens as the API reports them (Claude's tokenizer), minus the same chart's `none` call, so the prompt and questions cancel out and what's left is the chart. o200k counts (tiktoken `o200k_base`) are given for the text formats too. For the PNG, Anthropic documents about width×height/750 = 410 tokens; the API charged 408 on every chart. Output tokens include the model's hidden reasoning; the replies are a short JSON object.
-- Tags: `before` = the renderer at c1f6de5 (the first run of this benchmark). `iter1` = the one tuning round, on dev only. `after` = this renderer, frozen after `iter1` and then run once on both splits. `ascii_tall` was added after the held-out `ascii` result came in, to show the cost of height. Its configuration is the default height, not a tuned value.
-- Latency is the wall time of the whole `claude -p` call, which includes about 1 s of CLI start-up. Calls ran one at a time on a shared machine, so treat it as rough.
-
-## Why the summary and the text missed (before)
-
-On dev, `before`:
-
-- **Summary, 11 misses.** Every one was data the summary did not carry:
-  - lines over 8 points gave only first, last, min and max, so values in the middle, crossings, week-to-week drops and which line led at an x were guesses (7 misses)
-  - more than 12 bars gave only the min and max, so counts over a threshold on 15 bars or 20 histogram bins were guesses (2)
-  - heatmaps gave only the min and max cells, so one correlation value was a guess (1)
-  - scatters gave only ranges, so the outlier's position was a guess (1)
-- **Text, 15 misses**, all reading errors:
-  - values between ticks on lines and heatmaps (a 4-shade key gives ranges, not values)
-  - which of several overlapping lines is which at a given x
-  - a crossing on a dense line
-- **Where the tokens go in the text.** In o200k, a braille character costs 2 to 3 tokens and a shade or partial block (`░▒▓▂▄▆`) 1 to 1.75, while a run of `█`, `─`, `#` or spaces costs almost nothing. A braille line or a shaded heatmap is most of a chart's tokens.
-
-## What changed
-
-- At the measured commit, `summary()` expanded source-value coverage and compact numeric formatting to pay for the added data. The current sampling and eligibility contract lives in the [README](../../README.md#what-the-text-lost-render).
-- `render(..., ascii=True)` translates braille, block and shade glyphs to ASCII after layout, so every line keeps its width and frame. `render(..., rows=N)` sets the preferred height.
-
-## Results
-
-A single-model pilot, measured at commit 9288d2b: `claude-sonnet-5-5`, one run per tag, no repeats, 25 dev and 12 held-out charts, and no baseline that hands the model the data directly. The tables round to whole percents.
-
-| format | dev before | dev after | held-out before | held-out after | tokens dev before → after | tokens held-out before → after |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| summary | 86% | **98%** | 90% | **95%** | 94 → 102 | 97 → 114 |
-| hybrid | - | 96% | - | **100%** | 316 | 326 |
-| ascii (16 rows) | - | 83% | - | 67% | 263 | 256 |
-| ascii_tall | - | 79% | - | 90% | 422 | 421 |
-| text (default) | 81% | 81% | 90% | 90% | 639 | 701 |
-| image | 99% | 99% | 100% | 100% | 408 | 408 |
-| mpl_ascii | 78% | 78% | 72% | 72% | 567 | 514 |
-| plotext | 73% | 73% | 56% | 56% | 642 | 626 |
-| none | 26% | 26% | 38% | 38% | 0 | 0 |
-
-Tokens are the median per chart. The default text chart is unchanged, so its rows are reused.
-
-- **Summary target (≥ 95% at ≤ ~120 tokens): met on dev, one question short on held-out.** 79/81 (97.5%) at 102 tokens on dev; 37/39 (94.9%) at 114 on held-out, one question under the 95% target. The model also stopped working it out the hard way: median output fell from 133 to 38 tokens (held-out 142 to 33), and output tokens cost more than input. Its remaining misses are counting slips with the numbers in front of it (months where one city is colder than another, areas under 3.0, bins over 100) and one interpolation on a sampled line.
-- **Hybrid** is the best text input: 96% and 100% at ~320 tokens and ~35 output tokens. That is fewer input tokens than the PNG at about the same accuracy.
-- **Text chart target (accuracy up, tokens at least halved): not met.**
-  - `ascii` at 16 rows cuts the tokens 59% (639 → 263). It scored 83% against 81% on dev but only 67% against 90% on held-out: 16 rows of ASCII hold about 16 levels where braille at 30 rows holds 120, and it lost values on lines, a log axis and heatmaps.
-  - `ascii_tall` keeps the held-out accuracy (90%, as the default text) at 40% fewer tokens (701 → 421), and on dev it is 2 points under (79% vs 81%).
-  - Both ASCII formats make the model reason at length (650 to 950 output tokens), so per call they cost no less than the braille chart.
-  - So the terminal chart stays what it is for: a person reading it. An agent should get `summary()`, or the hybrid when it should also see the shape.
-- **The image** stays the most accurate single input (99%, 100%) at 408 tokens.
-- **Against mpl_ascii and plotext** (unchanged, on the same figures):
-  - mpl_ascii's plain-text output drew no heatmap cells and raised `IndexError` on the log-scale chart.
-  - plotext's converter carries lines, scatter points and bar rectangles but not images: heatmaps came out as empty panels, and its 2 dev heatmap hits were guesses (the synthetic gas-price spike sits in June 2022, where real prices peaked). It drew log axes as linear and showed bar positions as numbers instead of names.
-  - Neither reports what it dropped.
-
-Not measured: other models, other image sizes, repeats.
+The manifest hashes every text/PNG stimulus and includes arrays, questions, sampling sizes, seeds, fixed system prompt, environment and renderer timings. Raw replies bind to the SHA-256 of that entire manifest. Never regenerate fixtures after looking at results. [RESULTS.md](RESULTS.md) is the source of every empirical agent claim in the root README.
