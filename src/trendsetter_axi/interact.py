@@ -1,0 +1,5 @@
+"""CLI: python -m trendsetter_axi.interact record.json."""
+from .viewer import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

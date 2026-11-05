@@ -19,6 +19,27 @@ def from_figure(fig):
     return read(fig)
 
 
+def render_styled(source, cols=120, rows=38, *, color=True):
+    """Styled human-facing terminal chart; interaction is opt-in via interact().
+
+    Shares the viewer's drawing without changing render().text or source records.
+    """
+    from .styled import render_styled as draw
+
+    return draw(source, cols=cols, rows=rows, color=color)
+
+
+def interact(source):
+    """Explore a matplotlib Figure or chart record in a POSIX mouse-enabled TTY.
+
+    Scatter: drag box-select with linked stats. Scatter/line/bar: exact hover.
+    x clears; q exits. Unsupported charts show a static view.
+    """
+    from .viewer import interact as open_viewer
+
+    return open_viewer(source)
+
+
 def query(record, operation, *args):
     """Experimental: query a saved chart record with evidence and conventions."""
     from .queries import query as run

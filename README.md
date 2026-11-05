@@ -204,11 +204,13 @@ python -m trendsetter_axi.queries record.json diff newer-record.json
 python -m trendsetter_axi.queries record.json facts
 ```
 
-Follow-ups, not part of this surface: summary/chart text from the record, other
-library readers (including ggplot2), record-to-figure drawing, an interactive
-viewer, human-pane upgrades and Vega-Lite export. Suite2 fixtures remain unchanged;
-the [suite3 rerun](benchmarks/agent/RESULTS-suite3.md) evaluates records and optional
-query access, unlike the earlier suite2 results.
+Follow-ups, not part of this surface: summary text from the record, other
+library readers (including ggplot2), record-to-figure drawing and Vega-Lite export.
+The [terminal viewer](#styled-terminal-charts-and-scatter-brushing) uses these records
+for hover and selection. Suite2 fixtures remain unchanged; the
+[suite3 rerun](benchmarks/agent/RESULTS-suite3.md) evaluates records and optional
+query access, unlike the earlier suite2 results. Neither benchmark evaluates the
+styled display or interactive viewer.
 See [validation evidence](docs/experimental-record-validation.md) for source-array
 oracles, gallery byte identity and the import boundary.
 
@@ -388,24 +390,94 @@ python examples/demo.py --cols 100 --section widths --section gallery
 
 Sections: `basic`, `widths`, `big`, `cjk`, `svg`, `gallery`. The `gallery` section needs pandas: `uv pip install -e '.[dev]'`. Chart text is identical run to run; only the `[timing]` line varies.
 
-### Scatter brush prototype (not in the package)
+### Styled terminal charts and scatter brushing
 
-![Standalone scatter brush prototype on synthetic account data, with a selection brush and linked statistics](docs/scatter-brush.gif)
+The demo is now in the package. Your agent writes normal matplotlib code; print a
+styled chart, then opt into mouse interaction when you want it. No browser, GUI
+window or extra runtime dependencies.
 
-This is a standalone interaction prototype on synthetic data, not a feature of
-`trendsetter_axi`. It does not use the renderer and is not included in the installed
-package. The script uses only Python's standard library.
+**Static, no input required:**
 
-From a source checkout, run in a POSIX terminal with mouse reporting and 24-bit
-colour, at least 80 columns × 20 rows:
+![Packaged styled terminal display of a real matplotlib figure on synthetic account data](docs/scatter-styled.png)
 
-```sh
-python examples/scatter_brush.py
+**Interactive, the same drawing with hover and a live selection:**
+
+![Packaged scatter brush on a matplotlib figure: exact hover, box-select, linked statistics and marginals](docs/scatter-brush.gif)
+
+Ask your agent to build the figure and call these functions in your terminal:
+
+```python
+from matplotlib.figure import Figure
+import trendsetter_axi as ts
+
+fig = Figure()
+ax = fig.subplots()
+ax.scatter([12, 18, 25, 31, 44], [8, 15, 12, 24, 32], label="accounts")
+ax.set(title="Spend against usage", xlabel="monthly spend ($k)", ylabel="usage")
+
+print(ts.render_styled(fig, cols=120, rows=38))  # static styled terminal view
+# Optional, when running in a real terminal:
+ts.interact(fig)  # blocks until q; mouse hover and scatter box-select
 ```
 
-Drag to brush; drag inside the brush to move it. Hover to inspect, click a table
-row to pin an account, `z` to zoom to the brush, `b` to go back, `x` to clear,
-`1`/`2`/`3` to toggle segments, and `q` to quit.
+`render_styled()` and `interact()` share the same dense braille drawing, palette,
+axes and stats panel. The ordinary `render(...).text`, `summary()` and chart-record
+APIs stay unchanged for agents. Use `color=False` on `render_styled()` for plain
+text without terminal color codes. Its output occupies exactly `cols` × `rows`
+cells; below 80 × 24 it shows a resize notice instead of a chart. Static fallbacks
+that cannot fit are omitted with required dimensions, never cropped.
+
+For interaction, run in the main thread in a POSIX terminal with SGR mouse
+reporting and 24-bit color, at least **80 columns × 24 rows** (120 × 38 recommended). Drag to select scatter
+points; drag inside the brush to move it. Counts, arithmetic means, Pearson r,
+OLS slope, per-series counts and both marginal histograms update while dragging.
+Stats use **visible plotted point marks in numeric axis data coordinates**, not
+subject counts; marker-only lines also count as points and support brushing.
+Dates use matplotlib date days; categories use their numeric codes. `x` clears;
+`q` quits. Hover reports an exact stored point/knot or bar value, not interpolated
+values between line knots. Ctrl-C and exceptions restore terminal
+modes, mouse reporting, cursor visibility and the previous screen. Pipes are rejected
+before changing terminal modes; use the static APIs for captured output.
+
+Line and bar charts get hover too. Current interactive support is one rectilinear
+axis with linear, date or categorical scales. Log axes, multiple or inset/child axes,
+scatter color/size encodings, custom formatter offsets/multipliers, heatmaps, areas,
+errorbars, other scales and unread artists fall back to the existing static figure
+renderer with a clear message. Hover picks the
+topmost mark drawn in the terminal cell, or the nearest drawn cell within one cell.
+Point marks return the last point painted in that cell's displayed selected/context
+group; lines return the nearest stored knot in the winning mark.
+Zoom/pan, row pinning and series toggles are not implemented.
+Resize clears the selection rather than reusing stale screen coordinates.
+
+Saved version-1 records work from the command line:
+
+```python
+import json
+with open("record.json", "w") as f:
+    json.dump(ts.from_figure(fig), f, allow_nan=False)
+```
+
+```sh
+python -m trendsetter_axi.interact record.json
+```
+
+Saved records retain exact centers and bar endpoints but not bar widths, axes
+projection, source painter order, scatter styling or custom formatter context.
+Use `interact(fig)` when those distinctions matter: figure-only fallback checks
+cannot recover them from a record, and saved marks draw in record order.
+Use rectilinear figures for the saved-record route; bar footprints are estimated
+at width 0.8 and labeled as estimates. `interact(fig)` uses the figure's actual
+bar widths. Unsupported saved records show a static data overview because the
+original figure ink is unavailable.
+
+From a checkout, `python examples/scatter_brush.py` runs the demo through the
+installed package; `--static` prints the same styled drawing and `--record chart.json`
+saves its record. The images above are recorded from this actual matplotlib figure
+and packaged viewer, not a standalone prototype. To reproduce both assets, install
+the dev-only `Pillow` and `pyte` packages and run
+`python examples/record_interaction.py /path/to/monospace.ttf`. The recorder drives
+a real PTY and verifies quit and terminal restoration.
 
 ## Development
 
