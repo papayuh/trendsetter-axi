@@ -6,6 +6,11 @@ legends and margins for the terminal grid instead of us patching collisions late
 """
 import numpy as np
 from matplotlib.backend_bases import RendererBase
+from matplotlib.axes import Axes
+from matplotlib.axis import XAxis, XTick, YAxis, YTick
+from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
+from matplotlib.spines import Spine
 from matplotlib.transforms import ScaledTranslation
 from matplotlib import dates as mdates, ticker as mticker
 from matplotlib.category import UnitData
@@ -561,6 +566,29 @@ def _clipped(fig):
     return ""
 
 
+_LAYOUT_ONLY_TYPES = frozenset({Figure, Axes, XAxis, YAxis, XTick, YTick, Spine, Line2D, Text, Rectangle})
+
+
+def _layout(fig, renderer):
+    """Skip preliminary drawing only for exact types with no draw-dependent geometry.
+
+    Unknown artists and subclasses must draw before padding changes the limits:
+    quiver, for example, caches its automatic scale on its first draw. Keep this
+    boundary for shortening retries too; see tests/test_figure_work.py.
+    """
+    if not fig.get_visible():
+        return
+    if not all(type(a) in _LAYOUT_ONLY_TYPES for a in fig.findobj()):
+        fig.draw(renderer)
+        return
+    fig._get_draw_artists(renderer)  # Figure.draw applies aspect before layout.
+    if fig.axes and fig.get_layout_engine() is not None:
+        try:
+            fig.get_layout_engine().execute(fig)
+        except ValueError:
+            pass  # Figure.draw also tolerates layout failures during resizing.
+
+
 def render(fig, cols=80, color=False, rows=None):
     w, h = prepare(fig, cols, rows)
     cap = _clipped(fig)
@@ -573,11 +601,12 @@ def render(fig, cols=80, color=False, rows=None):
     import warnings
     with warnings.catch_warnings(record=True) as wl:
         warnings.simplefilter("always")
-        fig.draw(rend)                        # pass 1: layout
+        _layout(fig, rend)
         if any("Tight layout" in str(w.message) for w in wl) or any(min(a.get_position().width, a.get_position().height) < .1 or a.get_position().height > .99 for a in fig.axes):  # plotnine: infeasible gridspec leaves the axes filling the figure   # labels too wide for the grid: layout gave up and kept the old margins, so shorten x labels to their slot and lay out again
             area = lambda: sum(a.get_position().width * a.get_position().height for a in fig.axes)
             a0, old, pos = area(), [(x, x.get_major_formatter()) for a in fig.axes for x in (a.xaxis, a.yaxis)], [a.get_position() for a in fig.axes]
-            _shorten(fig, cols); fig.draw(rend)
+            _shorten(fig, cols)
+            _layout(fig, rend)
             if area() < a0:   # shortening squeezed the plot (side-by-side bar panels): keep the long labels, core drops colliding ones
                 for x, f in old: x.set_major_formatter(f)
                 for a, p in zip(fig.axes, pos): a.set_position(p)

@@ -13,7 +13,32 @@ __version__ = "0.1.0"
 
 
 def _copy(fig):
-    """Deep copy of a figure. plotnine's __deepcopy__ methods keep links to the original figure's artists, so objects holding them are copied plainly."""
+    """Isolated figure, using matplotlib's serialization protocol when possible.
+
+    Pickle reconstructs the same artist graph in C instead of recursively walking
+    every dictionary in Python. Local functions/custom artists may not support
+    pickle; keep the deepcopy route for those figures.
+    """
+    import pickle
+
+    # As on the deepcopy route, materialize matplotlib's tick caches before
+    # cloning. Otherwise prepare/findobj rebuilds the initial Tick artists on
+    # every disposable copy (Axis._get_tick in the warm profile).
+    fig.findobj()
+    try:
+        work = pickle.loads(pickle.dumps(fig, protocol=pickle.HIGHEST_PROTOCOL))
+    except Exception:
+        # Custom objects can reject serialization with arbitrary exception
+        # types while still supporting deepcopy. Preserve that existing route.
+        work = _deepcopy(fig)
+    for ax in work.axes:
+        for a in ax._children:
+            a._remove_method = ax._children.remove
+    return work
+
+
+def _deepcopy(fig):
+    """plotnine's __deepcopy__ can retain source artists; copy their holders plainly."""
     from matplotlib.category import UnitData
 
     memo = {id(a.units._counter): itertools.count(len(a.units._mapping))
@@ -39,9 +64,6 @@ def _copy(fig):
     work = copy.deepcopy(fig, memo)
     for o in shells:
         memo[id(o)].__dict__.update(copy.deepcopy(o.__dict__, memo))
-    for ax in work.axes:
-        for a in ax._children:
-            a._remove_method = ax._children.remove
     return work
 
 
