@@ -546,11 +546,11 @@ def report(m, path=None):
         return correct, n, abstain, inp, out, wall, errors, abs_errors
 
     def section(title, selected):
-        lines.extend([f"## {title}", "", "| arm | correct / questions | abstain | input tokens | output tokens | summed wall s | numeric n | mean relative error | numeric MAE (mixed units) |",
-                      "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"])
+        lines.extend([f"## {title}", "", "| arm | correct / questions | wrong (non-abstained) | abstain | input tokens | output tokens | summed wall s | numeric n | mean relative error | numeric MAE (mixed units) |",
+                      "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"])
         for arm in ARMS:
             ok, n, ab, inp, out, wall, err, ae = metrics(arm, selected)
-            lines.append(f"| {arm} | {ok}/{n} | {ab} | {inp} | {out} | {wall:.3f} | {len(err)} | " + (f"{np.mean(err):.6g} | {np.mean(ae):.6g} |" if err else "— | — |"))
+            lines.append(f"| {arm} | {ok}/{n} | {n-ok-ab} | {ab} | {inp} | {out} | {wall:.3f} | {len(err)} | " + (f"{np.mean(err):.6g} | {np.mean(ae):.6g} |" if err else "— | — |"))
         lines.append("")
 
     section("Pooled paired results", paired)
@@ -565,10 +565,27 @@ def report(m, path=None):
     if paired:
         ratio = summary[3] / table_stats[3]
         none = metrics("none", paired)
+        chart_summary = summary[3] - none[3]
+        chart_table_stats = table_stats[3] - none[3]
+        chart_ratio = 100 * chart_summary / chart_table_stats if chart_table_stats else float("nan")
         lines += [f"Summary deficit: {table_stats[0]-summary[0]} answers pooled. Total-input ratio: {100*ratio:.3f}%. "
-                  f"Descriptive chart-only tokens (input minus paired none): summary {summary[3]-none[3]}, "
-                  f"table+stats {table_stats[3]-none[3]}. Chart-only token ratio is not the predeclared criterion. "
-                  "The accuracy criterion fails regardless of whether common prompt overhead is subtracted.", ""]
+                  f"Beside that total, descriptive chart-only tokens (input minus paired none): summary {chart_summary:,} "
+                  f"vs table+stats {chart_table_stats:,}, or {chart_ratio:.1f}%. "
+                  "Chart-only token ratio is not the predeclared criterion.", "",
+                  f"**Design flaw in the token criterion:** the ≤40% total-input target was unreachable under this prompt setup. "
+                  f"The none arm alone uses {none[3]:,} input tokens, {100*none[3]/table_stats[3]:.1f}% of table+stats. "
+                  "Keep the predeclared criterion and FAIL unchanged: the accuracy deficit independently fails it, "
+                  "regardless of whether common prompt overhead is subtracted.", "",
+                  "## Wrong answers versus abstention", "",
+                  f"Summary mostly declines rather than invents: {summary[0]}/{summary[1]} right, "
+                  f"{summary[1]-summary[0]-summary[2]} wrong (non-abstained), {summary[2]} abstained. "
+                  "Misses concentrate in point lookups it does not carry, such as scatter y-at-x and heatmap cell queries. "
+                  "Across all questions of those kinds:", ""]
+        for kind in ("scatter", "heatmap"):
+            selected = [(c,t) for c,t in paired if m["charts"][c]["kind"] == kind]
+            ok, n, ab, *_ = metrics("summary", selected)
+            lines.append(f"- {kind}: {ok}/{n} right, {n-ok-ab} wrong, {ab} abstained.")
+        lines.append("")
     for trial in m["trials"]:
         section(f"Trial {trial}", [(c,t) for c,t in paired if t == trial])
     for kind in dict.fromkeys(c["kind"] for c in m["charts"].values()):

@@ -22,15 +22,19 @@ hybrid = lean.text + "\n\n" + lean.summary()  # for an agent that should also se
 
 Agent evidence at renderer `4376145`: 70 new charts, three trials on `claude-sonnet-5-5`, seven paired arms ([results cells](benchmarks/agent/RESULTS.md#pooled-paired-results)).
 
-| input | correct / 840 answers | total input tokens, three trials |
-| --- | ---: | ---: |
-| direct `table+stats` | 797/840 | 330,342 |
-| `summary()` | 659/840 | 252,243 |
-| hybrid | 700/840 | 305,481 |
-| PNG | 756/840 | 307,560 |
-| terminal text | 380/840 | 412,284 |
+| input | correct / 840 answers | wrong (non-abstained) | abstained | total input tokens, three trials |
+| --- | ---: | ---: | ---: | ---: |
+| direct `table+stats` | 797/840 | 10 | 33 | 330,342 |
+| `summary()` | 659/840 | 14 | 167 | 252,243 |
+| hybrid | 700/840 | 11 | 129 | 305,481 |
+| PNG | 756/840 | 59 | 25 | 307,560 |
+| terminal text | 380/840 | 156 | 304 | 412,284 |
 
-Summary **failed** the [predeclared criterion](benchmarks/agent/RESULTS.md#predeclared-criterion): 138 fewer correct answers than `table+stats`, using 76.4% of its input tokens rather than ≤40%. Recommendation narrows to the human-readable preview and optional hybrid, not a claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays; retain them when correctness matters.
+Summary **failed** the [predeclared criterion](benchmarks/agent/RESULTS.md#predeclared-criterion): 138 fewer correct answers than `table+stats`. Total-input ratio: 76.4%; chart-only input (subtracting paired `none`): **31,623 vs 109,722 tokens, 28.8%**. The ≤40% total-input target was unreachable as written: `none` alone uses 220,620 input tokens, 66.8% of `table+stats`. The frozen criterion and FAIL remain unchanged because the accuracy deficit fails independently.
+
+Summary mostly declines rather than invents: 167 abstentions versus 14 wrong answers. Misses concentrate in point lookups it does not carry, such as scatter y-at-x and heatmap cell queries. Across all questions of those kinds, summary scores [60/120 with 54 abstentions on scatter and 85/120 with 35 abstentions on heatmaps](benchmarks/agent/RESULTS.md#wrong-answers-versus-abstention).
+
+Recommendation narrows to the human-readable preview and optional hybrid, not a claim that either beats direct data or PNG. `summary()` is not a replacement for the source arrays; retain them when correctness matters.
 
 [Historical pilot only](benchmarks/agent/RESULTS.md#historical-pilot-not-rerun-not-comparable), `after` at 9288d2b: summary 79/81 dev and 37/39 held-out; hybrid 78/81 and 39/39; PNG 80/81 and 39/39. Median chart tokens respectively 102/114, 316/326 and 408/408. Those single-model, single-run results had no direct-data baseline and do not validate later renderer changes.
 
