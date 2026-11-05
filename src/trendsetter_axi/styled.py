@@ -30,6 +30,34 @@ def _number(value, cols, *, signed=False):
     raise ValueError('number does not fit terminal cell')
 
 
+def _numeric_ticks(scale, ticks, cols):
+    labels = [clean_text(tick['label']) for tick in ticks]
+    if scale.get('_custom_ticks') or any(label != f"{tick['value']:.4g}" for tick, label in zip(ticks, labels)):
+        return [truncate(label, cols) for label in labels], ''
+    if not ticks:
+        return [], ''
+    values = [tick['value'] for tick in ticks]
+    if max(map(len, labels)) <= cols and len(set(labels)) == len(set(values)):
+        return labels, ''
+    origin = min(values)
+    largest = max(map(abs, values))
+    factor = 10.0 ** max(-323, math.floor(math.log10(largest))) if largest else 1.0
+    scopes = [(values, ''), ([value - origin for value in values], f'offset {origin!r}'),
+              ([value / factor for value in values], f'×{factor!r}')]
+    for scope, context in scopes:
+        if not all(map(math.isfinite, scope)):
+            continue
+        for precision in range(4, 18):
+            labels = []
+            for value in scope:
+                text = format(value, f'.{precision}g')
+                mantissa, sep, exponent = text.partition('e')
+                labels.append(f'{mantissa}e{int(exponent)}' if sep else text)
+            if max(map(len, labels)) <= cols and len(set(labels)) == len(set(values)):
+                return labels, context
+    return [], 'numeric ticks omitted: precision'
+
+
 def _date_ticks(scale, ticks, cols):
     from matplotlib import dates as mdates
 
@@ -322,11 +350,15 @@ def draw(viewer, *, interactive=True, color=True):
                  p.visible(tick['value'] if k == 'x' else axis['x']['range'][0],
                            tick['value'] if k == 'y' else axis['y']['range'][0])]
         cols = 6 if k == 'y' else 9
-        labels = [truncate(clean_text(tick['label']), cols) for tick in ticks]
+        context = ''
         if axis[k]['scale'] == 'date':
             labels, context = _date_ticks(axis[k], ticks, cols)
-            if context:
-                s.put(9 if k == 'x' else 10, side, f'{k} {context}', MUTED)
+        elif axis[k]['scale'] == 'linear':
+            labels, context = _numeric_ticks(axis[k], ticks, cols)
+        else:
+            labels = [truncate(clean_text(tick['label']), cols) for tick in ticks]
+        if context:
+            s.put(9 if k == 'x' else 10, side, f'{k} {context}', MUTED)
         seen = set()
         for tick, label in zip(ticks, labels):
             if axis[k]['scale'] == 'date' and label in seen:
@@ -349,8 +381,13 @@ def draw(viewer, *, interactive=True, color=True):
     # Exact inspection has a stable footer; it never covers the plot or side panel.
     if v.hover:
         a = v.hover
-        c, r = p.cell(a.x, a.y)
-        if p.visible(a.x, a.y):
+        if a.kind == 'points':
+            for (c, r), owner in v.hit_cells.items():
+                if owner == (a.mark, a.index):
+                    s.put(r, c, '◉', INK, TIP_BG)
+                    break
+        elif p.visible(a.x, a.y):
+            c, r = p.cell(a.x, a.y)
             s.put(round(r), round(c), '◉', INK, TIP_BG)
         def labeled(text, label):
             label = clean_text(label).replace('\n', ' ').replace('\t', ' ')

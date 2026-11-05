@@ -1,4 +1,5 @@
 """Behavioral regressions for shared styled drawing and interaction geometry."""
+import copy
 from datetime import datetime, timedelta
 import math
 import re
@@ -937,3 +938,146 @@ def test_date_ticks_preserve_time_precision_with_bounded_shared_context(axis, sa
             assert context.endswith('+0000')
         assert all(width(line) == 120 for line in lines)
     assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('markers', [False, True])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('neighbor', [False, True])
+def test_point_highlight_stays_in_winning_rendered_cell(markers, saved, axis, inverted, neighbor):
+    ax = Figure().subplots()
+    xs, ys = ([11.7, 12.7], [12, 12]) if axis == 'x' else ([12, 12], [10.3, 9.3])
+    if markers:
+        ax.plot(xs, ys, linestyle='None', marker='o', label='samples')
+    else:
+        ax.scatter(xs, ys, label='samples')
+    ax.set(xlim=(0, 67), ylim=(0, 24))
+    if inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    original = from_figure(ax.figure)
+    v = model(original if saved else ax.figure)
+    for cols, rows in ((120, 38), (160, 45)):
+        v.hover = None
+        v.layout(cols, rows)
+        before = colored_cells(v.frame())
+        p = v.projection
+        painted = [(c, r) for r in range(p.top, p.top + p.rows)
+                   for c in range(p.left, p.left + p.cols) if '\u2800' < before[r][c][0] <= '\u28ff']
+        painted.sort(key=lambda cell: cell[0 if axis == 'x' else 1], reverse=inverted)
+        assert len(painted) == 2
+        first, second = painted
+        c, r = first
+        target = (c, r - 1) if axis == 'x' else (c - 1, r)
+        v.mouse(35, *(target if neighbor else first), False)
+        assert v.hover == v.points[0]
+        for frame in (v.frame(), draw(v, interactive=False)):
+            after = colored_cells(frame)
+            assert after[first[1]][first[0]][0] == '◉'
+            assert after[second[1]][second[0]] == before[second[1]][second[0]]
+            assert sum(ch == '◉' for row in after[p.top:p.top + p.rows]
+                       for ch, _ in row[p.left:p.left + p.cols]) == 1
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+@pytest.mark.parametrize('base,step', [(1_000_000., 1), (-1_000_002., 1), (1e15, 1),
+                                      (1.234e-9, 1e-15), (1e200, 2.5e199)])
+def test_numeric_ticks_distinguish_stored_values_with_bounded_scope(axis, saved, inverted, base, step):
+    from matplotlib.ticker import FixedLocator
+
+    values = [base + i * step for i in range(3)]
+    ax = Figure().subplots()
+    if axis == 'x':
+        ax.plot(values, [1, 2, 3])
+    else:
+        ax.plot([1, 2, 3], values)
+    getattr(ax, f'set_{axis}lim')(values[0], values[-1])
+    getattr(ax, axis + 'axis').set_major_locator(FixedLocator(values))
+    if inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    original = from_figure(ax.figure)
+    if base != 1e200:
+        assert len({tick['label'] for tick in original['axes'][0][axis]['ticks']}) == 1
+    source = original if saved else ax.figure
+    v = model(source)
+    side = v.projection.left + v.projection.cols + 9
+    for frame in (v.frame(), render_styled(source)):
+        labels = date_tick_labels(frame, v, axis)
+        assert len(labels) == 3 and len(set(labels)) == 3
+        assert all(len(label) <= (9 if axis == 'x' else 6) and '…' not in label for label in labels)
+        context = SGR.sub('', frame).splitlines()[9 if axis == 'x' else 10][side:].strip()
+        offset, factor = 0, 1
+        if context.startswith(axis + ' offset '):
+            offset = float(context.split(' offset ', 1)[1])
+        elif context.startswith(axis + ' ×'):
+            factor = float(context.split('×', 1)[1])
+        expected = values[::-1] if (axis == 'y') != inverted else values
+        reconstructed = [offset + factor * float(label) for label in labels]
+        assert reconstructed == pytest.approx(expected, rel=1e-12, abs=abs(step) * .001)
+        assert all(width(line) == 120 for line in SGR.sub('', frame).splitlines())
+    assert from_figure(ax.figure) == original
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('custom', ['fixed', 'function', 'duplicate'])
+def test_explicit_numeric_tick_labels_remain_authoritative(axis, saved, custom):
+    from matplotlib.ticker import FixedFormatter, FixedLocator, FuncFormatter
+
+    values = [1_000_000., 1_000_001., 1_000_002.]
+    labels = ['group'] * 3 if custom == 'duplicate' else ['cold', 'warm', 'hot']
+    ax = Figure().subplots()
+    if axis == 'x':
+        ax.plot(values, [1, 2, 3])
+    else:
+        ax.plot([1, 2, 3], values)
+    getattr(ax, f'set_{axis}lim')(values[0], values[-1])
+    mpl_axis = getattr(ax, axis + 'axis')
+    mpl_axis.set_major_locator(FixedLocator(values))
+    if custom == 'function':
+        mapping = dict(zip(values, labels))
+        mpl_axis.set_major_formatter(FuncFormatter(lambda value, pos: mapping.get(value, '')))
+    else:
+        mpl_axis.set_major_formatter(FixedFormatter(labels))
+    original = from_figure(ax.figure)
+    source = copy.deepcopy(original) if saved else ax.figure
+    if saved and custom == 'duplicate':
+        for tick, label in zip(source['axes'][0][axis]['ticks'], labels):
+            tick['label'] = label
+    before = copy.deepcopy(source) if saved else None
+    v = model(source)
+    for frame in (v.frame(), render_styled(source)):
+        expected = labels if axis == 'x' else labels[::-1]
+        assert date_tick_labels(frame, v, axis) == expected
+    if saved:
+        assert source == before
+    assert from_figure(ax.figure) == original
+    assert '_custom_ticks' not in original['axes'][0][axis]
+
+
+@pytest.mark.parametrize('axis', ['x', 'y'])
+def test_custom_formatter_without_fixed_locator_and_agent_contracts_stay_unchanged(axis):
+    from matplotlib.ticker import FuncFormatter, MaxNLocator
+
+    ax = Figure().subplots()
+    values = [1_000_000., 1_000_001., 1_000_002.]
+    if axis == 'x':
+        ax.plot(values, [1, 2, 3])
+    else:
+        ax.plot([1, 2, 3], values)
+    getattr(ax, f'set_{axis}lim')(values[0], values[-1])
+    mpl_axis = getattr(ax, axis + 'axis')
+    mpl_axis.set_major_locator(MaxNLocator(2))
+    mapping = dict(zip(values, ['low', 'mid', 'high']))
+    mpl_axis.set_major_formatter(FuncFormatter(lambda value, pos: mapping.get(value, '')))
+    original = from_figure(ax.figure)
+    plain = render(ax.figure).text
+    v = model(ax.figure)
+    for frame in (v.frame(), render_styled(ax.figure)):
+        expected = ['low', 'mid', 'high'] if axis == 'x' else ['high', 'mid', 'low']
+        assert date_tick_labels(frame, v, axis) == expected
+    assert from_figure(ax.figure) == original
+    assert render(ax.figure).text == plain

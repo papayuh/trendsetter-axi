@@ -361,11 +361,20 @@ def make_viewer(source):
     from .record import _collect_figure
     from matplotlib.collections import PathCollection
     from matplotlib.container import BarContainer
+    from matplotlib.ticker import ScalarFormatter
     import numpy as np
 
     collected = _collect_figure(source)
     record = collected.result
     axes = [ax for ax in source.axes if not hasattr(ax, '_colorbar') and ax.get_visible()]
+    for ax, recorded in zip(axes, record['axes']):
+        for k in 'xy':
+            formatter = getattr(ax, k + 'axis').get_major_formatter()
+            if recorded[k]['scale'] == 'linear' and type(formatter) is not ScalarFormatter:
+                recorded[k]['_custom_ticks'] = True
+                ticks = recorded[k]['ticks']
+                for tick, label in zip(ticks, formatter.format_ticks([tick['value'] for tick in ticks])):
+                    tick['label'] = label
     ranks = [{artist: i for i, artist in enumerate(sorted(ax.get_children(), key=lambda a: a.get_zorder()))}
              for ax in axes]
     painter, reason = [], ''
