@@ -7,7 +7,7 @@ import shutil
 import sys
 import time
 
-from .cells import SGR, truncate, width
+from .cells import SGR, clean_text, truncate, width
 from .styled import BG, FAINT, GOOD, INK, MUTED, PALETTE, BRUSH_BG, Screen
 from .viewer import InputParser, Projection, line_edges, make_viewer, stats, terminal_session
 
@@ -72,9 +72,8 @@ def _ansi_screen(text, cols, rows):
             chunk = line[start:match.start()]
             screen.put(r, c, chunk, fg, bg)
             # Width must be computed after the same control sanitization as put.
-            from .cells import clean_text
             c += width(clean_text(chunk))
-            values = [int(v or 0) for v in match.group()[2:-1].split(';')]
+            values = [int(v or 0) for v in match.group()[2:-1].replace(':', ';').split(';')]
             i = 0
             while i < len(values):
                 if values[i] == 0:
@@ -114,7 +113,7 @@ def _plot(v, screen):
                 c0, r0, c1, r1 = v.bar_bounds(point)
                 if all(map(math.isfinite, (c0, r0, c1, r1))):
                     canvas.fill([[(c0, r0 * 2), (c1, r0 * 2), (c1, r1 * 2), (c0, r1 * 2)]],
-                                tuple(c / 255 for c in rgb), clip=clip, role='data', continuous=True)
+                                tuple(c / 255 for c in rgb), clip=clip, role='data')
         elif m['kind'] == 'points':
             for a in points:
                 if not p.visible(a.x, a.y):
@@ -162,7 +161,7 @@ def _axes(v, screen):
             if not p.visible(x, y):
                 continue
             c, r = map(round, p.cell(x, y))
-            label = truncate(tick['label'], 6 if k == 'y' else 9)
+            label = truncate(clean_text(tick['label']), 6 if k == 'y' else 9)
             if k == 'x':
                 c = max(p.left, min(p.left + p.cols - width(label), c - width(label) // 2))
                 span = set(range(c - 1, c + width(label) + 1))
@@ -246,11 +245,16 @@ class Dashboard:
         title = v.record.get('title') or axis.get('title') or 'Chart'
         screen.put(0, 0, truncate(f'{index + 1:02} / {title}', t.cols), INK)
         if v.projection is None:
-            screen.put(1, 0, truncate('STATIC · ' + v.reason, t.cols), MUTED)
+            heat = {m['kind'] for m in v.record['marks']} == {'heat'}
+            caption = 'STATIC HEATMAP · source palette / scale' if heat and v.static else 'STATIC · ' + v.reason
+            screen.put(1, 0, truncate(caption, t.cols), MUTED)
             if index not in self.cache:
                 try:
                     text = v.static(t.cols, t.rows - 3) if v.static else v.static_record()
                     lines = text.splitlines()
+                    if lines and clean_text(lines[0]).strip() == clean_text(title).strip():
+                        lines = lines[1:]  # Dashboard heading already names this chart.
+                    text = '\n'.join(lines)
                     if len(lines) > t.rows - 3 or any(width(line) > t.cols for line in lines):
                         text = 'Chart needs a larger tile.\nResize or use fewer columns.'
                     self.cache[index] = _ansi_screen(text, t.cols, t.rows - 3)
@@ -263,6 +267,8 @@ class Dashboard:
         if v.box:
             result = stats(v.chosen())
             caption += f' selected · r={result["correlation"]:.3f}' if result['correlation'] is not None else ' selected · r=n/a'
+        if any(m['kind'] == 'bars' and 'width' not in m for m in v.record['marks']):
+            caption += ' · widths estimated'
         screen.put(1, 0, truncate(caption, t.cols), GOOD if v.box else MUTED)
         col = 0
         for j, m in enumerate(v.record['marks']):
@@ -346,7 +352,8 @@ def dashboard(figures, *, columns=None, cols=None, rows=None, title='Dashboard',
 
     By default return a string (no input or terminal mode changes). Missing cols /
     rows use the output terminal size, falling back to 120x38 in captured output.
-    interactive=True opens the POSIX TTY viewer. refresh is an optional no-argument
+    interactive=True opens the POSIX TTY viewer at its actual size (cols/rows
+    only affect static output). refresh is an optional no-argument
     callback returning a new nonempty iterable of figures/records every interval
     seconds. Live refresh requires interactive=True. q exits, x clears the focused
     scatter brush. Heatmaps/unsupported charts use their existing static renderer.

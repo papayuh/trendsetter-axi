@@ -54,6 +54,7 @@ def main():
     parser.add_argument('--live', action='store_true')
     parser.add_argument('--cols', type=int)
     parser.add_argument('--rows', type=int)
+    parser.add_argument('--interval', type=float, default=1.0)
     args = parser.parse_args()
     step = 0
 
@@ -65,7 +66,7 @@ def main():
     text = dashboard(make_figures(), title='NIGHT SHIFT / synthetic telemetry',
                      cols=args.cols, rows=args.rows,
                      interactive=args.interactive or args.live,
-                     refresh=refresh if args.live else None, interval=1.0)
+                     refresh=refresh if args.live else None, interval=args.interval)
     if text is not None:
         print(text)
 

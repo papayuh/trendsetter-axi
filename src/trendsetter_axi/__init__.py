@@ -36,7 +36,7 @@ def dashboard(figures, *, columns=None, cols=None, rows=None, title='Dashboard',
     refresh is an optional no-argument callback returning new figures/records.
     Live refresh requires interactive=True and a POSIX input/output TTY.
     """
-    from .dashboard import dashboard as draw
+    from .dashboards import dashboard as draw
 
     return draw(figures, columns=columns, cols=cols, rows=rows, title=title,
                 color=color, interactive=interactive, refresh=refresh, interval=interval)
