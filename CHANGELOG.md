@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `dashboard(figures)` for responsive, single-screen styled chart grids. Static output returns text; `interactive=True` opts into exact line/bar/scatter hover and scatter brushing, with optional callback-driven live refresh. Heatmaps and unsupported figures retain their existing static renderer. Resize and refresh clear stale selection coordinates; terminal modes restore on quit and errors. Add a real four-chart example, PTY-recorded screenshot/GIF and no-TTY layout, resize, refresh and cleanup tests. Existing agent output stays unchanged.
+
 - Add experimental `from_figure(fig)` chart records and `query(record, operation, *args)` with evidence, interpolation conventions and explicit unavailable results. Records retain source arrays, paired bands, bar bases/tops, segments, heat grids and author declarations. Queries cover values, widths, source-row predicates, crossings, attached-record counts, claims, exact diffs and geometry-only facts; `python -m trendsetter_axi.queries` queries saved JSON without importing NumPy or matplotlib. Existing rendering and summary text are unchanged. See [experimental records](README.md#experimental-chart-records-and-queries) for scope and follow-ups.
 
 - Replace the unavailable PyPI install with a GitHub install and retain the editable source route. Refresh the README overview of source summaries and loss diagnostics; benchmark numbers remain labelled with measured commit `9288d2b`.

@@ -479,6 +479,77 @@ the dev-only `Pillow` and `pyte` packages and run
 `python examples/record_interaction.py /path/to/monospace.ttf`. The recorder drives
 a real PTY and verifies quit and terminal restoration.
 
+### Multi-chart terminal dashboards
+
+One call tiles several figures on one terminal screen, using the same dark
+palette, braille lines/scatter and block bars. Nothing becomes interactive unless
+you ask for it. These are real matplotlib charts on deterministic synthetic data:
+
+![Four-chart terminal dashboard: traffic lines, regional bars, request scatter and a latency heatmap](docs/dashboard.png)
+
+![Real terminal dashboard with live callback updates, exact bar hover and scatter brushing](docs/dashboard-live.gif)
+
+```python
+# Each item is a matplotlib Figure (or a saved version-1 chart record).
+print(ts.dashboard([fig1, fig2, fig3, fig4], title="Night shift"))
+
+# Optional POSIX terminal interaction, blocks until q:
+ts.dashboard([fig1, fig2, fig3, fig4], interactive=True)
+
+# Optional live mode. Callback takes no arguments and returns a new nonempty
+# iterable of figures/records; it can also update and return the same figures.
+ts.dashboard([fig1, fig2, fig3, fig4], interactive=True,
+             refresh=read_latest_figures, interval=2.0)
+```
+
+- Static calls **return a string** without reading input or changing terminal
+  modes. Size follows the output terminal (120 × 38 fallback for captured output).
+  Set `cols=140, rows=44` for a reproducible snapshot, `columns=2` to fix the grid,
+  and `color=False` for text without ANSI colors.
+- Interactive/live calls require the [viewer's terminal and main-thread
+  setup](#styled-terminal-charts-and-scatter-brushing) and always use the actual
+  terminal size. Auto layout reflows on resize; all charts must fit, otherwise a
+  bounded resize message replaces the grid. Each tile needs at least 32 × 12 cells
+  plus shared header/footer/gutters.
+  **120 × 38 or larger** is recommended for four charts.
+- Hover line knots, bar rectangles or scatter points for source values in the
+  shared footer. Drag a scatter brush for visible-point counts and Pearson r;
+  drag inside it to move it. `1`–`9` focuses a tile, `x` clears its brush, `q`
+  exits. Values use numeric axis coordinates, not inferred subject counts.
+  Bar captions count rectangles with a positive-area intersection with the view,
+  even when their endpoints lie outside it. Zero-height or zero-width bars neither
+  draw nor count; tiny nonzero intersections retain block ink at cell resolution.
+- Line/bar/scatter tiles support the same one-axis rectilinear scales as
+  `interact()`. Heatmaps and unsupported figures use the existing static renderer
+  with their source palette, scale and color key, not invented interactions.
+  Oversized static charts show a fit message instead of being cropped. Unsupported
+  saved records show a data overview; saved bar widths are estimates, as above.
+- A live callback runs synchronously at the requested positive interval (seconds),
+  measured after the previous callback completes; slow callbacks delay input.
+  Refresh replaces the whole snapshot and clears brushes/hover, as does resize,
+  so stale screen coordinates never select new data. Exceptions propagate after
+  restoring terminal modes, mouse reporting, cursor and the previous screen.
+  Callers retain ownership of figures, including closing any pyplot figures they
+  create on refresh. `render().text`, summaries and chart records stay unchanged.
+
+#### Known limits
+
+Compact dashboard tick labels use at most 6 cells on y and 9 on x. Long date labels
+or close, high-magnitude values can lose distinguishing digits; use source values
+instead of inferring precision from truncated ticks. Hover returns a stored point,
+not an interpolated value. Its highlight can mark a nearby source knot rather than
+the hovered segment, and dense/overlapping marks can share a cell. Long series names
+or exact values can exceed the single-line hover footer and are truncated visibly.
+Log axes, heatmaps and other unsupported figures remain static tiles.
+
+Try `python examples/dashboard_demo.py` (static), add `--interactive` for mouse
+input, or `--live --interval 2` for callback updates. Regenerate both assets with
+`python examples/record_dashboard.py /path/to/monospace.ttf` after installing the
+dev-only `Pillow` and `pyte` packages. Like the scatter recorder, it captures the
+actual packaged viewer through a PTY, sends real mouse reports, and verifies live
+updates, quit and terminal restoration. An early implementation screenshot is
+retained at [docs/dashboard-progress.png](docs/dashboard-progress.png).
+
 ## Development
 
 ```
