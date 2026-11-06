@@ -1,6 +1,7 @@
 """Dashboard math, refresh, input and terminal cleanup without a real TTY."""
 import copy
 import io
+import json
 import math
 import os
 import signal
@@ -254,6 +255,129 @@ def test_bar_alignment_preserves_nonzero_bases_negative_and_zero_values():
     assert screen.cells[r][c][0] == '█'
     c, r = map(round, p.cell(zero.x, zero.base))
     assert screen.cells[r][c][0] == ' '
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('inverted', [(), ('x',), ('y',), ('x', 'y')])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('sign', [-1, 1])
+@pytest.mark.parametrize('bar_width', [.8, .0001])
+def test_tiny_bars_keep_ink_and_exact_values(horizontal, inverted, saved, sign, bar_width):
+    ax = Figure().subplots()
+    values = [sign * .01, sign * 10]
+    if horizontal:
+        ax.barh([0, 1], values, height=bar_width)
+    else:
+        ax.bar([0, 1], values, width=bar_width)
+    limits = (0, 10) if sign > 0 else (-10, 0)
+    ax.set(xlim=limits if horizontal else (-.5, 1.5),
+           ylim=(-.5, 1.5) if horizontal else limits)
+    for axis in inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    original = ts.from_figure(ax.figure)
+    geometry = [patch.get_bbox().bounds for patch in ax.patches]
+    source = json.loads(json.dumps(original)) if saved else ax.figure
+    m = Dashboard([source], color=False)
+    m.layout(120, 38)
+    v = m.viewers[0]
+    screen = m._tile(0)
+    for point, value in zip(v.points, values):
+        cells = [cell for cell, owner in screen.owners.items()
+                 if owner == (point.mark, point.index)]
+        assert cells
+        assert all(screen.cells[r][c][0] in '▀▄█' for c, r in cells)
+        assert point.top - point.base == value
+    if not horizontal:
+        c, r = map(round, v.projection.cell(0, 0))
+        grows_up = (sign > 0) != ('y' in inverted)
+        assert screen.cells[r][c][0] == ('▀' if grows_up else '▄')
+    for interactive in (False, True):
+        assert '2 bars' in m.frame(interactive=interactive)
+    assert ts.from_figure(ax.figure) == original
+    assert [patch.get_bbox().bounds for patch in ax.patches] == geometry
+    if saved:
+        assert source == original
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('inverted', [(), ('x',), ('y',), ('x', 'y')])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('count', [1, 100])
+def test_zero_bars_never_paint_or_count(horizontal, inverted, saved, count):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh(range(count), [0] * count)
+    else:
+        ax.bar(range(count), [0] * count)
+    ax.set(xlim=(0, 10) if horizontal else (-1, count),
+           ylim=(-1, count) if horizontal else (0, 10))
+    for axis in inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    source = ts.from_figure(ax.figure) if saved else ax.figure
+    m = Dashboard([source], color=False)
+    m.layout(120, 38)
+    screen = m._tile(0)
+    assert not screen.owners
+    assert '0 bars' in screen.text(False)
+    p = m.viewers[0].projection
+    assert all(not screen.cells[r][c][0].strip()
+               for r in range(p.top, p.top + p.rows - 1)
+               for c in range(p.left, p.left + p.cols))
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('inverted', [(), ('x',), ('y',), ('x', 'y')])
+@pytest.mark.parametrize('saved', [False, True])
+@pytest.mark.parametrize('mixed', [False, True])
+def test_bar_counts_follow_clipped_rectangles(horizontal, inverted, saved, mixed):
+    ax = Figure().subplots()
+    values = [100, -100, 10, 0, 10, 10, 10, 10]
+    bases = [0, 100, 60, 0, -20, -10, 0, 0]
+    if horizontal:
+        ax.barh(range(8), values, left=bases)
+    else:
+        ax.bar(range(8), values, bottom=bases)
+    if mixed:
+        ax.plot([25, 25] if horizontal else [0, 1],
+                [0, 1] if horizontal else [25, 25])
+        ax.scatter([25, 25] if horizontal else [2, 7],
+                   [2, 7] if horizontal else [25, 25])
+    ax.set(xlim=(0, 50) if horizontal else (-.25, 5.75),
+           ylim=(-.25, 5.75) if horizontal else (0, 50))
+    for axis in inverted:
+        getattr(ax, f'invert_{axis}axis')()
+    source = ts.from_figure(ax.figure) if saved else ax.figure
+    m = Dashboard([source], color=False)
+    m.layout(120, 38)
+    v, screen = m.viewers[0], m._tile(0)
+    bar = next(mark for mark in v.record['marks'] if mark['kind'] == 'bars')
+    assert {index for mark, index in screen.owners.values() if mark == bar['id']} == {0, 1, 6}
+    caption = ('3 points · ' if mixed else '') + '3 bars'
+    if saved:
+        caption += ' · widths estimated'
+    assert screen.text(False).splitlines()[1].strip() == caption
+    for interactive in (False, True):
+        assert caption in m.frame(interactive=interactive)
+    m.replace([source])
+    assert caption in m.frame(live=True)
+
+
+@pytest.mark.parametrize('horizontal', [False, True])
+@pytest.mark.parametrize('inverted', [False, True])
+def test_zero_width_source_bars_have_no_ink_or_count(horizontal, inverted):
+    ax = Figure().subplots()
+    if horizontal:
+        ax.barh([0], [5], height=0)
+    else:
+        ax.bar([0], [5], width=0)
+    ax.set(xlim=(-1, 10), ylim=(-1, 10))
+    if inverted:
+        ax.invert_xaxis()
+        ax.invert_yaxis()
+    m = Dashboard([ax.figure], color=False)
+    screen = m._tile(0)
+    assert not screen.owners
+    assert '0 bars' in screen.text(False)
 
 
 def test_dashboard_count_labels_use_plain_chart_units():

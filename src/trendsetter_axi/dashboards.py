@@ -92,6 +92,14 @@ def _ansi_screen(text, cols, rows):
     return screen
 
 
+def _bar_bounds(v, point):
+    bounds = v.bar_bounds(point)
+    c0, r0, c1, r1 = bounds
+    if all(map(math.isfinite, bounds)) and c0 < c1 and r0 < r1:
+        return bounds
+    return None
+
+
 def _plot(v, screen):
     """Compact drawing with the same primitives, projections and source hits."""
     from .core import BITS, Canvas
@@ -124,17 +132,20 @@ def _plot(v, screen):
             screen.canvas(canvas, [(a.index, c, r * 2) for a, (c, r) in knots])
         elif m['kind'] == 'bars':
             for point in points:
-                c0, r0, c1, r1 = v.bar_bounds(point)
-                if all(map(math.isfinite, (c0, r0, c1, r1))):
-                    canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
-                    canvas.stamp = False
-                    screen.owner = (m['id'], point.index)
-                    # Projection rows denote cell centers. Fill edges must use
-                    # the same center, especially at zero on the baseline.
-                    canvas.fill([[(c0, r0 * 2 + 1), (c1, r0 * 2 + 1),
-                                  (c1, r1 * 2 + 1), (c0, r1 * 2 + 1)]],
-                                tuple(c / 255 for c in rgb), clip=clip, role='data')
-                    screen.canvas(canvas)
+                bounds = _bar_bounds(v, point)
+                if bounds is None:
+                    continue
+                c0, r0, c1, r1 = bounds
+                screen.owner = (m['id'], point.index)
+                r0, r1 = r0 + .5, r1 + .5
+                for r in range(max(p.top, math.floor(r0)),
+                               min(p.top + p.rows, math.ceil(r1))):
+                    upper = r0 < r + .5 and r1 > r
+                    lower = r0 < r + 1 and r1 > r + .5
+                    glyph = '█' if upper and lower else '▀' if upper else '▄'
+                    for c in range(max(p.left, math.floor(c0)),
+                                   min(p.left + p.cols, math.ceil(c1))):
+                        screen.put(r, c, glyph, rgb)
         elif m['kind'] == 'points':
             dots = {}
             for a in points:
@@ -289,7 +300,9 @@ class Dashboard:
                     self.cache[index] = _ansi_screen(f'Static rendering unavailable:\n{type(exc).__name__}: {exc}', t.cols, t.rows - 3)
             _paste(screen, self.cache[index], 0, 3)
             return screen
-        visible = [p for p in v.points if v.projection.visible(p.x, p.y)]
+        visible = [p for p in v.points
+                   if (_bar_bounds(v, p) is not None if p.kind == 'bars'
+                       else v.projection.visible(p.x, p.y))]
         has_bars = any(m['kind'] == 'bars' for m in v.record['marks'])
         has_points = any(m['kind'] in ('line', 'points') for m in v.record['marks'])
         counts = []
