@@ -176,6 +176,24 @@ def test_hover_coordinates_are_tile_local_and_brush_drag_stays_in_origin_tile():
     assert v.hover is None
 
 
+@pytest.mark.parametrize('kind', ['line', 'bar', 'scatter'])
+def test_compact_hover_builds_tile_hits_without_calling_full_viewer(kind):
+    m = model((kind,), cols=120, rows=38)
+    v = m.viewers[0]
+    def full_view_is_wrong_size():
+        pytest.fail('compact hover must not invoke the full-size viewer drawing')
+    v.frame = full_view_is_wrong_size
+    for cols, rows in [(120, 38), (80, 24)]:
+        m.layout(cols, rows)
+        assert v.hit_cells is None
+        tile, p, point = m.tiles[0], v.projection, v.points[0]
+        c, r = map(round, p.cell(point.x, point.y))
+        m.mouse(35, c + tile.x, r + tile.y, False)
+        assert v.hover == point
+        assert v.hit_cells
+        assert f'x={point.x!r} y={point.y!r}' in SGR.sub('', m.frame())
+
+
 def test_brush_statistics_count_only_visible_scatter_and_static_differs_only_in_controls():
     m = model(('scatter',))
     v, tile = m.viewers[0], m.tiles[0]
@@ -285,10 +303,12 @@ def test_projection_scales_or_clear_static_fallback(scale):
     m = Dashboard([ax.figure])
     m.layout(120, 38)
     v = m.viewers[0]
-    if scale == 'symlog':
-        assert 'unsupported x scale' in m.frame()
+    if scale in ('log', 'symlog'):
+        reason = 'log axes use static render' if scale == 'log' else 'unsupported x scale'
+        assert reason in m.frame()
     else:
         assert v.projection is not None
+        m.frame()  # The merged viewer hit-tests painted cells, not raw geometry.
         for point in v.points:
             assert v.nearest(*v.projection.cell(point.x, point.y)) == point
         if scale == 'inverted':

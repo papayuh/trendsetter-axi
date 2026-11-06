@@ -527,6 +527,16 @@ ts.dashboard([fig1, fig2, fig3, fig4], interactive=True,
   Callers retain ownership of figures, including closing any pyplot figures they
   create on refresh. `render().text`, summaries and chart records stay unchanged.
 
+#### Known limits
+
+Compact dashboard tick labels use at most 6 cells on y and 9 on x. Long date labels
+or close, high-magnitude values can lose distinguishing digits; use source values
+instead of inferring precision from truncated ticks. Hover returns a stored point,
+not an interpolated value. Its highlight can mark a nearby source knot rather than
+the hovered segment, and dense/overlapping marks can share a cell. Long series names
+or exact values can exceed the single-line hover footer and are truncated visibly.
+Log axes, heatmaps and other unsupported figures remain static tiles.
+
 Try `python examples/dashboard_demo.py` (static), add `--interactive` for mouse
 input, or `--live --interval 2` for callback updates. Regenerate both assets with
 `python examples/record_dashboard.py /path/to/monospace.ttf` after installing the

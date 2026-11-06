@@ -98,26 +98,45 @@ def _plot(v, screen):
 
     p = v.projection
     clip = (p.left, p.top * 2, p.left + p.cols, (p.top + p.rows) * 2)
-    canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
-    canvas.stamp = False
     selected = {(a.mark, a.index) for a in v.chosen()}
-    dots = {}
-    for j, m in enumerate(v.record['marks']):
+    for m in v.draw_marks:
+        j = list(v.marks).index(m['id'])
         rgb = PALETTE[j % len(PALETTE)]
         points = [a for a in v.points if a.mark == m['id']]
+        screen.owner = (m['id'], None)
         if m['kind'] == 'line':
-            canvas.stroke([path for path, _, _ in line_edges(m, points, p)],
-                          tuple(c / 255 for c in rgb), clip=clip, role='data')
+            canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
+            canvas.stamp = False
+            paths, connected, previous = [], set(), None
+            for path, left, right in line_edges(m, points, p):
+                if previous == left.index:
+                    paths[-1].extend(path[1:])
+                else:
+                    paths.append(path)
+                previous = right.index
+                connected.update((left.index, right.index))
+            ink = tuple(c / 255 for c in rgb)
+            canvas.stroke(paths, ink, clip=clip, role='data')
+            knots = [(a, p.cell(a.x, a.y)) for a in points if p.visible(a.x, a.y)]
+            isolated = [(c, r * 2) for a, (c, r) in knots if a.index not in connected]
+            if isolated:
+                canvas.marker(isolated, ink, clip=clip, role='data')
+            screen.canvas(canvas, [(a.index, c, r * 2) for a, (c, r) in knots])
         elif m['kind'] == 'bars':
             for point in points:
                 c0, r0, c1, r1 = v.bar_bounds(point)
                 if all(map(math.isfinite, (c0, r0, c1, r1))):
+                    canvas = Canvas(v.cols, v.rows * 2, v.cols, max_rows=v.rows)
+                    canvas.stamp = False
+                    screen.owner = (m['id'], point.index)
                     # Projection rows denote cell centers. Fill edges must use
                     # the same center, especially at zero on the baseline.
                     canvas.fill([[(c0, r0 * 2 + 1), (c1, r0 * 2 + 1),
                                   (c1, r1 * 2 + 1), (c0, r1 * 2 + 1)]],
                                 tuple(c / 255 for c in rgb), clip=clip, role='data')
+                    screen.canvas(canvas)
         elif m['kind'] == 'points':
+            dots = {}
             for a in points:
                 if not p.visible(a.x, a.y):
                     continue
@@ -127,13 +146,15 @@ def _plot(v, screen):
                 key = (p.top + iy // 4, p.left + ix // 2)
                 active = v.box is None or (a.mark, a.index) in selected
                 groups = dots.setdefault(key, {})
-                group = j if active else -1
-                bits, n = groups.get(group, (0, 0))
-                groups[group] = (bits | int(BITS[iy % 4, ix % 2]), n + 1)
-    screen.canvas(canvas)
-    for (r, c), groups in dots.items():
-        j = max(groups, key=lambda k: (k >= 0, groups[k][1]))
-        screen.put(r, c, chr(0x2800 + groups[j][0]), PALETTE[j % len(PALETTE)] if j >= 0 else FAINT)
+                bits, _ = groups.get(active, (0, a.index))
+                groups[active] = (bits | int(BITS[iy % 4, ix % 2]), a.index)
+            for (r, c), groups in dots.items():
+                active = max(groups)
+                bits, index = groups[active]
+                screen.owner = (m['id'], index)
+                screen.put(r, c, chr(0x2800 + bits), rgb if active else FAINT)
+    screen.owner = None
+    v.hit_cells = screen.owners
     if v.box:
         c0, r0, c1, r1 = v.box
         for r in range(r0, r1 + 1):
@@ -206,7 +227,7 @@ class Dashboard:
         self.dragging = None
         self.cache.clear()
         for i, v in enumerate(self.viewers):
-            v.box = v.press = v.grab = v.hover = v.projection = None
+            v.box = v.press = v.grab = v.hover = v.projection = v.hit_cells = None
             v.reason = v.initial_reason
             if i >= len(self.tiles):
                 continue
@@ -228,6 +249,8 @@ class Dashboard:
             return
         self.active = index
         t, v = self.tiles[index], self.viewers[index]
+        if v.projection is not None and v.hit_cells is None:
+            self._tile(index)  # Never ask the full-size viewer to draw a tile.
         v.mouse(button, col - t.x, row - t.y, up)
         if v.press is not None:
             self.dragging = index
