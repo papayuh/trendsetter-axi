@@ -534,6 +534,11 @@ ts.dashboard([fig1, fig2, fig3, fig4], interactive=True,
 
 #### Known limits
 
+Styled plot dimensions shrink by at most two rows/columns to give evenly spaced
+ticks a whole-cell pitch. If no such fit exists, labels retain normal nearest-cell
+rounding, at most half a cell from their continuous positions. Colliding labels are
+omitted, never nudged away from their values; source limits stay unchanged.
+
 Compact dashboard tick labels use at most 6 cells on y and 9 on x. Long date labels
 or close, high-magnitude values can lose distinguishing digits; use source values
 instead of inferring precision from truncated ticks. Hover returns a stored point,
