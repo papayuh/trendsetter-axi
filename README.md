@@ -506,14 +506,19 @@ ts.dashboard([fig1, fig2, fig3, fig4], interactive=True,
   modes. Size follows the output terminal (120 × 38 fallback for captured output).
   Set `cols=140, rows=44` for a reproducible snapshot, `columns=2` to fix the grid,
   and `color=False` for text without ANSI colors.
-- Interactive/live calls always use the actual terminal size. Auto layout reflows
-  on resize; all charts must fit, otherwise a bounded resize message replaces the
-  grid. Each tile needs at least 32 × 12 cells plus shared header/footer/gutters.
+- Interactive/live calls require the [viewer's terminal and main-thread
+  setup](#styled-terminal-charts-and-scatter-brushing) and always use the actual
+  terminal size. Auto layout reflows on resize; all charts must fit, otherwise a
+  bounded resize message replaces the grid. Each tile needs at least 32 × 12 cells
+  plus shared header/footer/gutters.
   **120 × 38 or larger** is recommended for four charts.
 - Hover line knots, bar rectangles or scatter points for source values in the
   shared footer. Drag a scatter brush for visible-point counts and Pearson r;
   drag inside it to move it. `1`–`9` focuses a tile, `x` clears its brush, `q`
   exits. Values use numeric axis coordinates, not inferred subject counts.
+  Bar captions count rectangles with a positive-area intersection with the view,
+  even when their endpoints lie outside it. Zero-height or zero-width bars neither
+  draw nor count; tiny nonzero intersections retain block ink at cell resolution.
 - Line/bar/scatter tiles support the same one-axis rectilinear scales as
   `interact()`. Heatmaps and unsupported figures use the existing static renderer
   with their source palette, scale and color key, not invented interactions.

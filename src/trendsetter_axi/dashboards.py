@@ -101,7 +101,7 @@ def _bar_bounds(v, point):
 
 
 def _plot(v, screen):
-    """Compact drawing with the same primitives, projections and source hits."""
+    """Compact drawing with shared projections and source hit ownership."""
     from .core import BITS, Canvas
 
     p = v.projection
