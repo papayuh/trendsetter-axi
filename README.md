@@ -444,7 +444,8 @@ axis with linear, date or categorical scales. Log axes, multiple or inset/child 
 scatter color/size encodings, custom formatter offsets/multipliers, heatmaps, areas,
 errorbars, other scales and unread artists fall back to the existing static figure
 renderer with a clear message. Hover picks the
-topmost mark drawn in the terminal cell, or the nearest drawn cell within one cell.
+topmost mark drawn in the terminal cell, or the nearest occupied cell among its
+eight neighbors (including diagonals).
 Point marks return the last point painted in that cell's displayed selected/context
 group; lines return the nearest stored knot in the winning mark.
 Zoom/pan, row pinning and series toggles are not implemented.
