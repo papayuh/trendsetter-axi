@@ -444,7 +444,8 @@ axis with linear, date or categorical scales. Log axes, multiple or inset/child 
 scatter color/size encodings, custom formatter offsets/multipliers, heatmaps, areas,
 errorbars, other scales and unread artists fall back to the existing static figure
 renderer with a clear message. Hover picks the
-topmost mark drawn in the terminal cell, or the nearest drawn cell within one cell.
+topmost mark drawn in the terminal cell, or the nearest occupied cell among its
+eight neighbors (including diagonals).
 Point marks return the last point painted in that cell's displayed selected/context
 group; lines return the nearest stored knot in the winning mark.
 Zoom/pan, row pinning and series toggles are not implemented.
@@ -533,6 +534,11 @@ ts.dashboard([fig1, fig2, fig3, fig4], interactive=True,
   create on refresh. `render().text`, summaries and chart records stay unchanged.
 
 #### Known limits
+
+Styled plot dimensions shrink by at most two rows/columns to give evenly spaced
+ticks a whole-cell pitch. If no such fit exists, labels retain normal nearest-cell
+rounding, at most half a cell from their continuous positions. Colliding labels are
+omitted, never nudged away from their values; source limits stay unchanged.
 
 Compact dashboard tick labels use at most 6 cells on y and 9 on x. Long date labels
 or close, high-magnitude values can lose distinguishing digits; use source values

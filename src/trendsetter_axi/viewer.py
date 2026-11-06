@@ -80,6 +80,32 @@ class Point:
     label: str = ""
 
 
+def _tick_extent(scale, extent, origin, *, reverse=False):
+    """Fit equal tick steps to whole cells, sacrificing at most two cells."""
+    lo, hi = scale['range']
+    values = sorted({tick['value'] for tick in scale.get('ticks', [])
+                     if math.isfinite(tick['value']) and min(lo, hi) <= tick['value'] <= max(lo, hi)})
+    if len(values) < 2:
+        return extent
+    step = values[1] - values[0]
+    if not all(math.isclose(b - a, step, rel_tol=1e-9, abs_tol=0)
+               for a, b in zip(values, values[1:])):
+        return extent
+    fractions = [(value - lo) / (hi - lo) for value in values]
+    if reverse:
+        fractions = [1 - value for value in fractions]
+    for shrink in range(3):
+        span = extent - shrink - 1
+        pitch = abs(step / (hi - lo) * span)
+        if span < 1 or pitch < 1 or not math.isclose(pitch, round(pitch), rel_tol=1e-9, abs_tol=0):
+            continue
+        cells = [round(origin + fraction * span) for fraction in fractions]
+        # Half-cell ties can round in opposite directions; reject that phase too.
+        if all(abs(b - a) == round(pitch) for a, b in zip(cells, cells[1:])):
+            return extent - shrink
+    return extent
+
+
 class Projection:
     """Linear/date/category data -> terminal cells, preserving inverted limits."""
     def __init__(self, axis, left, top, cols, rows):
@@ -96,6 +122,8 @@ class Projection:
             if not all(map(math.isfinite, (lo, hi))) or lo == hi:
                 raise ValueError(f"unusable {k} range")
             self.limits.append((lo, hi))
+        self.cols = _tick_extent(axis['x'], cols, left)
+        self.rows = _tick_extent(axis['y'], rows, top, reverse=True)
 
     def cell(self, x, y):
         fx, fy = [(v - lo) / (hi - lo) for v, (lo, hi) in zip((x, y), self.limits)]
@@ -221,7 +249,9 @@ class Viewer:
             self.frame()
         cell = round(col), round(row)
         order = {mark['id']: i for i, mark in enumerate(self.draw_marks)}
-        nearby = [rc for rc in self.hit_cells if math.dist(rc, cell) <= 1]
+        # Braille cells floor both coordinates; rounding a point's projection
+        # can therefore land diagonally beside its contributing display cell.
+        nearby = [rc for rc in self.hit_cells if math.dist(rc, cell) <= math.sqrt(2)]
         if not nearby:
             return None
         hit = min(nearby, key=lambda rc: (math.dist(rc, cell), -order[self.hit_cells[rc][0]]))

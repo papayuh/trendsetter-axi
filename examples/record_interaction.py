@@ -86,9 +86,14 @@ def report(button, col, row, up=False):
 
 
 def script():
-    # The packaged viewer's 120x38 layout is 68x25 cells at (8,6).
+    from scatter_brush import make_figure
+    from trendsetter_axi.viewer import make_viewer
+
+    viewer = make_viewer(make_figure())
+    viewer.layout(COLS, ROWS)
+
     def cell(x, y):
-        return round(8 + x / 120 * 67), round(6 + (1 - y / 100) * 24)
+        return tuple(map(round, viewer.projection.cell(x, y)))
     events = []
     def move(start, end, at, duration, drag=False):
         for i in range(1, round(duration * FPS) + 1):
